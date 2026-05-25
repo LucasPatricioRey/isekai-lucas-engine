@@ -55,6 +55,16 @@ async function runSmokeTests() {
   if (!location.ok) throw new Error("locations/full fallo");
   console.log("OK /api/locations/.../full");
 
+  const economy = await request("/api/economy/shops/shop_pavo_food_stall/stock");
+  if (!economy.ok) throw new Error("economy stock fallo");
+  if (!Array.isArray(economy.stocks)) throw new Error("economy stock no devolvio stocks");
+  console.log("OK /api/economy/shops/.../stock");
+
+  const missions = await request("/api/missions/board");
+  if (!missions.ok) throw new Error("missions board fallo");
+  if (!Array.isArray(missions.missions)) throw new Error("missions board no devolvio missions");
+  console.log("OK /api/missions/board");
+
   const checkpoints = await request("/api/checkpoints");
   if (!checkpoints.ok) throw new Error("checkpoints fallo");
   console.log("OK /api/checkpoints");
