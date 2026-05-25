@@ -1,6 +1,7 @@
 const GameState = require("../models/GameState");
 const Location = require("../models/Location");
 const TravelRoute = require("../models/TravelRoute");
+const { previewWeatherEffects } = require("./weatherService");
 
 const EXTERIOR_ROUTE_TYPES = new Set(["town", "road", "wilderness", "regional"]);
 
@@ -201,6 +202,33 @@ async function previewTravel({
     total *= weather.multiplier;
   }
 
+  let weatherPreview = null;
+  if (!conditions.ignoreCurrentWeather && !conditions.weather) {
+    try {
+      weatherPreview = await previewWeatherEffects({
+        regionId: conditions.regionId || "region_hoshimori",
+        routeType: route.routeType,
+        terrain: route.terrain || [],
+      });
+
+      const weatherMultiplierValue = Number(weatherPreview.travelTimeMultiplier || 1);
+      if (weatherMultiplierValue > 1) {
+        appliedModifiers.push({
+          key: "current_weather",
+          label: "Clima actual de la region",
+          multiplier: weatherMultiplierValue,
+          weatherId: weatherPreview.weather?.weatherId,
+        });
+        total *= weatherMultiplierValue;
+      }
+    } catch (error) {
+      weatherPreview = {
+        unavailable: true,
+        reason: error.message,
+      };
+    }
+  }
+
   if (conditions.heavyLoad || conditions.loadLevel === "heavy") {
     const modifier = {
       key: "heavy_load",
@@ -247,6 +275,7 @@ async function previewTravel({
     },
     conditions,
     appliedModifiers,
+    weatherPreview,
     riskLevel: route.dangerLevel,
     warnings: buildWarnings(route, finalMinutes, conditions),
     encounters: {

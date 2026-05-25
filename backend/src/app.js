@@ -17,6 +17,7 @@ const needsRoutes = require("./routes/needsRoutes");
 const progressionRoutes = require("./routes/progressionRoutes");
 const magicRoutes = require("./routes/magicRoutes");
 const travelRoutes = require("./routes/travelRoutes");
+const weatherRoutes = require("./routes/weatherRoutes");
 
 const app = express();
 
@@ -46,6 +47,7 @@ app.use("/api/needs", needsRoutes);
 app.use("/api/progression", progressionRoutes);
 app.use("/api/magic", magicRoutes);
 app.use("/api/travel", travelRoutes);
+app.use("/api/weather", weatherRoutes);
 
 app.use((req, res) => {
   res.status(404).json({

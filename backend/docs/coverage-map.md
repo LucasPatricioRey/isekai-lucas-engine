@@ -2,7 +2,7 @@
 
 Fecha de auditoria: 2026-05-25  
 Backend vivo auditado: `https://isekai-lucas-engine.onrender.com`  
-Modo G1 original: solo lectura. Actualizaciones posteriores G2/G3/G4/G5/G6/G7/G8-G12/G18/G14-base ejecutaron seeds idempotentes o previews read-only sin rollbacks, aceptaciones de mision, creacion de checkpoints ni mutaciones de partida.
+Modo G1 original: solo lectura. Actualizaciones posteriores G2/G3/G4/G5/G6/G7/G8-G13/G18/G14-base/G21/G22 ejecutaron seeds idempotentes, tests read-only o previews read-only sin rollbacks, aceptaciones de mision, creacion de checkpoints ni mutaciones de partida.
 
 ## Resumen ejecutivo
 
@@ -12,7 +12,7 @@ G1 compara tres niveles:
 2. Representacion en repo: modelos, seeds, servicios, rutas, smoke tests y docs indexables.
 3. Representacion viva en Render/MongoDB usando endpoints protegidos por `x-api-key`.
 
-Hallazgo principal: el repo ya tiene una base tecnica amplia y, tras G2/G3/G4/G5/G6/G7/G8-G12/G18/G14-base, MongoDB vivo contiene el nucleo de Hoshimori: 25 NPCs esperados, 25 ubicaciones principales, 12 relaciones NPC-NPC base, 4 memorias canonicas base, 8 rumores base activos, 36 items economicos, 9 shops, 39 filas de stock, 11 misiones iniciales disponibles, 1 contrato laboral activo de Lucas en La Grulla Azul, 12 disciplinas magicas, 7 tecnicas/plantillas magicas base y 23 rutas de viaje de Hoshimori. Ademas existen servicios/endpoints de preview para reloj biologico, progresion de EXP, practica magica segura, acciones de combate, viaje y world tick/offscreen. El estado canon de partida sigue Dia 10 12:00. Lo que todavia no cubre el 100% del texto son completar turnos reales con pago, acumulador biologico persistente, validacion estricta de EXP dentro de cada accion, venta/compra transaccional completa, propagacion avanzada de rumores, relaciones avanzadas/romance, secretos, cadenas de misiones, practica magica mutadora, desbloqueo real de hechizos, viaje real mutador, encuentros aleatorios, clima avanzado y world tick apply real.
+Hallazgo principal: el repo ya tiene una base tecnica amplia y, tras G2/G3/G4/G5/G6/G7/G8-G13/G18/G14-base/G21/G22, MongoDB vivo contiene el nucleo de Hoshimori: 25 NPCs esperados, 25 ubicaciones principales, 12 relaciones NPC-NPC base, 4 memorias canonicas base, 8 rumores base activos, 36 items economicos, 9 shops, 39 filas de stock, 11 misiones iniciales disponibles, 1 contrato laboral activo de Lucas en La Grulla Azul, 12 disciplinas magicas, 7 tecnicas/plantillas magicas base, 23 rutas de viaje de Hoshimori y 1 clima simple regional de Dia 10. Ademas existen servicios/endpoints de preview para reloj biologico, progresion de EXP, practica magica segura, acciones de combate, viaje, clima, world tick/offscreen y OpenAPI de GPT Actions alineado. `npm test` cubre flujos read-only/preview y rechazos seguros. El estado canon de partida sigue Dia 10 12:00. Lo que todavia no cubre el 100% del texto son completar turnos reales con pago, acumulador biologico persistente, validacion estricta de EXP dentro de cada accion, venta/compra transaccional completa, propagacion avanzada de rumores, relaciones avanzadas/romance, secretos, cadenas de misiones, practica magica mutadora, desbloqueo real de hechizos, viaje real mutador, encuentros aleatorios avanzados, clima avanzado y world tick apply real.
 
 ## Estado vivo confirmado
 
@@ -439,6 +439,79 @@ Resultado vivo tras ejecutar G12/G18/G14-base con `MONGODB_URI` y backend local 
 - Combates activos finales: 0.
 - Rumores, relaciones romance, eventos y logs no cambiaron durante world tick preview.
 
+## Actualizacion G13/G21/G22
+
+Se agrego clima simple, tests de regresion y OpenAPI para GPT Actions:
+
+- `src/models/WeatherState.js`
+- `src/seeds/seedHoshimoriWeather.js`
+- `src/services/weatherService.js`
+- `src/controllers/weatherController.js`
+- `src/routes/weatherRoutes.js`
+- `src/utils/auditHoshimoriWeather.js`
+- `src/tests/apiReadOnly.test.js`
+- `src/tests/apiPreviews.test.js`
+- `src/tests/apiTestClient.js`
+- `docs/openapi-gpt-action.json`
+- `src/utils/auditOpenApiCoverage.js`
+- scripts `seed:hoshimori-weather`, `audit:hoshimori-weather`, `test`, `test:read-only`, `test:previews` y `audit:openapi`
+
+Endpoints nuevos protegidos por API key:
+
+- `GET /api/weather/current`
+- `POST /api/weather/effects/preview`
+
+Contenido vivo sembrado por G13:
+
+- 1 estado de clima regional: `weather_hoshimori_d10_post_rain_mud`.
+- Region: `region_hoshimori`.
+- Condicion actual: `cloudy`, con barro residual y retraso menor de suministros.
+- Efecto de ruta exterior fangosa: multiplicador de viaje 1.25.
+- Warnings de visibilidad para bosque/colinas.
+- Sin tormenta enorme, sin evento grande y sin mutar `GameState`.
+
+Cobertura G21:
+
+- `npm test` usa Node test runner nativo con concurrencia 1.
+- Tests read-only: health, context, search DB/docs, NPC full, location full, shops/stock/items, missions board/detail, combat, travel, magic, weather y checkpoints.
+- Tests preview/rechazo: jobs, reloj biologico, skill progression, practica magica, combate fixture, travel preview, weather preview, world tick preview, item inexistente y tiempo hacia atras.
+- Los tests comparan snapshots canonicos antes/despues y verifican que los previews/rechazos no muten estado.
+
+Cobertura G22:
+
+- `docs/openapi-gpt-action.json` documenta endpoints de lectura/preview para context, search, NPC, location, turn apply, economy, missions, combat, travel, world tick preview, jobs, needs, progression, magic, weather y checkpoints.
+- El schema usa `x-api-key` como `ApiKeyAuth`.
+- No expone rollback ni mutadores peligrosos como aceptar/reportar misiones, iniciar combate, aplicar ronda de combate, expirar misiones o restock diario.
+- `auditOpenApiCoverage.js` verifica 36 operaciones incluidas, exclusiones deliberadas y seguridad del schema.
+
+Resultado vivo tras ejecutar G13/G21/G22 con `MONGODB_URI` y backend local apuntando a MongoDB vivo:
+
+- `npm run check`: OK.
+- `npm run seed:hoshimori-weather`: OK.
+- `npm test`: OK, 9/9 subtests.
+- `npm run smoke`: OK.
+- `npm run audit:hoshimori-weather`: OK.
+- `npm run audit:openapi`: OK.
+- `npm run audit:coverage`: OK.
+- `npm run audit:hoshimori-core`: OK.
+- `npm run audit:hoshimori-social`: OK.
+- `npm run audit:hoshimori-rumors`: OK.
+- `npm run audit:hoshimori-economy`: OK.
+- `npm run audit:hoshimori-missions`: OK.
+- `npm run audit:hoshimori-jobs`: OK.
+- `npm run audit:biological-clock`: OK.
+- `npm run audit:skill-progression`: OK.
+- `npm run audit:magic-basics`: OK.
+- `npm run audit:hoshimori-routes`: OK.
+- `npm run audit:combat-advanced`: OK.
+- `npm run audit:world-tick`: OK.
+- GameState sigue Dia 10, hora 12:00, ubicacion `loc_hoshimori_grulla_azul_comedor`.
+- `moneyCopper` sigue 1470.
+- MP actual sigue 200/200.
+- `activeMissionIds` sigue vacio.
+- Combates activos finales: 0.
+- Weather/travel/world tick previews no mutaron estado.
+
 ## Tabla de cobertura
 
 Estados usados:
@@ -470,7 +543,7 @@ Estados usados:
 | Rumores y propagacion | `rules_engine.md` 20.1; `world_bible.md` 17 | `Rumor` con `source`, `applyRumorPatches`, `seedHoshimoriRumors.js`, `auditHoshimoriRumors.js`; search/context consultan rumores | 8 rumores G5 activos vivos; contexto y busqueda los ven | seeded_mongodb | `seed:hoshimori-rumors` OK; `audit:hoshimori-rumors` OK; `context/full` muestra 4 rumores relevantes; `search/db?q=barro` y `search/db?q=Bosque` encuentran rumores | G5 avanzado/G14: propagacion por tick, distorsion gradual, expiracion y cambios por eventos |
 | Reputacion y facciones | `rules_engine.md` 20.2-20.3; `world_bible.md` 10, 15 | `Faction`, links de NPC, reputacion con Lucas | 3 facciones aparecen con query amplia | partial | `/api/search/db?q=a` devuelve `factions=3` | G15: ley, testigos, acceso, sospecha |
 | Inventario, propiedad y objetos | `rules_engine.md` 21 | Inventario en `GameState`, `Item`, validacion de item existente al agregar | Inventario Lucas vivo; 36 items G6 existen como catalogo base | partial | `audit:hoshimori-economy`: 36/36 items, sin objetos magicos comunes; `turn/apply` rechaza item inexistente al agregar | G17: durabilidad avanzada, crafting, recursos y reparacion profunda |
-| Viaje, exploracion y zonas seguras | `rules_engine.md` 22; `world_bible.md` 7, 13 | `TravelRoute`, `travelService`, endpoints `/api/travel/routes` y `/api/travel/preview`; ubicaciones core de camino/bosque/colinas sembradas | 23 rutas G18 vivas; travel preview funcional | seeded_mongodb | `seed:hoshimori-routes` OK; `audit:hoshimori-routes` OK: Grulla->mercado 15, Grulla->gremio 20, Grulla->bosque 90, lluvia +25% redondeada | G18 futuro: viaje real mutador, encuentros aleatorios, clima G13, carga/heridas integradas en acciones reales |
+| Viaje, exploracion y zonas seguras | `rules_engine.md` 22; `world_bible.md` 7, 13 | `TravelRoute`, `travelService`, endpoints `/api/travel/routes` y `/api/travel/preview`; integracion read-only con `weatherService` | 23 rutas G18 vivas; travel preview funcional; clima actual puede modificar rutas exteriores | seeded_mongodb | `seed:hoshimori-routes` OK; `audit:hoshimori-routes` OK: Grulla->mercado 15, Grulla->gremio 20, Grulla->bosque 90 sin clima; `audit:hoshimori-weather` OK: Camino del Molino con barro residual redondea a 35 min | G18 futuro: viaje real mutador, encuentros aleatorios avanzados, carga/heridas integradas en acciones reales |
 | Pipeline de acciones complejas | `rules_engine.md` 23-24 | `turn/apply` procesa patches; no orquestador de pipeline | Patches funcionan si GPT los manda bien | partial | Endpoint existe, pero validacion semantica es incompleta | Mantener GPT como planificador, mover reglas criticas al backend |
 | Hoshimori: ubicaciones principales | `world_bible.md` 6.3, 19 | `Location` model; seeds iniciales/world essentials; `seedHoshimoriCore.js` prepara 25 ubicaciones canonicas | 25/25 ubicaciones esperadas vivas | seeded_mongodb | `seed:hoshimori-core` OK y `audit:hoshimori-core` OK reportados; missing locations 0; GameState intacto | Mantener auditoria como regresion; G6/G7 pueden apoyarse en estas locations |
 | Hoshimori: roster base 25 NPCs | `world_bible.md` 11 | `seedInitialState` tiene 4; `seedHoshimoriRoster` prepara 21 mas; `seedHoshimoriCore.js` consolida 25 NPCs con rutinas base | 25/25 NPCs esperados vivos | seeded_mongodb | `seed:hoshimori-core` OK y `audit:hoshimori-core` OK reportados; missing NPCs 0; Narek/Pavo/Borin/Liora aparecen en `search/db` | G4: relaciones NPC-NPC, memorias base y conocimiento no omnisciente |
@@ -482,15 +555,15 @@ Estados usados:
 | Region cercana a Hoshimori | `world_bible.md` 13 | Docs indexados; locations core cercanas, enemy zones textuales y rutas G18 | Camino del Molino, molino, bosque y colinas base existen como locations core; rutas principales vivas | partial | `audit:hoshimori-core` OK para 25 locations; `audit:hoshimori-routes` OK para 23 rutas; faltan aldeas/granjas y rosters externos | G19 para regiones/rosters externos; G18 futuro para ruta regional larga |
 | Regiones y ciudades mayores | `world_bible.md` 14 | Docs indexados | No entidades vivas confirmadas | future_optional | `search/docs` encuentra Valdoria; DB solo faccion Corona | G19 post-Hoshimori |
 | Amenazas, fauna y monstruos | `world_bible.md` 16 | `EnemyTemplate`, `seedEnemyTemplates`, previews G12 de acciones contra fixtures | 5 enemigos vivos | seeded_mongodb | `search/db?q=lobo` devuelve 1 enemyTemplate; `/api/combat/enemies` devuelve 5; `audit:combat-advanced` usa fixture lobo sin crear combate | Ampliar zonas/loot en G12 futuro/G17 sin loot automatico |
-| Clima y eventos diarios | `world_bible.md` 8; `rules_engine.md` 5.4 | `WorldEvent`; no `WeatherState` | Evento activo supply delay por barro | partial | `activeEventIds: event_d10_supply_delay_mud`; sin weather endpoint | G13 |
+| Clima y eventos diarios | `world_bible.md` 8; `rules_engine.md` 5.4 | `WorldEvent`, `WeatherState`, `weatherService`, endpoints `/api/weather/current` y `/api/weather/effects/preview` | 1 WeatherState G13 vivo para Hoshimori; evento activo supply delay por barro | seeded_mongodb | `seed:hoshimori-weather` OK; `audit:hoshimori-weather` OK: condicion `cloudy`, barro residual +25% en rutas fangosas, GameState intacto | G13 futuro: pronostico, clima por tick, frio/calor y efectos mas profundos en rutinas/stock |
 | Mundo offscreen / world tick | `rules_engine.md` 2.4; G14 implicito | `/api/world/sync-routines`; `worldTickService`; endpoint `/api/world/tick/preview` | Preview 12:00->14:00 calcula rutinas, misiones, restock, rumores, eventos y combates sin mutar | partial | `audit:world-tick` OK: 25 NPCs revisados, 0 misiones vencidas antes de 18:00, rumores/eventos/logs sin cambios, combates 0 | G14 futuro: apply real con transaccion, bloqueo por combate activo, integracion con `applyTurn` y checkpoints |
 | Busqueda DB | `rules_engine.md` 3.2 | `/api/search/db` busca modelos principales | Funciona | implemented_backend | Queries Narek/lobo/a responden | Mantener; agregar resumen admin read-only si hace falta |
 | Busqueda docs | `rules_engine.md` 3.2; ambos docs | `WorldDocumentIndex`, `seedDocuments`, `/api/search/docs` | Funciona con `romance` | seeded_mongodb | `search/docs?q=romance` devuelve 4 docs | Mantener seed docs alineado con archivos |
 | Contexto completo | `rules_engine.md` 3.2 | `/api/context/full` junta estado, location, NPCs cercanos, shops, rumors, missions, factions, combat | Funciona y es de alcance cercano | implemented_backend | `context/full` devuelve 4 nearby NPCs y 4 rumores activos relevantes en Grulla | Documentar que no es roster completo |
 | Checkpoints y rollback | `rules_engine.md` 3.4 | `Checkpoint`, rutas create/list/get/rollback | Checkpoints vivos; oficial presente | implemented_backend | `/api/checkpoints` lista `checkpoint_d10_1200_1779684235944` | Separar admin/in-game en OpenAPI; no exponer rollback al GPT normal |
-| Smoke test | README, `smokeTestRender.js` | `npm run smoke` cubre health/context/search/npc/location/economy/missions/jobs/needs/progression/magic/travel/combat/world tick/checkpoints | Smoke OK contra backend local con DB viva para endpoints G8-G12/G18/G14-base; remoto OK para endpoints ya desplegados | implemented_backend | Smoke ampliado con `/api/travel/routes`, `/api/combat/actions` y `/api/world/tick/preview` | Expandir a tests no mutantes y repetir remoto tras redeploy |
-| Tests automatizados | `rules_engine.md` 26 | `npm test` sigue placeholder | No aplica | missing | `package.json`: `test` imprime "no test specified" | G21 |
-| OpenAPI / GPT Actions | `rules_engine.md` 26 | No se encontro archivo OpenAPI/swagger | No aplica | missing | `rg openapi|swagger` solo encuentra menciones pendientes | G22 |
+| Smoke test | README, `smokeTestRender.js` | `npm run smoke` cubre health/context/search/npc/location/economy/missions/jobs/needs/progression/magic/weather/travel/combat/world tick/checkpoints | Smoke OK contra backend local con DB viva para endpoints G8-G13/G18/G14-base | implemented_backend | Smoke ampliado con `/api/weather/current`, `/api/weather/effects/preview`, `/api/travel/routes`, `/api/combat/actions` y `/api/world/tick/preview` | Repetir remoto tras redeploy de Render |
+| Tests automatizados | `rules_engine.md` 26 | Node test runner nativo; `src/tests/apiReadOnly.test.js`, `src/tests/apiPreviews.test.js`, `src/tests/apiTestClient.js` | Tests usan MongoDB vivo y API local temporal sin mutar canon | implemented_backend | `npm test` OK: 9/9 subtests; cubre read-only, previews, item inexistente y tiempo hacia atras; snapshots canonicos intactos | Ampliar a pruebas transaccionales cuando existan mutadores reales seguros |
+| OpenAPI / GPT Actions | `rules_engine.md` 26 | `docs/openapi-gpt-action.json`; `auditOpenApiCoverage.js`; script `audit:openapi` | No aplica como estado MongoDB; documenta API publica protegida | implemented_backend | `audit:openapi` OK: 36 operaciones incluidas, rollback/admin/mutadores peligrosos excluidos, `ApiKeyAuth` presente | G23: probar en GPT Builder Preview y ajustar instrucciones/formato |
 | Admin/debug seguro | `rules_engine.md` 26 | Checkpoints y scripts utilitarios; no resumen read-only de colecciones | No endpoint de conteo seguro | partial | Se audita con busquedas indirectas | Proponer `/api/admin/coverage-summary`, no implementar en G1 |
 
 ## Afirmaciones auditadas
@@ -510,17 +583,17 @@ Estados usados:
 
 Modelos existentes:
 
-`Character`, `CharacterMagicKnowledge`, `Checkpoint`, `CombatEncounter`, `EnemyTemplate`, `EventLog`, `Faction`, `GameState`, `Item`, `JobContract`, `Location`, `MagicDiscipline`, `MagicTechnique`, `Mission`, `Npc`, `NpcMemory`, `NpcRelationship`, `RoutineOverride`, `Rumor`, `Shop`, `ShopStock`, `TravelRoute`, `WorldDocumentIndex`, `WorldEvent`.
+`Character`, `CharacterMagicKnowledge`, `Checkpoint`, `CombatEncounter`, `EnemyTemplate`, `EventLog`, `Faction`, `GameState`, `Item`, `JobContract`, `Location`, `MagicDiscipline`, `MagicTechnique`, `Mission`, `Npc`, `NpcMemory`, `NpcRelationship`, `RoutineOverride`, `Rumor`, `Shop`, `ShopStock`, `TravelRoute`, `WeatherState`, `WorldDocumentIndex`, `WorldEvent`.
 
 Cambio G5: `Rumor` ahora incluye `source` para auditar seeds vivos sin depender solo de tags/texto.
 
 Seeds existentes:
 
-`seedInitialState.js`, `seedWorldEssentials.js`, `seedHoshimoriRoster.js`, `seedHoshimoriRoutines.js`, `seedHoshimoriCore.js`, `seedHoshimoriSocialGraph.js`, `seedHoshimoriRumors.js`, `seedHoshimoriEconomy.js`, `seedHoshimoriMissions.js`, `seedHoshimoriJobs.js`, `seedMagicBasics.js`, `seedHoshimoriRoutes.js`, `seedEnemyTemplates.js`, `seedDocuments.js`, mas scripts de limpieza/reparacion. En G1 no se ejecuto ningun seed; G2/G3/G4/G5/G6/G7/G8/G11/G18 usaron seeds idempotentes.
+`seedInitialState.js`, `seedWorldEssentials.js`, `seedHoshimoriRoster.js`, `seedHoshimoriRoutines.js`, `seedHoshimoriCore.js`, `seedHoshimoriSocialGraph.js`, `seedHoshimoriRumors.js`, `seedHoshimoriEconomy.js`, `seedHoshimoriMissions.js`, `seedHoshimoriJobs.js`, `seedMagicBasics.js`, `seedHoshimoriRoutes.js`, `seedHoshimoriWeather.js`, `seedEnemyTemplates.js`, `seedDocuments.js`, mas scripts de limpieza/reparacion. En G1 no se ejecuto ningun seed; G2/G3/G4/G5/G6/G7/G8/G11/G13/G18 usaron seeds idempotentes.
 
 Rutas existentes:
 
-`/api/context/full`, `/api/turn/apply`, `/api/search/db`, `/api/search/docs`, `/api/npcs/:npcId/full`, `/api/locations/:locationId/full`, `/api/checkpoints`, `/api/world/sync-routines`, `/api/world/tick/preview`, `/api/economy/shops`, `/api/economy/shops/:shopId/stock`, `/api/economy/items/:itemId`, `/api/economy/restock-daily`, `/api/missions/*`, `/api/combat/*`, `/api/jobs/*`, `/api/needs/activity-cost/preview`, `/api/progression/skills/preview`, `/api/magic/*`, `/api/travel/*`.
+`/api/context/full`, `/api/turn/apply`, `/api/search/db`, `/api/search/docs`, `/api/npcs/:npcId/full`, `/api/locations/:locationId/full`, `/api/checkpoints`, `/api/world/sync-routines`, `/api/world/tick/preview`, `/api/economy/shops`, `/api/economy/shops/:shopId/stock`, `/api/economy/items/:itemId`, `/api/economy/restock-daily`, `/api/missions/*`, `/api/combat/*`, `/api/jobs/*`, `/api/needs/activity-cost/preview`, `/api/progression/skills/preview`, `/api/magic/*`, `/api/travel/*`, `/api/weather/*`.
 
 G5 confirma que `context/full` trae rumores activos por ubicacion/NPC cercano y que `search/db` puede encontrarlos.
 
@@ -528,11 +601,11 @@ G6 confirma que shops principales e items basicos pueden consultarse por endpoin
 
 G7 confirma que `GET /api/missions/board` y `GET /api/missions/:missionId` pueden consultar una cartelera inicial viva sin aceptar misiones. La cartelera se puede filtrar por `rank`, `locationId`, `riskLevel` y `sourceFactionId`.
 
-G8-G10 confirman que jobs, needs y progression exponen endpoints read-only/dryRun. G11 confirma que magia expone catalogo y preview read-only. G12/G18/G14-base confirman acciones de combate, viaje y world tick en preview. Todavia no hay mutador real de completar turno, practica magica real, viaje real, world tick apply ni integracion obligatoria de EXP/biologia en `turn/apply`.
+G8-G10 confirman que jobs, needs y progression exponen endpoints read-only/dryRun. G11 confirma que magia expone catalogo y preview read-only. G12/G18/G14-base confirman acciones de combate, viaje y world tick en preview. G13 confirma clima consultable y preview de efectos. Todavia no hay mutador real de completar turno, practica magica real, viaje real, world tick apply ni integracion obligatoria de EXP/biologia en `turn/apply`.
 
 Smoke test:
 
-`src/utils/smokeTestRender.js` existe y cubre health, context, search, npc, location, economy, missions, detalle de mision estable, jobs, preview de necesidades, preview de skills, catalogo magico, rutas de viaje, acciones de combate, world tick preview, combat y checkpoints. Fue ejecutado durante G1 y ampliado en G6/G7/G8-G12/G18/G14-base.
+`src/utils/smokeTestRender.js` existe y cubre health, context, search, npc, location, economy, missions, detalle de mision estable, jobs, preview de necesidades, preview de skills, catalogo magico, clima, rutas de viaje, acciones de combate, world tick preview, combat y checkpoints. Fue ejecutado durante G1 y ampliado en G6/G7/G8-G13/G18/G14-base.
 
 Docs indexados:
 
@@ -540,7 +613,7 @@ Docs indexados:
 
 OpenAPI:
 
-No se encontro archivo OpenAPI/Swagger en el repo. Solo hay menciones en `rules_engine.md` como pendiente.
+`docs/openapi-gpt-action.json` existe y cubre endpoints de lectura/preview protegidos por `x-api-key`. No incluye rollback ni mutadores peligrosos para GPT normal. `npm run audit:openapi` valida cobertura esperada, exclusiones deliberadas y seguridad.
 
 ## Endpoint admin propuesto, no implementado
 
@@ -559,7 +632,7 @@ Justificacion: hoy G1 puede inferir huecos por busqueda y endpoints profundos, p
 
 ## Proximas acciones recomendadas
 
-1. Usar `npm run audit:hoshimori-core`, `npm run audit:hoshimori-social`, `npm run audit:hoshimori-rumors`, `npm run audit:hoshimori-economy`, `npm run audit:hoshimori-missions`, `npm run audit:hoshimori-jobs`, `npm run audit:biological-clock`, `npm run audit:skill-progression`, `npm run audit:magic-basics`, `npm run audit:combat-advanced`, `npm run audit:hoshimori-routes` y `npm run audit:world-tick` como regresiones read-only.
+1. Usar `npm test`, `npm run audit:hoshimori-core`, `npm run audit:hoshimori-social`, `npm run audit:hoshimori-rumors`, `npm run audit:hoshimori-economy`, `npm run audit:hoshimori-missions`, `npm run audit:hoshimori-jobs`, `npm run audit:biological-clock`, `npm run audit:skill-progression`, `npm run audit:magic-basics`, `npm run audit:combat-advanced`, `npm run audit:hoshimori-routes`, `npm run audit:hoshimori-weather`, `npm run audit:world-tick` y `npm run audit:openapi` como regresiones read-only.
 2. Implementar completar turnos reales solo con validadores de horario, pago, comida, ausencia, EventLog y pruebas con rollback/checkpoint.
 3. Integrar acumulador biologico persistente en `turn/apply` o world tick, procesando solo horas exactas `:00`.
 4. Usar `skillProgressionService` como validador obligatorio para `skillPatch`, y agregar anti-farmeo real con historial diario.
@@ -568,4 +641,5 @@ Justificacion: hoy G1 puede inferir huecos por busqueda y endpoints profundos, p
 7. Implementar world tick apply real con transaccion, bloqueo por combate activo, expiracion de misiones y restock controlado.
 8. Implementar venta/compra transaccional y fiado profundo solo cuando se disene el flujo de acciones economicas.
 9. Implementar propagacion avanzada de rumores y expiracion/consecuencias de misiones dentro del world tick, no por tiempo real.
-10. Convertir `auditLiveCoverage.js` en chequeo recurrente y, mas adelante, respaldarlo con `/api/admin/coverage-summary`.
+10. Probar `docs/openapi-gpt-action.json` en GPT Builder Preview y cerrar G23 con pruebas de formato/acciones.
+11. Convertir `auditLiveCoverage.js` en chequeo recurrente y, mas adelante, respaldarlo con `/api/admin/coverage-summary`.

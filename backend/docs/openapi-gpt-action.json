@@ -1,0 +1,1052 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Isekai Lucas Engine GPT Actions",
+    "version": "0.22.0",
+    "description": "Schema normal para GPT Actions. Expone endpoints de lectura, busqueda, preview y mutacion central controlada. No expone rollback, admin ni mutadores peligrosos de combate/misiones."
+  },
+  "servers": [
+    {
+      "url": "https://isekai-lucas-engine.onrender.com"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key"
+      }
+    },
+    "schemas": {
+      "GenericResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "PreviewResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "preview": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "ApplyTurnRequest": {
+        "type": "object",
+        "properties": {
+          "gameId": {
+            "type": "string",
+            "default": "isekai_lucas_main"
+          },
+          "actionSummary": {
+            "type": "string"
+          },
+          "timeAdvance": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+              },
+              "to": {
+                "type": "string",
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+              }
+            }
+          },
+          "lucasPatch": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "inventoryPatch": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "skillPatch": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Health check publico del backend.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Backend disponible.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/context/full": {
+      "get": {
+        "operationId": "getFullContext",
+        "summary": "Obtiene estado vivo cercano: GameState, ubicacion, NPCs cercanos, rumores, tiendas, misiones y combate.",
+        "responses": {
+          "200": {
+            "description": "Contexto vivo cercano.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search/db": {
+      "get": {
+        "operationId": "searchDatabase",
+        "summary": "Busca entidades vivas en MongoDB, incluyendo NPCs, locations, rumores, items, shops, misiones, enemigos y eventos.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultados de busqueda DB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search/docs": {
+      "get": {
+        "operationId": "searchDocs",
+        "summary": "Busca chunks indexados de rules_engine.md y world_bible.md.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultados de busqueda documental.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/npcs/{npcId}/full": {
+      "get": {
+        "operationId": "getNpcFull",
+        "summary": "Obtiene ficha completa de un NPC.",
+        "parameters": [
+          {
+            "name": "npcId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "NPC completo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/locations/{locationId}/full": {
+      "get": {
+        "operationId": "getLocationFull",
+        "summary": "Obtiene ficha completa de una ubicacion.",
+        "parameters": [
+          {
+            "name": "locationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ubicacion completa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/turn/apply": {
+      "post": {
+        "operationId": "applyTurn",
+        "summary": "Aplica una accion canonica validada. Usar solo cuando corresponde mutar estado de partida.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyTurnRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Turno aplicado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Mutacion rechazada por validacion."
+          }
+        }
+      }
+    },
+    "/api/economy/shops": {
+      "get": {
+        "operationId": "listShops",
+        "summary": "Lista shops vivos.",
+        "parameters": [
+          {
+            "name": "locationId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "regionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shops vivos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/economy/shops/{shopId}/stock": {
+      "get": {
+        "operationId": "getShopStock",
+        "summary": "Obtiene stock de un shop.",
+        "parameters": [
+          {
+            "name": "shopId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stock vivo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/economy/items/{itemId}": {
+      "get": {
+        "operationId": "getItem",
+        "summary": "Obtiene item de catalogo.",
+        "parameters": [
+          {
+            "name": "itemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Item de catalogo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/missions/board": {
+      "get": {
+        "operationId": "getMissionBoard",
+        "summary": "Consulta cartelera de misiones sin aceptar nada.",
+        "parameters": [
+          {
+            "name": "rank",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "riskLevel",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sourceFactionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Misiones consultables.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/missions/{missionId}": {
+      "get": {
+        "operationId": "getMissionDetail",
+        "summary": "Consulta detalle de una mision sin aceptarla.",
+        "parameters": [
+          {
+            "name": "missionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detalle de mision.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/combat/actions": {
+      "get": {
+        "operationId": "listCombatActions",
+        "summary": "Lista acciones de combate disponibles para preview.",
+        "responses": {
+          "200": {
+            "description": "Acciones de combate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/combat/enemies": {
+      "get": {
+        "operationId": "listCombatEnemies",
+        "summary": "Lista templates de enemigos.",
+        "responses": {
+          "200": {
+            "description": "Enemigos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/combat/enemies/{enemyId}": {
+      "get": {
+        "operationId": "getCombatEnemy",
+        "summary": "Obtiene template de enemigo.",
+        "parameters": [
+          {
+            "name": "enemyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Enemigo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/combat/encounters/active": {
+      "get": {
+        "operationId": "listActiveCombatEncounters",
+        "summary": "Lista combates activos.",
+        "responses": {
+          "200": {
+            "description": "Combates activos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/combat/encounters/{encounterId}": {
+      "get": {
+        "operationId": "getCombatEncounter",
+        "summary": "Obtiene combate por id.",
+        "parameters": [
+          {
+            "name": "encounterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Combate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/combat/encounters/{encounterId}/actions/preview": {
+      "post": {
+        "operationId": "previewCombatAction",
+        "summary": "Previsualiza una accion de combate sin mutar estado, cerrar combate ni dar loot.",
+        "parameters": [
+          {
+            "name": "encounterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["actionType"],
+                "properties": {
+                  "gameId": {
+                    "type": "string"
+                  },
+                  "actionType": {
+                    "type": "string"
+                  },
+                  "params": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Preview de accion de combate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/travel/routes": {
+      "get": {
+        "operationId": "listTravelRoutes",
+        "summary": "Lista rutas de viaje.",
+        "responses": {
+          "200": {
+            "description": "Rutas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/travel/routes/{routeId}": {
+      "get": {
+        "operationId": "getTravelRoute",
+        "summary": "Obtiene una ruta de viaje.",
+        "parameters": [
+          {
+            "name": "routeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ruta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/travel/preview": {
+      "post": {
+        "operationId": "previewTravel",
+        "summary": "Previsualiza viaje sin mover a Lucas ni crear encuentros.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "gameId": {
+                    "type": "string"
+                  },
+                  "fromLocationId": {
+                    "type": "string"
+                  },
+                  "toLocationId": {
+                    "type": "string"
+                  },
+                  "routeId": {
+                    "type": "string"
+                  },
+                  "conditions": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Preview de viaje.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/world/tick/preview": {
+      "post": {
+        "operationId": "previewWorldTick",
+        "summary": "Previsualiza avance offscreen sin mutar mundo.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fromDay": {
+                    "type": "integer"
+                  },
+                  "fromTime": {
+                    "type": "string"
+                  },
+                  "toDay": {
+                    "type": "integer"
+                  },
+                  "toTime": {
+                    "type": "string"
+                  },
+                  "dryRun": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Preview de world tick.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/contracts/active": {
+      "get": {
+        "operationId": "getActiveJobContract",
+        "summary": "Consulta contrato laboral activo.",
+        "responses": {
+          "200": {
+            "description": "Contrato activo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/shifts/available": {
+      "get": {
+        "operationId": "getAvailableJobShifts",
+        "summary": "Lista turnos laborales disponibles.",
+        "responses": {
+          "200": {
+            "description": "Turnos disponibles.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/shifts/{shiftId}/preview": {
+      "post": {
+        "operationId": "previewJobShift",
+        "summary": "Previsualiza turno laboral sin pagar ni mutar estado.",
+        "parameters": [
+          {
+            "name": "shiftId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Preview de turno.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/needs/activity-cost/preview": {
+      "post": {
+        "operationId": "previewActivityCost",
+        "summary": "Previsualiza coste biologico por actividad sin mutar estado.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "category": {
+                    "type": "string"
+                  },
+                  "minutes": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Preview de coste biologico.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/progression/skills/preview": {
+      "post": {
+        "operationId": "previewSkillProgression",
+        "summary": "Previsualiza EXP/level-up sin mutar skill real.",
+        "responses": {
+          "200": {
+            "description": "Preview de skill.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/magic/disciplines": {
+      "get": {
+        "operationId": "listMagicDisciplines",
+        "summary": "Lista disciplinas magicas.",
+        "responses": {
+          "200": {
+            "description": "Disciplinas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/magic/techniques": {
+      "get": {
+        "operationId": "listMagicTechniques",
+        "summary": "Lista tecnicas y plantillas magicas.",
+        "responses": {
+          "200": {
+            "description": "Tecnicas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/magic/techniques/{techniqueId}": {
+      "get": {
+        "operationId": "getMagicTechnique",
+        "summary": "Obtiene tecnica magica.",
+        "parameters": [
+          {
+            "name": "techniqueId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tecnica magica.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/magic/practice/preview": {
+      "post": {
+        "operationId": "previewMagicPractice",
+        "summary": "Previsualiza practica magica sin gastar MP ni aprender hechizos.",
+        "responses": {
+          "200": {
+            "description": "Preview de practica magica.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/weather/current": {
+      "get": {
+        "operationId": "getCurrentWeather",
+        "summary": "Obtiene clima actual por region.",
+        "parameters": [
+          {
+            "name": "regionId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "default": "region_hoshimori"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Clima actual.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/weather/effects/preview": {
+      "post": {
+        "operationId": "previewWeatherEffects",
+        "summary": "Previsualiza efectos de clima sobre ruta/terreno sin mutar estado.",
+        "responses": {
+          "200": {
+            "description": "Preview de clima.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/checkpoints": {
+      "get": {
+        "operationId": "listCheckpoints",
+        "summary": "Lista checkpoints disponibles.",
+        "responses": {
+          "200": {
+            "description": "Checkpoints.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createCheckpoint",
+        "summary": "Crea checkpoint manual. No usar durante consultas puras.",
+        "responses": {
+          "200": {
+            "description": "Checkpoint creado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/checkpoints/{checkpointId}": {
+      "get": {
+        "operationId": "getCheckpoint",
+        "summary": "Obtiene checkpoint por id.",
+        "parameters": [
+          {
+            "name": "checkpointId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Checkpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "x-deliberately-excluded": [
+    "POST /api/checkpoints/{checkpointId}/rollback",
+    "POST /api/combat/encounters/start",
+    "POST /api/combat/encounters/{encounterId}/round",
+    "POST /api/missions/expire-available",
+    "POST /api/missions/{missionId}/accept",
+    "POST /api/missions/{missionId}/report",
+    "POST /api/economy/restock-daily"
+  ]
+}

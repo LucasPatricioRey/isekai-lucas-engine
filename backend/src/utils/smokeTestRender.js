@@ -140,6 +140,21 @@ async function runSmokeTests() {
   if (magicTechniques.techniques.length < 6) throw new Error("magic techniques devolvio menos de 6 tecnicas");
   console.log("OK /api/magic/techniques");
 
+  const weatherCurrent = await request("/api/weather/current?regionId=region_hoshimori");
+  if (!weatherCurrent.ok) throw new Error("weather current fallo");
+  if (!weatherCurrent.weather?.weatherId) throw new Error("weather current no devolvio weather");
+  console.log("OK /api/weather/current");
+
+  const weatherPreview = await post("/api/weather/effects/preview", {
+    routeType: "road",
+    terrain: ["mud_road"],
+  });
+  if (!weatherPreview.ok) throw new Error("weather effects preview fallo");
+  if (weatherPreview.preview?.willMutateGameState !== false) {
+    throw new Error("weather effects preview no es dryRun");
+  }
+  console.log("OK /api/weather/effects/preview");
+
   const travelRoutes = await request("/api/travel/routes");
   if (!travelRoutes.ok) throw new Error("travel routes fallo");
   if (!Array.isArray(travelRoutes.routes)) throw new Error("travel routes no devolvio routes");

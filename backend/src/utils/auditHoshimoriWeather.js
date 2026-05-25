@@ -1,16 +1,15 @@
 try {
   require("dotenv").config({ quiet: true });
 } catch {
-  // dotenv is optional for API-only checks, but MongoDB is required for full G18 checks.
+  // dotenv is optional for API-only checks, but MongoDB is required for full G13 checks.
 }
 
 const mongoose = require("mongoose");
 
 const CombatEncounter = require("../models/CombatEncounter");
 const GameState = require("../models/GameState");
-const Location = require("../models/Location");
-const TravelRoute = require("../models/TravelRoute");
-const { MARKER_TAGS, SOURCE, routes: EXPECTED_ROUTES } = require("../seeds/seedHoshimoriRoutes");
+const WeatherState = require("../models/WeatherState");
+const { MARKER_TAGS, SOURCE, weatherState: EXPECTED_WEATHER } = require("../seeds/seedHoshimoriWeather");
 
 const BASE_URL =
   process.env.AUDIT_BASE_URL ||
@@ -88,7 +87,7 @@ function summarizeGameState(context) {
 
 async function assertMongoAvailable() {
   if (!process.env.MONGODB_URI) {
-    throw new Error("MONGODB_URI is required for audit:hoshimori-routes.");
+    throw new Error("MONGODB_URI is required for audit:hoshimori-weather.");
   }
 
   await mongoose.connect(process.env.MONGODB_URI);
@@ -97,34 +96,30 @@ async function assertMongoAvailable() {
 async function main() {
   const issues = [];
 
-  console.log("Hoshimori routes audit");
+  console.log("Hoshimori weather audit");
   console.log(`Base URL: ${BASE_URL}`);
   console.log("Mode: read-only API and MongoDB queries.");
 
-  const [beforeContext, activeCombats, routesEndpoint, marketPreview, guildPreview, forestPreview, rainPreview] =
+  const [beforeContext, activeCombats, currentWeather, muddyPreview, fogPreview, travelPreview] =
     await Promise.all([
       request("/api/context/full"),
       request("/api/combat/encounters/active"),
-      request("/api/travel/routes"),
-      post("/api/travel/preview", {
-        fromLocationId: "loc_hoshimori_grulla_azul",
-        toLocationId: "loc_hoshimori_market",
-        conditions: { ignoreCurrentWeather: true },
+      request("/api/weather/current?regionId=region_hoshimori"),
+      post("/api/weather/effects/preview", {
+        regionId: "region_hoshimori",
+        routeType: "road",
+        terrain: ["mud_road"],
+      }),
+      post("/api/weather/effects/preview", {
+        regionId: "region_hoshimori",
+        routeType: "wilderness",
+        terrain: ["forest"],
+        condition: "fog",
       }),
       post("/api/travel/preview", {
         fromLocationId: "loc_hoshimori_grulla_azul",
-        toLocationId: "loc_hoshimori_guild",
-        conditions: { ignoreCurrentWeather: true },
-      }),
-      post("/api/travel/preview", {
-        fromLocationId: "loc_hoshimori_grulla_azul",
-        toLocationId: "loc_hoshimori_forest_whispers_edge",
-        conditions: { ignoreCurrentWeather: true },
-      }),
-      post("/api/travel/preview", {
-        fromLocationId: "loc_hoshimori_grulla_azul",
-        toLocationId: "loc_hoshimori_market",
-        conditions: { weather: "light_rain" },
+        toLocationId: "loc_hoshimori_road_to_mill",
+        conditions: {},
       }),
     ]);
   const afterContext = await request("/api/context/full");
@@ -156,22 +151,23 @@ async function main() {
   assertEqual(issues, "post-preview money unchanged", afterState.moneyCopper, beforeState.moneyCopper);
   assertEqual(issues, "post-preview MP unchanged", afterState.mpCurrent, beforeState.mpCurrent);
 
-  section("Travel API Coverage");
-  const expectedRouteIds = EXPECTED_ROUTES.map((route) => route.routeId);
-  const apiRouteIds = new Set((routesEndpoint.routes || []).map((route) => route.routeId));
-
+  section("Weather API Coverage");
+  assertEqual(issues, "current weather id", currentWeather.weather?.weatherId, EXPECTED_WEATHER.weatherId);
+  assertEqual(issues, "current weather condition", currentWeather.weather?.currentCondition, "cloudy");
+  assertEqual(issues, "weather effects preview dryRun", muddyPreview.preview?.dryRun, true);
+  assertEqual(issues, "muddy road travel multiplier", muddyPreview.preview?.travelTimeMultiplier, 1.25);
   assertTrue(
     issues,
-    "routes endpoint has expected G18 routes",
-    expectedRouteIds.every((routeId) => apiRouteIds.has(routeId)),
-    `${apiRouteIds.size} routes returned`
+    "muddy road preview has configured effect",
+    (muddyPreview.preview?.effects || []).some((effect) => effect.type === "travel_time_multiplier")
   );
-  assertEqual(issues, "Grulla Azul -> market minutes", marketPreview.preview?.timing?.finalMinutes, 15);
-  assertEqual(issues, "Grulla Azul -> guild minutes", guildPreview.preview?.timing?.finalMinutes, 20);
-  assertEqual(issues, "Grulla Azul -> forest edge minutes", forestPreview.preview?.timing?.finalMinutes, 90);
-  assertEqual(issues, "light rain rounds Grulla Azul -> market to 20", rainPreview.preview?.timing?.finalMinutes, 20);
-  assertEqual(issues, "rain modifier count", rainPreview.preview?.appliedModifiers?.length, 1);
-  assertEqual(issues, "travel preview mutates state", marketPreview.preview?.willMutateGameState, false);
+  assertTrue(
+    issues,
+    "fog preview produces visibility warning",
+    (fogPreview.preview?.effects || []).some((effect) => effect.type === "visibility_warning")
+  );
+  assertEqual(issues, "travel preview current weather rounds road to 35", travelPreview.preview?.timing?.finalMinutes, 35);
+  assertEqual(issues, "travel preview mutates state", travelPreview.preview?.willMutateGameState, false);
 
   await assertMongoAvailable();
 
@@ -188,38 +184,36 @@ async function main() {
   assertEqual(issues, "db MP current", gameState.lucasStatus?.mp?.current, EXPECTED_STATE.mpCurrent);
   assertEqual(issues, "db active combat count", activeCombatCount, EXPECTED_STATE.activeCombatCount);
 
-  section("G18 Data Coverage");
-  const liveRoutes = await TravelRoute.find({ routeId: { $in: expectedRouteIds } }).lean();
-  const markerCount = await TravelRoute.countDocuments({
+  section("G13 Data Coverage");
+  const markerCount = await WeatherState.countDocuments({
     source: SOURCE,
     tags: { $all: MARKER_TAGS },
   });
-  const liveRouteIds = new Set(liveRoutes.map((route) => route.routeId));
-  const missingRoutes = expectedRouteIds.filter((routeId) => !liveRouteIds.has(routeId));
-  const locationIds = Array.from(new Set(EXPECTED_ROUTES.flatMap((route) => [route.fromLocationId, route.toLocationId])));
-  const liveLocations = await Location.find({ locationId: { $in: locationIds } }).select("locationId").lean();
-  const liveLocationIds = new Set(liveLocations.map((location) => location.locationId));
-  const missingLocations = locationIds.filter((locationId) => !liveLocationIds.has(locationId));
+  const liveWeather = await WeatherState.findOne({ weatherId: EXPECTED_WEATHER.weatherId }).lean();
 
-  assertEqual(issues, "expected G18 route count by id", liveRoutes.length, EXPECTED_ROUTES.length);
-  assertEqual(issues, "G18 route marker count", markerCount, EXPECTED_ROUTES.length);
-  assertEqual(issues, "missing route count", missingRoutes.length, 0);
-  assertEqual(issues, "missing route location refs", missingLocations.length, 0);
+  assertEqual(issues, "G13 weather marker count", markerCount, 1);
+  assertTrue(issues, "live weather exists", Boolean(liveWeather));
+  assertEqual(issues, "live weather effect count", liveWeather?.effects?.length || 0, EXPECTED_WEATHER.effects.length);
+  assertTrue(
+    issues,
+    "no major weather event tag present",
+    (liveWeather?.tags || []).includes("no_major_event")
+  );
 
   section("Audit Result");
   if (issues.length > 0) {
-    console.error("Hoshimori routes audit FAILED:");
+    console.error("Hoshimori weather audit FAILED:");
     for (const issue of issues) console.error(`- ${issue}`);
     await mongoose.disconnect();
     process.exit(1);
   }
 
-  console.log("Hoshimori routes audit OK. No state was mutated.");
+  console.log("Hoshimori weather audit OK. No state was mutated.");
   await mongoose.disconnect();
 }
 
 main().catch(async (error) => {
-  console.error("Hoshimori routes audit failed unexpectedly:", error.message);
+  console.error("Hoshimori weather audit failed unexpectedly:", error.message);
   if (error.response) console.error(JSON.stringify(error.response, null, 2));
   await mongoose.disconnect();
   process.exit(1);
