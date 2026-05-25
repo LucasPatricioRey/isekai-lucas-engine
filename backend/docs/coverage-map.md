@@ -2,7 +2,7 @@
 
 Fecha de auditoria: 2026-05-25  
 Backend vivo auditado: `https://isekai-lucas-engine.onrender.com`  
-Modo: solo lectura. No se ejecutaron seeds, rollbacks, aceptaciones de mision, creacion de checkpoints ni mutaciones de partida.
+Modo G1 original: solo lectura. Actualizaciones posteriores G2/G3/G4 ejecutaron seeds idempotentes de cobertura sin rollbacks, aceptaciones de mision, creacion de checkpoints ni mutaciones de partida.
 
 ## Resumen ejecutivo
 
@@ -12,7 +12,7 @@ G1 compara tres niveles:
 2. Representacion en repo: modelos, seeds, servicios, rutas, smoke tests y docs indexables.
 3. Representacion viva en Render/MongoDB usando endpoints protegidos por `x-api-key`.
 
-Hallazgo principal: el repo ya tiene una base tecnica amplia y, tras G2/G3, MongoDB vivo contiene el nucleo de Hoshimori: 25 NPCs esperados y 25 ubicaciones principales. El estado canon de partida sigue Dia 10 12:00. Lo que todavia no cubre el 100% del texto son relaciones NPC-NPC, memorias base, rumores, economia amplia, misiones ampliadas, magia, viajes y world tick.
+Hallazgo principal: el repo ya tiene una base tecnica amplia y, tras G2/G3/G4, MongoDB vivo contiene el nucleo de Hoshimori: 25 NPCs esperados, 25 ubicaciones principales, 12 relaciones NPC-NPC base y 4 memorias canonicas base. El estado canon de partida sigue Dia 10 12:00. Lo que todavia no cubre el 100% del texto son rumores, relaciones avanzadas/romance, secretos, economia amplia, misiones ampliadas, magia, viajes y world tick.
 
 ## Estado vivo confirmado
 
@@ -105,12 +105,23 @@ Contenido preparado por el seed G4:
   - Yara conoce a Lucas como trabajador de la posada.
   - Garrick conoce a Lucas por voluntariado/trato de gremio.
 
-Estado de ejecucion en este entorno de Codex:
+Resultado vivo tras ejecutar G4 con `MONGODB_URI`:
 
 - `npm run check`: OK.
-- `npm run seed:hoshimori-social`: pendiente/no ejecutable contra MongoDB vivo sin `MONGODB_URI`.
-- `npm run audit:hoshimori-social`: requiere `MONGODB_URI` para verificar la coleccion `NpcRelationship`.
-- `npm run smoke`: debe seguir siendo read-only.
+- `npm run smoke`: OK.
+- `npm run seed:hoshimori-social`: OK.
+- `npm run audit:hoshimori-social`: OK.
+- `npm run audit:coverage`: OK.
+- `npm run audit:hoshimori-core`: OK.
+- GameState sigue Dia 10, hora 12:00, ubicacion `loc_hoshimori_grulla_azul_comedor`.
+- `moneyCopper` sigue 1470.
+- Combates activos: 0.
+- Relaciones G4 esperadas: 12/12 pares existentes.
+- Relaciones G4 con marcador: 12.
+- Memorias G4 esperadas: 4/4 existentes.
+- Rumores creados por G4: 0.
+- Relaciones de romance: 0.
+- `relationshipWithLucas` de Roberto/Fern/Yara/Garrick no fue reducido.
 
 ## Tabla de cobertura
 
@@ -138,8 +149,8 @@ Estados usados:
 | Entrenamiento fisico, trabajo y viaje | `rules_engine.md` 15 | Deltas por `turn/apply`; no hay `Job`, `Route`, `TravelService` | Trabajo actual en flags, sin contrato formal | partial | `flags.currentJob: La Grulla Azul`; no hay endpoints de jobs | G8 y G18 |
 | Combate narrativo con numeros | `rules_engine.md` 16; `world_bible.md` 16 | `EnemyTemplate`, `CombatEncounter`, `combatService`, rutas `/api/combat/*` | 5 enemigos vivos; 0 combates activos | seeded_mongodb | `audit:coverage`: 5 enemy templates, active combats 0 | G12: acciones, armas, multiples enemigos, loot/proof |
 | Gremio, MG y misiones | `rules_engine.md` 17; `world_bible.md` 18 | `Mission`, `missionService`, rutas board/accept/report/expire | 1 mision Porcelana disponible | partial | `mission_d10_cleanup_post_rain` viva, proof pending | G7: templates/cartelera amplia y completar flujo de recompensa |
-| NPCs, conocimiento, escena viva | `rules_engine.md` 18; `world_bible.md` 11 | `Npc`, `NpcMemory`, `RoutineOverride`, `NpcRelationship`, `getNpcFull`; seeds core/social preparados | 25 NPCs de Hoshimori vivos; memorias G4 preparadas, no confirmadas vivas desde este entorno | partial | `audit:hoshimori-core` OK reportado; `seedHoshimoriSocialGraph.js` crea 4 memorias base sin rumores ni secretos nuevos | Ejecutar `seed:hoshimori-social` con `MONGODB_URI` vivo y luego `audit:hoshimori-social` |
-| Relaciones, confianza, romance | `rules_engine.md` 19; `world_bible.md` 12 | `relationshipWithLucas` en `Npc`; `NpcRelationship` para NPC-NPC; lecturas en context/npc/search | Seed G4 preparado con 12 relaciones seguras; conteo corregido por pares esperados | partial | Modelo nuevo con par normalizado; seed backfillea `source`/`tags`; audit cuenta 12 pares y evita romance/rumores | Confirmar vivo con `audit:hoshimori-social`; romance queda fuera hasta que haya canon explicito |
+| NPCs, conocimiento, escena viva | `rules_engine.md` 18; `world_bible.md` 11 | `Npc`, `NpcMemory`, `RoutineOverride`, `NpcRelationship`, `getNpcFull`; seeds core/social preparados | 25 NPCs de Hoshimori vivos; 4 memorias G4 vivas | partial | `audit:hoshimori-core` OK; `audit:hoshimori-social` OK; memorias G4 4/4, sin rumores ni secretos nuevos | G5 rumores; luego ampliar memoria privada solo con canon verificable |
+| Relaciones, confianza, romance | `rules_engine.md` 19; `world_bible.md` 12 | `relationshipWithLucas` en `Npc`; `NpcRelationship` para NPC-NPC; lecturas en context/npc/search | 12 relaciones NPC-NPC base de Hoshimori vivas y marcadas | partial | `audit:hoshimori-social`: 12/12 pares, 12 con `source`/`tags`, romance relationships 0, relationshipWithLucas no reducido | Mantener romance fuera hasta que haya canon explicito; ampliar tensiones/secretos solo por eventos |
 | Rumores y propagacion | `rules_engine.md` 20.1; `world_bible.md` 17 | `Rumor`, `applyRumorPatches`, search/context consultan rumores | Sin rumores encontrados por busquedas vivas | partial | `/api/search/db?q=a` devuelve `rumors=0`; `search/db?q=rumor` devuelve 0 | G5: seed inicial de rumores + propagacion simple |
 | Reputacion y facciones | `rules_engine.md` 20.2-20.3; `world_bible.md` 10, 15 | `Faction`, links de NPC, reputacion con Lucas | 3 facciones aparecen con query amplia | partial | `/api/search/db?q=a` devuelve `factions=3` | G15: ley, testigos, acceso, sospecha |
 | Inventario, propiedad y objetos | `rules_engine.md` 21 | Inventario en `GameState`, `Item`, validacion de item existente al agregar | Inventario Lucas vivo; 5 items base en seed | partial | `turn/apply` rechaza item inexistente al agregar | Completar catalogo G6/G17 |
@@ -147,7 +158,7 @@ Estados usados:
 | Pipeline de acciones complejas | `rules_engine.md` 23-24 | `turn/apply` procesa patches; no orquestador de pipeline | Patches funcionan si GPT los manda bien | partial | Endpoint existe, pero validacion semantica es incompleta | Mantener GPT como planificador, mover reglas criticas al backend |
 | Hoshimori: ubicaciones principales | `world_bible.md` 6.3, 19 | `Location` model; seeds iniciales/world essentials; `seedHoshimoriCore.js` prepara 25 ubicaciones canonicas | 25/25 ubicaciones esperadas vivas | seeded_mongodb | `seed:hoshimori-core` OK y `audit:hoshimori-core` OK reportados; missing locations 0; GameState intacto | Mantener auditoria como regresion; G6/G7 pueden apoyarse en estas locations |
 | Hoshimori: roster base 25 NPCs | `world_bible.md` 11 | `seedInitialState` tiene 4; `seedHoshimoriRoster` prepara 21 mas; `seedHoshimoriCore.js` consolida 25 NPCs con rutinas base | 25/25 NPCs esperados vivos | seeded_mongodb | `seed:hoshimori-core` OK y `audit:hoshimori-core` OK reportados; missing NPCs 0; Narek/Pavo/Borin/Liora aparecen en `search/db` | G4: relaciones NPC-NPC, memorias base y conocimiento no omnisciente |
-| Hoshimori: red social base | `world_bible.md` 12 | `NpcRelationship`, `seedHoshimoriSocialGraph.js`, `auditHoshimoriSocialGraph.js` | Pendiente de re-ejecutar seed/audit vivo tras fix de conteo | partial | 12 pares NPC-NPC definidos; 4 memorias canonicas base; seed backfillea marcador; audit verifica GameState/dinero/combates y que no haya romance/rumores G4 | Ejecutar seed/audit con `MONGODB_URI`; luego marcar `seeded_mongodb` si pasa |
+| Hoshimori: red social base | `world_bible.md` 12 | `NpcRelationship`, `seedHoshimoriSocialGraph.js`, `auditHoshimoriSocialGraph.js` | 12/12 relaciones base y 4/4 memorias G4 vivas | seeded_mongodb | `seed:hoshimori-social` OK; `audit:hoshimori-social` OK; GameState Dia 10 12:00, dinero 1470, combates 0; rumores G4 0; romance 0 | Usar como base para G5 rumores; no agregar secretos/romance sin evento canon |
 | Region cercana a Hoshimori | `world_bible.md` 13 | Docs indexados; algunas locations core cercanas y enemy zones textuales | Camino del Molino, molino, bosque y colinas base existen como locations core | partial | `audit:hoshimori-core` OK reportado para 25 locations; faltan rutas regionales, aldeas/granjas y rosters externos | G18 y G19 despues de Hoshimori economico/social |
 | Regiones y ciudades mayores | `world_bible.md` 14 | Docs indexados | No entidades vivas confirmadas | future_optional | `search/docs` encuentra Valdoria; DB solo faccion Corona | G19 post-Hoshimori |
 | Amenazas, fauna y monstruos | `world_bible.md` 16 | `EnemyTemplate`, `seedEnemyTemplates` | 5 enemigos vivos | seeded_mongodb | `search/db?q=lobo` devuelve 1 enemyTemplate; `/api/combat/enemies` devuelve 5 | Ampliar con zonas/loot en G12/G17 |
@@ -167,9 +178,9 @@ Estados usados:
 | Afirmacion | Resultado | Evidencia |
 |---|---|---|
 | La DB viva tiene 25 NPCs de Hoshimori. | VERDADERA tras G2/G3 | `seed:hoshimori-core` OK y `audit:hoshimori-core` OK reportados: 25/25 NPCs, missing NPCs 0; Narek/Pavo/Borin/Liora aparecen en `search/db`. |
-| `context/full` devuelve solo NPCs cercanos, no todo el roster. | VERDADERA | `context/full` devuelve 3 NPCs cercanos: Fern, Roberto Valen, Yara Mils. |
+| `context/full` devuelve solo NPCs cercanos, no todo el roster. | VERDADERA | `context/full` devuelve 4 NPCs cercanos tras G4/G2-G3: Fern, Joren Pell, Roberto Valen, Yara Mils. |
 | Faltan ubicaciones importantes de Hoshimori como Location. | FALSA tras G2/G3 para el core definido | `seed:hoshimori-core` OK y `audit:hoshimori-core` OK reportados: 25/25 locations, missing locations 0. Quedan fuera del core rutas regionales/otras aldeas. |
-| Hay modelos que existen pero colecciones vacias. | VERDADERA con limite de evidencia | Existen `Rumor` y `NpcMemory`; query amplia `/api/search/db?q=a` devuelve `rumors=0` y `npcMemories=0`. Sin endpoint de conteo, esto no prueba matematicamente todas las colecciones, pero si ausencia viva observable por API publica. |
+| Hay modelos que existen pero colecciones vacias. | VERDADERA con limite de evidencia | `Rumor` sigue sin datos G4 y `audit:hoshimori-social` confirma rumores creados por G4 = 0. `NpcMemory` ya no esta vacia para el nucleo G4: 4 memorias vivas. Sin endpoint de conteo, esto no prueba matematicamente todas las colecciones. |
 | El GPT puede consultar docs completos desde `/api/search/docs`. | VERDADERA | `search/docs?q=romance` devuelve 4 documentos indexados; otras consultas como Valdoria/Bosque tambien devuelven chunks. |
 | El combate base esta disponible en Render. | VERDADERA | `/api/combat/enemies` devuelve 5 templates: lobo, rata gigante, avispa roja, bandido menor, jabali gris. |
 | No hay combates activos fantasma. | VERDADERA | `/api/combat/encounters/active` devuelve 0. |
@@ -218,9 +229,7 @@ Justificacion: hoy G1 puede inferir huecos por busqueda y endpoints profundos, p
 
 ## Proximas acciones recomendadas
 
-1. Ejecutar `npm run seed:hoshimori-social` en entorno con `MONGODB_URI` vivo.
-2. Ejecutar `npm run audit:hoshimori-social`; si pasa, marcar G4 como `seeded_mongodb`.
-3. Usar `npm run audit:hoshimori-core` y `npm run audit:hoshimori-social` como regresiones read-only antes de G5/G6.
-4. Agregar rumores iniciales y propagacion simple en G5.
-5. Expandir economia/misiones sobre las locations y NPCs ya vivos.
-6. Convertir `auditLiveCoverage.js` en chequeo recurrente y, mas adelante, respaldarlo con `/api/admin/coverage-summary`.
+1. Usar `npm run audit:hoshimori-core` y `npm run audit:hoshimori-social` como regresiones read-only antes de G5/G6.
+2. Agregar rumores iniciales y propagacion simple en G5.
+3. Expandir economia/misiones sobre las locations, NPCs y relaciones ya vivas.
+4. Convertir `auditLiveCoverage.js` en chequeo recurrente y, mas adelante, respaldarlo con `/api/admin/coverage-summary`.
