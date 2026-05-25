@@ -2,6 +2,7 @@
 const Shop = require("../models/Shop");
 const ShopStock = require("../models/ShopStock");
 const Item = require("../models/Item");
+const Location = require("../models/Location");
 const WorldEvent = require("../models/WorldEvent");
 
 function isSupplyBlocked(stock, activeEvents) {
@@ -44,6 +45,40 @@ async function getShopStock(shopId) {
     stocks,
     items,
   };
+}
+
+async function listShops({ locationId = "", regionId = "", status = "" } = {}) {
+  const query = {};
+
+  if (locationId) {
+    query.locationId = locationId;
+  }
+
+  if (status) {
+    query.status = status;
+  }
+
+  if (regionId) {
+    const locations = await Location.find({ regionId }).select("locationId").lean();
+    const locationIds = locations.map((location) => location.locationId);
+    query.locationId = locationId ? locationId : { $in: locationIds };
+  }
+
+  const shops = await Shop.find(query).sort({ locationId: 1, name: 1 }).lean();
+
+  return { shops };
+}
+
+async function getItem(itemId) {
+  const item = await Item.findOne({ itemId }).lean();
+
+  if (!item) {
+    const error = new Error(`No existe item con id: ${itemId}`);
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return { item };
 }
 
 async function restockDaily({ gameId = "isekai_lucas_main", dryRun = true, force = false }) {
@@ -138,5 +173,7 @@ async function restockDaily({ gameId = "isekai_lucas_main", dryRun = true, force
 
 module.exports = {
   getShopStock,
+  listShops,
+  getItem,
   restockDaily,
 };

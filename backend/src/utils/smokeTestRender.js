@@ -60,6 +60,21 @@ async function runSmokeTests() {
   if (!Array.isArray(economy.stocks)) throw new Error("economy stock no devolvio stocks");
   console.log("OK /api/economy/shops/.../stock");
 
+  const shops = await request("/api/economy/shops");
+  if (!shops.ok) throw new Error("economy shops fallo");
+  if (!Array.isArray(shops.shops)) throw new Error("economy shops no devolvio shops");
+  console.log("OK /api/economy/shops");
+
+  const borinStock = await request("/api/economy/shops/shop_borin_smithy/stock");
+  if (!borinStock.ok) throw new Error("borin stock fallo");
+  if (!Array.isArray(borinStock.stocks)) throw new Error("borin stock no devolvio stocks");
+  console.log("OK /api/economy/shops/shop_borin_smithy/stock");
+
+  const lioraStock = await request("/api/economy/shops/shop_liora_herbs/stock");
+  if (!lioraStock.ok) throw new Error("liora stock fallo");
+  if (!Array.isArray(lioraStock.stocks)) throw new Error("liora stock no devolvio stocks");
+  console.log("OK /api/economy/shops/shop_liora_herbs/stock");
+
   const missions = await request("/api/missions/board");
   if (!missions.ok) throw new Error("missions board fallo");
   if (!Array.isArray(missions.missions)) throw new Error("missions board no devolvio missions");

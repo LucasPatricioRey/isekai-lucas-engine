@@ -2,7 +2,7 @@
 
 Fecha de auditoria: 2026-05-25  
 Backend vivo auditado: `https://isekai-lucas-engine.onrender.com`  
-Modo G1 original: solo lectura. Actualizaciones posteriores G2/G3/G4/G5 ejecutaron seeds idempotentes de cobertura sin rollbacks, aceptaciones de mision, creacion de checkpoints ni mutaciones de partida.
+Modo G1 original: solo lectura. Actualizaciones posteriores G2/G3/G4/G5/G6 ejecutaron seeds idempotentes de cobertura sin rollbacks, aceptaciones de mision, creacion de checkpoints ni mutaciones de partida.
 
 ## Resumen ejecutivo
 
@@ -12,7 +12,7 @@ G1 compara tres niveles:
 2. Representacion en repo: modelos, seeds, servicios, rutas, smoke tests y docs indexables.
 3. Representacion viva en Render/MongoDB usando endpoints protegidos por `x-api-key`.
 
-Hallazgo principal: el repo ya tiene una base tecnica amplia y, tras G2/G3/G4/G5, MongoDB vivo contiene el nucleo de Hoshimori: 25 NPCs esperados, 25 ubicaciones principales, 12 relaciones NPC-NPC base, 4 memorias canonicas base y 8 rumores base activos. El estado canon de partida sigue Dia 10 12:00. Lo que todavia no cubre el 100% del texto son propagacion avanzada de rumores, relaciones avanzadas/romance, secretos, economia amplia, misiones ampliadas, magia, viajes y world tick.
+Hallazgo principal: el repo ya tiene una base tecnica amplia y, tras G2/G3/G4/G5/G6, MongoDB vivo contiene el nucleo de Hoshimori: 25 NPCs esperados, 25 ubicaciones principales, 12 relaciones NPC-NPC base, 4 memorias canonicas base, 8 rumores base activos, 36 items economicos, 9 shops y 39 filas de stock. El estado canon de partida sigue Dia 10 12:00. Lo que todavia no cubre el 100% del texto son venta/compra transaccional completa, propagacion avanzada de rumores, relaciones avanzadas/romance, secretos, misiones ampliadas, magia, viajes y world tick.
 
 ## Estado vivo confirmado
 
@@ -161,6 +161,49 @@ Resultado vivo tras ejecutar G5 con `MONGODB_URI`:
 - IDs de NPC/location/faction usados por rumores: 0 faltantes.
 - Rumores con romance, secretos privados o estado/certidumbre invalida: 0.
 
+## Actualizacion G6
+
+Se agregaron herramientas para sembrar y auditar la economia base de Hoshimori:
+
+- `src/seeds/seedHoshimoriEconomy.js`
+- `src/utils/auditHoshimoriEconomy.js`
+- scripts `seed:hoshimori-economy` y `audit:hoshimori-economy`
+
+Tambien se agregaron endpoints read-only:
+
+- `GET /api/economy/shops`
+- `GET /api/economy/items/:itemId`
+
+El smoke test ahora cubre:
+
+- `GET /api/economy/shops`
+- `GET /api/economy/shops/shop_borin_smithy/stock`
+- `GET /api/economy/shops/shop_liora_herbs/stock`
+
+Contenido vivo sembrado:
+
+- 36 items basicos: alimentos, medicina comun, herramientas/materiales, ropa/equipo, armas simples y servicios simples.
+- 9 shops/servicios: Pavo, La Grulla Azul, Borin, Liora, Sella, Hilda, Merek, gremio y templo.
+- 39 filas de stock inicial.
+- No hay objetos magicos comunes.
+- El seed preserva cantidades existentes con `$setOnInsert` para no resetear compras/stock vivo ya existente.
+
+Resultado vivo tras ejecutar G6 con `MONGODB_URI`:
+
+- `npm run check`: OK.
+- `npm run seed:hoshimori-economy`: OK.
+- `npm run smoke`: OK contra backend local con DB viva, para validar endpoints nuevos antes del redeploy de Render.
+- `npm run audit:hoshimori-economy`: OK contra backend local con DB viva.
+- `npm run audit:coverage`: OK.
+- `npm run audit:hoshimori-core`: OK.
+- `npm run audit:hoshimori-social`: OK.
+- `npm run audit:hoshimori-rumors`: OK.
+- GameState sigue Dia 10, hora 12:00, ubicacion `loc_hoshimori_grulla_azul_comedor`.
+- `moneyCopper` sigue 1470.
+- Combates activos: 0.
+- Pavo conserva racion pequena y racion normal.
+- Borin, Liora, Sella, Hilda y Merek tienen stock consultable.
+
 ## Tabla de cobertura
 
 Estados usados:
@@ -179,8 +222,8 @@ Estados usados:
 | Tiempo exacto y bloques | `rules_engine.md` 5 | `GameState.time`, `block`, `turnController.getBlockFromTime` | Dia 10 12:00, Mediodia | partial | `audit:coverage` confirma tiempo; `turn/apply` no permite retroceder dentro del dia | Agregar avance de dia y reglas de cambio de dia en G14/G9 |
 | Reloj biologico suavizado | `rules_engine.md` 6 | `GameState.biologicalClock`, deltas directos en `turn/apply` | `pendingAccumulation: []` | partial | Schema existe; no hay procesador estricto por hora | G9 antes de balance avanzado |
 | Vida, heridas y condiciones | `rules_engine.md` 7 | `GameState.lucasStatus`, heridas/condiciones, combate agrega heridas | Sin heridas activas | partial | Modelos y patches existen; validacion de causa depende del GPT | Endurecer validadores de heridas/condiciones |
-| Comidas, raciones y contrato | `rules_engine.md` 8 | `Item`, inventario inicial, comida/raciones en seed; no hay contrato laboral formal | Lucas tiene raciones; Pavo vende raciones | partial | Stock vivo Pavo: 8 raciones normales, 12 pequenas | Crear sistema de trabajos/contrato en G8 |
-| Dinero y comercio basico | `rules_engine.md` 9 | `Item`, `Shop`, `ShopStock`, `economyService`, `shopStockPatches` | 2 shops vivos, stock Pavo y Grulla | partial | `/api/economy/shops/shop_pavo_food_stall/stock` OK | Completar shops e items de Hoshimori en G6 |
+| Comidas, raciones y contrato | `rules_engine.md` 8 | `Item`, inventario inicial, comida/raciones en seed; no hay contrato laboral formal | Alimentos base vivos; Pavo, Grulla y Hilda tienen stock de comida | partial | G6: Pavo conserva racion pequena/normal; Grulla tiene comida/sopa/servicio de habitacion; Hilda pan simple/de viaje | Crear sistema de trabajos/contrato en G8 |
+| Dinero y comercio basico | `rules_engine.md` 9 | `Item`, `Shop`, `ShopStock`, `economyService`, `shopStockPatches`, `GET /api/economy/shops`, `GET /api/economy/items/:itemId` | 9 shops vivos, 36 items, 39 stocks | seeded_mongodb | `seed:hoshimori-economy` OK; `audit:hoshimori-economy` OK; Borin/Liora/Sella/Hilda/Merek consultables | G6 futuro/G16: venta transaccional, fiado profundo, precios variables sofisticados, bancos/deudas/impuestos |
 | Bancos, deudas, alquileres, impuestos | `rules_engine.md` 9.7, `world_bible.md` 4.6 | No hay modelos especificos `Loan/Debt/Rental/Tax/BankAccount` | No confirmado vivo | future_optional | Solo docs y algunas facciones; sin endpoints | Postergar hasta G16 |
 | Progresion de habilidades y EXP | `rules_engine.md` 10-13 | Skills embebidas en `GameState`; `applySkillExp` con level-up | Skills de Lucas vivas | partial | Hay skills y EXP, pero no valida rangos, maestro, Aqua, energia baja, anti-farmeo | G10: centralizar tabla y validadores |
 | Magia, MP y practica | `rules_engine.md` 14; `world_bible.md` 1.4, 9.3 | MP, skills `skill_mana`/`skill_magia`, flag `knownSpells` | MP 200/200, `knownSpells: []` | partial | No hay catalogo de hechizos ni templates | G11 despues de EXP/biologia |
@@ -191,13 +234,14 @@ Estados usados:
 | Relaciones, confianza, romance | `rules_engine.md` 19; `world_bible.md` 12 | `relationshipWithLucas` en `Npc`; `NpcRelationship` para NPC-NPC; lecturas en context/npc/search | 12 relaciones NPC-NPC base de Hoshimori vivas y marcadas | partial | `audit:hoshimori-social`: 12/12 pares, 12 con `source`/`tags`, romance relationships 0, relationshipWithLucas no reducido | Mantener romance fuera hasta que haya canon explicito; ampliar tensiones/secretos solo por eventos |
 | Rumores y propagacion | `rules_engine.md` 20.1; `world_bible.md` 17 | `Rumor` con `source`, `applyRumorPatches`, `seedHoshimoriRumors.js`, `auditHoshimoriRumors.js`; search/context consultan rumores | 8 rumores G5 activos vivos; contexto y busqueda los ven | seeded_mongodb | `seed:hoshimori-rumors` OK; `audit:hoshimori-rumors` OK; `context/full` muestra 4 rumores relevantes; `search/db?q=barro` y `search/db?q=Bosque` encuentran rumores | G5 avanzado/G14: propagacion por tick, distorsion gradual, expiracion y cambios por eventos |
 | Reputacion y facciones | `rules_engine.md` 20.2-20.3; `world_bible.md` 10, 15 | `Faction`, links de NPC, reputacion con Lucas | 3 facciones aparecen con query amplia | partial | `/api/search/db?q=a` devuelve `factions=3` | G15: ley, testigos, acceso, sospecha |
-| Inventario, propiedad y objetos | `rules_engine.md` 21 | Inventario en `GameState`, `Item`, validacion de item existente al agregar | Inventario Lucas vivo; 5 items base en seed | partial | `turn/apply` rechaza item inexistente al agregar | Completar catalogo G6/G17 |
+| Inventario, propiedad y objetos | `rules_engine.md` 21 | Inventario en `GameState`, `Item`, validacion de item existente al agregar | Inventario Lucas vivo; 36 items G6 existen como catalogo base | partial | `audit:hoshimori-economy`: 36/36 items, sin objetos magicos comunes; `turn/apply` rechaza item inexistente al agregar | G17: durabilidad avanzada, crafting, recursos y reparacion profunda |
 | Viaje, exploracion y zonas seguras | `rules_engine.md` 22; `world_bible.md` 7, 13 | Docs, strings de zonas en enemigos, ubicaciones core de camino/bosque/colinas sembradas | Locations principales existen; no hay grafo de rutas ni TravelService | partial | `audit:hoshimori-core` OK reportado para locations; sin modelos Route/TravelService | G18 tras economia/misiones base |
 | Pipeline de acciones complejas | `rules_engine.md` 23-24 | `turn/apply` procesa patches; no orquestador de pipeline | Patches funcionan si GPT los manda bien | partial | Endpoint existe, pero validacion semantica es incompleta | Mantener GPT como planificador, mover reglas criticas al backend |
 | Hoshimori: ubicaciones principales | `world_bible.md` 6.3, 19 | `Location` model; seeds iniciales/world essentials; `seedHoshimoriCore.js` prepara 25 ubicaciones canonicas | 25/25 ubicaciones esperadas vivas | seeded_mongodb | `seed:hoshimori-core` OK y `audit:hoshimori-core` OK reportados; missing locations 0; GameState intacto | Mantener auditoria como regresion; G6/G7 pueden apoyarse en estas locations |
 | Hoshimori: roster base 25 NPCs | `world_bible.md` 11 | `seedInitialState` tiene 4; `seedHoshimoriRoster` prepara 21 mas; `seedHoshimoriCore.js` consolida 25 NPCs con rutinas base | 25/25 NPCs esperados vivos | seeded_mongodb | `seed:hoshimori-core` OK y `audit:hoshimori-core` OK reportados; missing NPCs 0; Narek/Pavo/Borin/Liora aparecen en `search/db` | G4: relaciones NPC-NPC, memorias base y conocimiento no omnisciente |
 | Hoshimori: red social base | `world_bible.md` 12 | `NpcRelationship`, `seedHoshimoriSocialGraph.js`, `auditHoshimoriSocialGraph.js` | 12/12 relaciones base y 4/4 memorias G4 vivas | seeded_mongodb | `seed:hoshimori-social` OK; `audit:hoshimori-social` OK; GameState Dia 10 12:00, dinero 1470, combates 0; rumores G4 0; romance 0 | Usar como base para G5 rumores; no agregar secretos/romance sin evento canon |
 | Hoshimori: rumores base | `world_bible.md` 17, 19; `rules_engine.md` 20.1 | `Rumor`, `seedHoshimoriRumors.js`, `auditHoshimoriRumors.js`, `context/full`, `search/db` | 8/8 rumores base activos vivos | seeded_mongodb | Marcador G5 8/8; no `confirmed`; romance/secretos 0; no todos los NPCs conocen todo; GameState intacto | Implementar propagacion simple por avance de tiempo solo cuando exista world tick |
+| Hoshimori: economia base | `rules_engine.md` 8-9, 21; `world_bible.md` 6, 19 | `Item`, `Shop`, `ShopStock`, `seedHoshimoriEconomy.js`, `auditHoshimoriEconomy.js`, endpoints read-only de shops/items | 36/36 items, 9/9 shops, 39/39 stock rows vivos | seeded_mongodb | `audit:hoshimori-economy`: stock no negativo, precios no negativos, owners/locations/factions OK, magia comun 0, GameState intacto | G7/G8 pueden consumir economia; G16 para bancos/deudas/impuestos |
 | Region cercana a Hoshimori | `world_bible.md` 13 | Docs indexados; algunas locations core cercanas y enemy zones textuales | Camino del Molino, molino, bosque y colinas base existen como locations core | partial | `audit:hoshimori-core` OK reportado para 25 locations; faltan rutas regionales, aldeas/granjas y rosters externos | G18 y G19 despues de Hoshimori economico/social |
 | Regiones y ciudades mayores | `world_bible.md` 14 | Docs indexados | No entidades vivas confirmadas | future_optional | `search/docs` encuentra Valdoria; DB solo faccion Corona | G19 post-Hoshimori |
 | Amenazas, fauna y monstruos | `world_bible.md` 16 | `EnemyTemplate`, `seedEnemyTemplates` | 5 enemigos vivos | seeded_mongodb | `search/db?q=lobo` devuelve 1 enemyTemplate; `/api/combat/enemies` devuelve 5 | Ampliar con zonas/loot en G12/G17 |
@@ -235,13 +279,15 @@ Cambio G5: `Rumor` ahora incluye `source` para auditar seeds vivos sin depender 
 
 Seeds existentes:
 
-`seedInitialState.js`, `seedWorldEssentials.js`, `seedHoshimoriRoster.js`, `seedHoshimoriRoutines.js`, `seedHoshimoriCore.js`, `seedHoshimoriSocialGraph.js`, `seedHoshimoriRumors.js`, `seedEnemyTemplates.js`, `seedDocuments.js`, mas scripts de limpieza/reparacion. En G1 no se ejecuto ningun seed; G2/G3/G4/G5 usaron seeds idempotentes.
+`seedInitialState.js`, `seedWorldEssentials.js`, `seedHoshimoriRoster.js`, `seedHoshimoriRoutines.js`, `seedHoshimoriCore.js`, `seedHoshimoriSocialGraph.js`, `seedHoshimoriRumors.js`, `seedHoshimoriEconomy.js`, `seedEnemyTemplates.js`, `seedDocuments.js`, mas scripts de limpieza/reparacion. En G1 no se ejecuto ningun seed; G2/G3/G4/G5/G6 usaron seeds idempotentes.
 
 Rutas existentes:
 
-`/api/context/full`, `/api/turn/apply`, `/api/search/db`, `/api/search/docs`, `/api/npcs/:npcId/full`, `/api/locations/:locationId/full`, `/api/checkpoints`, `/api/world/sync-routines`, `/api/economy/shops/:shopId/stock`, `/api/economy/restock-daily`, `/api/missions/*`, `/api/combat/*`.
+`/api/context/full`, `/api/turn/apply`, `/api/search/db`, `/api/search/docs`, `/api/npcs/:npcId/full`, `/api/locations/:locationId/full`, `/api/checkpoints`, `/api/world/sync-routines`, `/api/economy/shops`, `/api/economy/shops/:shopId/stock`, `/api/economy/items/:itemId`, `/api/economy/restock-daily`, `/api/missions/*`, `/api/combat/*`.
 
 G5 confirma que `context/full` trae rumores activos por ubicacion/NPC cercano y que `search/db` puede encontrarlos.
+
+G6 confirma que shops principales e items basicos pueden consultarse por endpoints read-only.
 
 Smoke test:
 
@@ -272,7 +318,8 @@ Justificacion: hoy G1 puede inferir huecos por busqueda y endpoints profundos, p
 
 ## Proximas acciones recomendadas
 
-1. Usar `npm run audit:hoshimori-core`, `npm run audit:hoshimori-social` y `npm run audit:hoshimori-rumors` como regresiones read-only antes de G6.
-2. Expandir economia/misiones sobre las locations, NPCs, relaciones y rumores ya vivos.
-3. Implementar propagacion avanzada de rumores dentro del world tick, no por tiempo real.
-4. Convertir `auditLiveCoverage.js` en chequeo recurrente y, mas adelante, respaldarlo con `/api/admin/coverage-summary`.
+1. Usar `npm run audit:hoshimori-core`, `npm run audit:hoshimori-social`, `npm run audit:hoshimori-rumors` y `npm run audit:hoshimori-economy` como regresiones read-only antes de G7.
+2. Expandir misiones sobre las locations, NPCs, relaciones, rumores y economia ya vivos.
+3. Implementar venta/compra transaccional y fiado profundo solo cuando se disene el flujo de acciones economicas.
+4. Implementar propagacion avanzada de rumores dentro del world tick, no por tiempo real.
+5. Convertir `auditLiveCoverage.js` en chequeo recurrente y, mas adelante, respaldarlo con `/api/admin/coverage-summary`.

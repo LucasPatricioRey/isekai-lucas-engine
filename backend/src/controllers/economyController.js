@@ -1,10 +1,48 @@
-﻿const { getShopStock, restockDaily } = require("../services/economyService");
+const { getShopStock, getItem, listShops, restockDaily } = require("../services/economyService");
 
 async function getShopStockController(req, res) {
   try {
     const { shopId } = req.params;
 
     const result = await getShopStock(shopId);
+
+    return res.json({
+      ok: true,
+      ...result,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      ok: false,
+      error: error.message,
+    });
+  }
+}
+
+async function listShopsController(req, res) {
+  try {
+    const result = await listShops({
+      locationId: String(req.query.locationId || ""),
+      regionId: String(req.query.regionId || ""),
+      status: String(req.query.status || ""),
+    });
+
+    return res.json({
+      ok: true,
+      ...result,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      ok: false,
+      error: error.message,
+    });
+  }
+}
+
+async function getItemController(req, res) {
+  try {
+    const { itemId } = req.params;
+
+    const result = await getItem(itemId);
 
     return res.json({
       ok: true,
@@ -45,5 +83,7 @@ async function restockDailyController(req, res) {
 
 module.exports = {
   getShopStockController,
+  listShopsController,
+  getItemController,
   restockDailyController,
 };
