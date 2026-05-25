@@ -10,6 +10,21 @@ const Location = require("../models/Location");
 const ShopStock = require("../models/ShopStock");
 const Item = require("../models/Item");
 const { syncNpcRoutines } = require("../services/routineService");
+const { calculateActivityCost } = require("../services/biologicalClockService");
+
+const VALID_EVENT_LOG_SOURCES = new Set([
+  "player_action",
+  "system",
+  "npc_action",
+  "world_event",
+  "admin",
+  "system_correction",
+  "mechanical_audit",
+  "backend_validation",
+  "admin_fix",
+]);
+
+const VALID_EVENT_LOG_VISIBILITIES = new Set(["hidden", "private", "local", "public"]);
 
 const PHASE_ORDER = [
   "Principiante",
@@ -178,7 +193,7 @@ function applySkillExp(skill, expDelta) {
   };
 }
 
-async function applyInventoryPatch(inventory, patch) {
+async function applyInventoryPatch(inventory, patch, session = null) {
   const { op, itemId, quantity = 1, condition = "normal", equipped = false, notes = "" } = patch;
 
   if (!["add", "remove", "set_quantity"].includes(op)) {
@@ -190,7 +205,7 @@ async function applyInventoryPatch(inventory, patch) {
   }
 
   if (op === "add" || op === "set_quantity") {
-    const itemExists = await Item.exists({ itemId });
+    const itemExists = await Item.exists({ itemId }).session(session);
 
     if (!itemExists) {
       throw validationError("No se puede agregar item inexistente al inventario.", {
@@ -265,7 +280,7 @@ async function applyInventoryPatch(inventory, patch) {
   };
 }
 
-async function applyNpcRelationshipPatches(patches) {
+async function applyNpcRelationshipPatches(patches, session = null) {
   const results = [];
 
   for (const patch of patches) {
@@ -273,7 +288,7 @@ async function applyNpcRelationshipPatches(patches) {
       throw validationError("npcRelationshipPatch.npcId es obligatorio.");
     }
 
-    const npc = await Npc.findOne({ npcId: patch.npcId });
+    const npc = await Npc.findOne({ npcId: patch.npcId }).session(session);
 
     if (!npc) {
       throw validationError(`No existe NPC persistente con id: ${patch.npcId}`);
@@ -300,7 +315,7 @@ async function applyNpcRelationshipPatches(patches) {
       relationship.notes = patch.notes.trim();
     }
 
-    await npc.save();
+    await npc.save({ session });
 
     results.push({
       npcId: npc.npcId,
@@ -314,7 +329,7 @@ async function applyNpcRelationshipPatches(patches) {
   return results;
 }
 
-async function applyNpcMemoryPatches(gameState, patches) {
+async function applyNpcMemoryPatches(gameState, patches, session = null) {
   const results = [];
 
   for (const patch of patches) {
@@ -326,13 +341,13 @@ async function applyNpcMemoryPatches(gameState, patches) {
       throw validationError("npcMemoryPatch.fact es obligatorio.");
     }
 
-    const npcExists = await Npc.exists({ npcId: patch.npcId });
+    const npcExists = await Npc.exists({ npcId: patch.npcId }).session(session);
 
     if (!npcExists) {
       throw validationError(`No se puede guardar memoria: no existe NPC persistente ${patch.npcId}`);
     }
 
-    const memory = await NpcMemory.create({
+    const [memory] = await NpcMemory.create([{
       memoryId: patch.memoryId || createId("memory"),
       npcId: patch.npcId,
       fact: patch.fact,
@@ -352,7 +367,7 @@ async function applyNpcMemoryPatches(gameState, patches) {
       relatedNpcIds: patch.relatedNpcIds || [],
       relatedLocationIds: patch.relatedLocationIds || [],
       tags: patch.tags || [],
-    });
+    }], { session });
 
     results.push(toPlain(memory));
   }
@@ -360,7 +375,7 @@ async function applyNpcMemoryPatches(gameState, patches) {
   return results;
 }
 
-async function applyRumorPatches(gameState, patches) {
+async function applyRumorPatches(gameState, patches, session = null) {
   const results = [];
 
   for (const patch of patches) {
@@ -392,7 +407,7 @@ async function applyRumorPatches(gameState, patches) {
     const rumor = await Rumor.findOneAndUpdate(
       { rumorId },
       { $set: rumorPayload },
-      { upsert: true, new: true, runValidators: true }
+      { upsert: true, new: true, runValidators: true, session }
     ).lean();
 
     results.push(rumor);
@@ -401,7 +416,7 @@ async function applyRumorPatches(gameState, patches) {
   return results;
 }
 
-async function applyWorldEventPatches(gameState, patches) {
+async function applyWorldEventPatches(gameState, patches, session = null) {
   const results = [];
 
   for (const patch of patches) {
@@ -435,7 +450,7 @@ async function applyWorldEventPatches(gameState, patches) {
     const worldEvent = await WorldEvent.findOneAndUpdate(
       { eventId },
       { $set: eventPayload },
-      { upsert: true, new: true, runValidators: true }
+      { upsert: true, new: true, runValidators: true, session }
     ).lean();
 
     results.push(worldEvent);
@@ -444,7 +459,7 @@ async function applyWorldEventPatches(gameState, patches) {
   return results;
 }
 
-async function applyLocationPatches(patches) {
+async function applyLocationPatches(patches, session = null) {
   const results = [];
 
   for (const patch of patches) {
@@ -452,7 +467,7 @@ async function applyLocationPatches(patches) {
       throw validationError("locationPatch.locationId es obligatorio.");
     }
 
-    const location = await Location.findOne({ locationId: patch.locationId });
+    const location = await Location.findOne({ locationId: patch.locationId }).session(session);
 
     if (!location) {
       throw validationError(`No existe ubicación con id: ${patch.locationId}`);
@@ -493,7 +508,7 @@ async function applyLocationPatches(patches) {
       location.tags = Array.from(new Set([...(location.tags || []), ...patch.tags]));
     }
 
-    await location.save();
+    await location.save({ session });
 
     results.push({
       locationId: location.locationId,
@@ -515,7 +530,7 @@ async function applyLocationPatches(patches) {
   return results;
 }
 
-async function applyShopStockPatches(patches) {
+async function applyShopStockPatches(patches, session = null) {
   const results = [];
 
   for (const patch of patches) {
@@ -534,7 +549,7 @@ async function applyShopStockPatches(patches) {
     const stock = await ShopStock.findOne({
       shopId: patch.shopId,
       itemId: patch.itemId,
-    });
+    }).session(session);
 
     if (!stock) {
       throw validationError("No existe stock para ese shopId/itemId.", {
@@ -577,7 +592,7 @@ async function applyShopStockPatches(patches) {
       );
     }
 
-    await stock.save();
+    await stock.save({ session });
 
     results.push({
       shopId: stock.shopId,
@@ -600,7 +615,120 @@ async function applyShopStockPatches(patches) {
   return results;
 }
 
+function validateEventLogInputs(eventLogs) {
+  if (!Array.isArray(eventLogs)) return;
+
+  for (const log of eventLogs) {
+    const source = log.source || "player_action";
+    const visibility = log.visibility || "private";
+
+    if (!VALID_EVENT_LOG_SOURCES.has(source)) {
+      throw validationError("eventLogs.source invalido.", {
+        source,
+        allowedSources: Array.from(VALID_EVENT_LOG_SOURCES),
+      });
+    }
+
+    if (!VALID_EVENT_LOG_VISIBILITIES.has(visibility)) {
+      throw validationError("eventLogs.visibility invalida.", {
+        visibility,
+        allowedVisibilities: Array.from(VALID_EVENT_LOG_VISIBILITIES),
+      });
+    }
+  }
+}
+
+async function validateEventLogsForInsert(logsToCreate, session = null) {
+  const issues = [];
+  const logIds = new Set();
+
+  for (const log of logsToCreate) {
+    if (logIds.has(log.logId)) {
+      issues.push({
+        logId: log.logId,
+        message: "logId duplicado dentro del request.",
+      });
+      continue;
+    }
+
+    logIds.add(log.logId);
+
+    const validation = new EventLog(log).validateSync();
+    if (validation) {
+      issues.push({
+        logId: log.logId,
+        message: validation.message,
+      });
+    }
+  }
+
+  if (issues.length > 0) {
+    throw validationError("eventLogs no pasan validacion.", { issues });
+  }
+
+  if (logIds.size > 0) {
+    const existing = await EventLog.find({ logId: { $in: Array.from(logIds) } })
+      .select("logId")
+      .session(session)
+      .lean();
+
+    if (existing.length > 0) {
+      throw validationError("eventLogs.logId ya existe.", {
+        existingLogIds: existing.map((log) => log.logId),
+      });
+    }
+  }
+}
+
+function validateHourBoundaryCost({ timeAdvance, currentTime, body }) {
+  if (!timeAdvance) return;
+
+  const from = timeAdvance.from || currentTime;
+  const to = timeAdvance.to;
+
+  if (!isValidTime(from) || !isValidTime(to)) return;
+
+  const minutes = timeToMinutes(to) - timeToMinutes(from);
+
+  if (minutes > 0 && to.endsWith(":00")) {
+    const hasActivityCost = Boolean(body.activityCost);
+    const hasLucasPatch = Boolean(body.lucasPatch);
+    const hasExemption = Boolean(String(body.biologicalCostExemptReason || "").trim());
+
+    if (!hasActivityCost && !hasLucasPatch && !hasExemption) {
+      throw validationError(
+        "timeAdvance reaches hour boundary but no biological cost or exemption was provided.",
+        { from, to, minutes }
+      );
+    }
+  }
+}
+
+function applyActivityCost(gameState, activityCost) {
+  if (!activityCost) return null;
+
+  const cost = calculateActivityCost({
+    category: activityCost.category,
+    minutes: activityCost.minutes,
+    currentEnergy: gameState.lucasStatus.energy.current,
+    currentSatiety: gameState.lucasStatus.satiety.current,
+  });
+
+  return {
+    category: cost.categoryId,
+    label: cost.label,
+    minutes: cost.minutes,
+    reason: activityCost.reason || "",
+    satiety: applyStatDelta(gameState.lucasStatus.satiety, cost.delta.satiety, "satiety"),
+    energy: applyStatDelta(gameState.lucasStatus.energy, cost.delta.energy, "energy"),
+    perHour: cost.perHour,
+    fatigueMultiplier: cost.fatigueMultiplier,
+  };
+}
+
 async function applyTurn(req, res) {
+  let session = null;
+
   try {
     if (mongoose.connection.readyState !== 1) {
       return res.status(503).json({
@@ -609,271 +737,299 @@ async function applyTurn(req, res) {
       });
     }
 
-    const gameId = req.body.gameId || "isekai_lucas_main";
-    const gameState = await GameState.findOne({ gameId });
+    const body = req.body || {};
+    validateEventLogInputs(body.eventLogs);
 
-    if (!gameState) {
-      return res.status(404).json({
-        ok: false,
-        error: `No existe GameState para gameId: ${gameId}`,
-      });
-    }
+    let responsePayload = null;
+    session = await mongoose.startSession();
 
-    const changes = {};
+    await session.withTransaction(async () => {
+      const gameId = body.gameId || "isekai_lucas_main";
+      const gameState = await GameState.findOne({ gameId }).session(session);
 
-    if (req.body.timeAdvance) {
-      const { from, to } = req.body.timeAdvance;
+      if (!gameState) {
+        const error = new Error(`No existe GameState para gameId: ${gameId}`);
+        error.statusCode = 404;
+        throw error;
+      }
 
-      if (from && from !== gameState.time) {
-        return res.status(400).json({
-          ok: false,
-          error: "timeAdvance.from no coincide con la hora actual del GameState.",
-          details: {
+      const changes = {};
+
+      if (body.timeAdvance) {
+        const { from, to } = body.timeAdvance;
+        const effectiveFrom = from || gameState.time;
+
+        if (from && from !== gameState.time) {
+          throw validationError("timeAdvance.from no coincide con la hora actual del GameState.", {
             currentTime: gameState.time,
             receivedFrom: from,
-          },
-        });
-      }
-
-      if (!isValidTime(to)) {
-        return res.status(400).json({
-          ok: false,
-          error: "timeAdvance.to debe tener formato HH:MM exacto.",
-        });
-      }
-
-      if (from && timeToMinutes(to) < timeToMinutes(from)) {
-        return res.status(400).json({
-          ok: false,
-          error: "timeAdvance.to no puede ser anterior a timeAdvance.from dentro del mismo dia.",
-          details: {
-            from,
-            to,
-          },
-        });
-      }
-
-      changes.time = {
-        before: gameState.time,
-        after: to,
-        blockAfter: getBlockFromTime(to),
-      };
-
-      gameState.time = to;
-      gameState.block = getBlockFromTime(to);
-    }
-
-    if (req.body.moneyPatch) {
-      const { deltaCopper, reason } = req.body.moneyPatch;
-
-      if (!Number.isInteger(deltaCopper)) {
-        return res.status(400).json({
-          ok: false,
-          error: "moneyPatch.deltaCopper debe ser un número entero.",
-        });
-      }
-
-      const before = gameState.moneyCopper;
-      const after = before + deltaCopper;
-
-      if (after < 0) {
-        return res.status(400).json({
-          ok: false,
-          error: "El dinero no puede quedar negativo.",
-          details: {
-            currentMoneyCopper: before,
-            attemptedDelta: deltaCopper,
-          },
-        });
-      }
-
-      gameState.moneyCopper = after;
-
-      changes.money = {
-        before,
-        delta: deltaCopper,
-        after,
-        reason: reason || "",
-      };
-    }
-
-    if (req.body.lucasPatch) {
-      const lucasChanges = {};
-
-      const allowedStats = {
-        lifeDelta: "life",
-        satietyDelta: "satiety",
-        energyDelta: "energy",
-        mpDelta: "mp",
-      };
-
-      for (const [deltaKey, statKey] of Object.entries(allowedStats)) {
-        if (req.body.lucasPatch[deltaKey] !== undefined) {
-          const delta = req.body.lucasPatch[deltaKey];
-
-          if (!Number.isInteger(delta)) {
-            return res.status(400).json({
-              ok: false,
-              error: `${deltaKey} debe ser un número entero.`,
-            });
-          }
-
-          lucasChanges[statKey] = applyStatDelta(gameState.lucasStatus[statKey], delta, statKey);
-        }
-      }
-
-      if (Array.isArray(req.body.lucasPatch.addInjuries)) {
-        for (const injury of req.body.lucasPatch.addInjuries) {
-          gameState.lucasStatus.injuries.push(injury);
-        }
-
-        lucasChanges.addInjuries = req.body.lucasPatch.addInjuries;
-      }
-
-      if (Array.isArray(req.body.lucasPatch.addConditions)) {
-        for (const condition of req.body.lucasPatch.addConditions) {
-          gameState.lucasStatus.conditions.push(condition);
-        }
-
-        lucasChanges.addConditions = req.body.lucasPatch.addConditions;
-      }
-
-      if (Object.keys(lucasChanges).length > 0) {
-        changes.lucasStatus = lucasChanges;
-      }
-    }
-
-    if (Array.isArray(req.body.inventoryPatch)) {
-      const inventoryChanges = [];
-
-      for (const patch of req.body.inventoryPatch) {
-        inventoryChanges.push(await applyInventoryPatch(gameState.inventory, patch));
-      }
-
-      if (inventoryChanges.length > 0) {
-        changes.inventory = inventoryChanges;
-      }
-    }
-
-    if (Array.isArray(req.body.skillPatch)) {
-      const skillChanges = [];
-
-      for (const patch of req.body.skillPatch) {
-        const skill = gameState.skills.find((entry) => entry.skillId === patch.skillId);
-
-        if (!skill) {
-          return res.status(400).json({
-            ok: false,
-            error: `No existe la habilidad: ${patch.skillId}`,
           });
         }
 
-        skillChanges.push({
-          skillId: patch.skillId,
-          name: skill.name,
-          reason: patch.reason || "",
-          ...applySkillExp(skill, patch.expDelta),
+        if (!isValidTime(to)) {
+          throw validationError("timeAdvance.to debe tener formato HH:MM exacto.");
+        }
+
+        if (timeToMinutes(to) < timeToMinutes(effectiveFrom)) {
+          throw validationError("timeAdvance.to no puede ser anterior a timeAdvance.from dentro del mismo dia.", {
+            from: effectiveFrom,
+            to,
+          });
+        }
+
+        validateHourBoundaryCost({
+          timeAdvance: { from: effectiveFrom, to },
+          currentTime: gameState.time,
+          body,
         });
+
+        changes.time = {
+          before: gameState.time,
+          after: to,
+          blockAfter: getBlockFromTime(to),
+        };
+
+        gameState.time = to;
+        gameState.block = getBlockFromTime(to);
       }
 
-      if (skillChanges.length > 0) {
-        changes.skills = skillChanges;
+      if (body.gameStatePatch?.locationId) {
+        const location = await Location.findOne({ locationId: body.gameStatePatch.locationId })
+          .select("locationId name")
+          .session(session)
+          .lean();
+
+        if (!location) {
+          throw validationError("gameStatePatch.locationId no existe.", {
+            locationId: body.gameStatePatch.locationId,
+          });
+        }
+
+        const before = gameState.locationId;
+        gameState.locationId = body.gameStatePatch.locationId;
+        changes.location = {
+          before,
+          after: gameState.locationId,
+          locationName: location.name,
+        };
       }
-    }
 
-    await gameState.save();
+      if (body.moneyPatch) {
+        const { deltaCopper, reason } = body.moneyPatch;
 
-    if (changes.time) {
-      const routineSync = await syncNpcRoutines({
-        day: gameState.currentDay,
-        time: gameState.time,
-      });
+        if (!Number.isInteger(deltaCopper)) {
+          throw validationError("moneyPatch.deltaCopper debe ser un número entero.");
+        }
 
-      if (routineSync.updatedCount > 0) {
-        changes.routineSync = routineSync;
+        const before = gameState.moneyCopper;
+        const after = before + deltaCopper;
+
+        if (after < 0) {
+          throw validationError("El dinero no puede quedar negativo.", {
+            currentMoneyCopper: before,
+            attemptedDelta: deltaCopper,
+          });
+        }
+
+        gameState.moneyCopper = after;
+
+        changes.money = {
+          before,
+          delta: deltaCopper,
+          after,
+          reason: reason || "",
+        };
       }
-    }
 
-    const updatedGameState = gameState.toObject();
+      if (body.lucasPatch) {
+        const lucasChanges = {};
 
-    if (Array.isArray(req.body.npcRelationshipPatches)) {
-      const relationshipChanges = await applyNpcRelationshipPatches(req.body.npcRelationshipPatches);
-      if (relationshipChanges.length > 0) changes.npcRelationships = relationshipChanges;
-    }
+        const allowedStats = {
+          lifeDelta: "life",
+          satietyDelta: "satiety",
+          energyDelta: "energy",
+          mpDelta: "mp",
+        };
 
-    if (Array.isArray(req.body.npcMemoryPatches)) {
-      const memoryChanges = await applyNpcMemoryPatches(updatedGameState, req.body.npcMemoryPatches);
-      if (memoryChanges.length > 0) changes.npcMemories = memoryChanges;
-    }
+        for (const [deltaKey, statKey] of Object.entries(allowedStats)) {
+          if (body.lucasPatch[deltaKey] !== undefined) {
+            const delta = body.lucasPatch[deltaKey];
 
-    if (Array.isArray(req.body.rumorPatches)) {
-      const rumorChanges = await applyRumorPatches(updatedGameState, req.body.rumorPatches);
-      if (rumorChanges.length > 0) changes.rumors = rumorChanges;
-    }
+            if (!Number.isInteger(delta)) {
+              throw validationError(`${deltaKey} debe ser un número entero.`);
+            }
 
-    if (Array.isArray(req.body.worldEventPatches)) {
-      const worldEventChanges = await applyWorldEventPatches(updatedGameState, req.body.worldEventPatches);
-      if (worldEventChanges.length > 0) changes.worldEvents = worldEventChanges;
-    }
+            lucasChanges[statKey] = applyStatDelta(gameState.lucasStatus[statKey], delta, statKey);
+          }
+        }
 
-    if (Array.isArray(req.body.locationPatches)) {
-      const locationChanges = await applyLocationPatches(req.body.locationPatches);
-      if (locationChanges.length > 0) changes.locations = locationChanges;
-    }
+        if (Array.isArray(body.lucasPatch.addInjuries)) {
+          for (const injury of body.lucasPatch.addInjuries) {
+            gameState.lucasStatus.injuries.push(injury);
+          }
 
-    if (Array.isArray(req.body.shopStockPatches)) {
-      const shopStockChanges = await applyShopStockPatches(req.body.shopStockPatches);
-      if (shopStockChanges.length > 0) changes.shopStocks = shopStockChanges;
-    }
+          lucasChanges.addInjuries = body.lucasPatch.addInjuries;
+        }
 
-    const logsToCreate = [];
+        if (Array.isArray(body.lucasPatch.addConditions)) {
+          for (const condition of body.lucasPatch.addConditions) {
+            gameState.lucasStatus.conditions.push(condition);
+          }
 
-    if (Array.isArray(req.body.eventLogs)) {
-      for (const log of req.body.eventLogs) {
+          lucasChanges.addConditions = body.lucasPatch.addConditions;
+        }
+
+        if (Object.keys(lucasChanges).length > 0) {
+          changes.lucasStatus = lucasChanges;
+        }
+      }
+
+      if (body.activityCost) {
+        changes.activityCost = applyActivityCost(gameState, body.activityCost);
+        changes.lucasStatus = {
+          ...(changes.lucasStatus || {}),
+          activityCost: {
+            satiety: changes.activityCost.satiety,
+            energy: changes.activityCost.energy,
+          },
+        };
+      }
+
+      if (Array.isArray(body.inventoryPatch)) {
+        const inventoryChanges = [];
+
+        for (const patch of body.inventoryPatch) {
+          inventoryChanges.push(await applyInventoryPatch(gameState.inventory, patch, session));
+        }
+
+        if (inventoryChanges.length > 0) {
+          changes.inventory = inventoryChanges;
+        }
+      }
+
+      if (Array.isArray(body.skillPatch)) {
+        const skillChanges = [];
+
+        for (const patch of body.skillPatch) {
+          const skill = gameState.skills.find((entry) => entry.skillId === patch.skillId);
+
+          if (!skill) {
+            throw validationError(`No existe la habilidad: ${patch.skillId}`);
+          }
+
+          skillChanges.push({
+            skillId: patch.skillId,
+            name: skill.name,
+            reason: patch.reason || "",
+            ...applySkillExp(skill, patch.expDelta),
+          });
+        }
+
+        if (skillChanges.length > 0) {
+          changes.skills = skillChanges;
+        }
+      }
+
+      let updatedGameState = gameState.toObject();
+
+      if (Array.isArray(body.npcRelationshipPatches)) {
+        const relationshipChanges = await applyNpcRelationshipPatches(body.npcRelationshipPatches, session);
+        if (relationshipChanges.length > 0) changes.npcRelationships = relationshipChanges;
+      }
+
+      if (Array.isArray(body.npcMemoryPatches)) {
+        const memoryChanges = await applyNpcMemoryPatches(updatedGameState, body.npcMemoryPatches, session);
+        if (memoryChanges.length > 0) changes.npcMemories = memoryChanges;
+      }
+
+      if (Array.isArray(body.rumorPatches)) {
+        const rumorChanges = await applyRumorPatches(updatedGameState, body.rumorPatches, session);
+        if (rumorChanges.length > 0) changes.rumors = rumorChanges;
+      }
+
+      if (Array.isArray(body.worldEventPatches)) {
+        const worldEventChanges = await applyWorldEventPatches(updatedGameState, body.worldEventPatches, session);
+        if (worldEventChanges.length > 0) changes.worldEvents = worldEventChanges;
+      }
+
+      if (Array.isArray(body.locationPatches)) {
+        const locationChanges = await applyLocationPatches(body.locationPatches, session);
+        if (locationChanges.length > 0) changes.locations = locationChanges;
+      }
+
+      if (Array.isArray(body.shopStockPatches)) {
+        const shopStockChanges = await applyShopStockPatches(body.shopStockPatches, session);
+        if (shopStockChanges.length > 0) changes.shopStocks = shopStockChanges;
+      }
+
+      const logsToCreate = [];
+
+      if (Array.isArray(body.eventLogs)) {
+        for (const log of body.eventLogs) {
+          logsToCreate.push({
+            logId: log.logId || createLogId(),
+            day: updatedGameState.currentDay,
+            timeStart: body.timeAdvance?.from || changes.time?.before || updatedGameState.time,
+            timeEnd: body.timeAdvance?.to || updatedGameState.time,
+            locationId: updatedGameState.locationId,
+            type: log.type || "turn_update",
+            summary: log.summary || body.actionSummary || "Turno actualizado.",
+            involvedCharacterIds: log.involvedCharacterIds || ["char_lucas"],
+            involvedNpcIds: log.involvedNpcIds || [],
+            involvedFactionIds: log.involvedFactionIds || [],
+            mechanicalChanges: log.mechanicalChanges || changes,
+            visibility: log.visibility || "private",
+            source: log.source || "player_action",
+            tags: log.tags || [],
+          });
+        }
+      } else if (body.actionSummary || Object.keys(changes).length > 0) {
         logsToCreate.push({
-          logId: log.logId || createLogId(),
+          logId: createLogId(),
           day: updatedGameState.currentDay,
-          timeStart: req.body.timeAdvance?.from || changes.time?.before || updatedGameState.time,
-          timeEnd: req.body.timeAdvance?.to || updatedGameState.time,
+          timeStart: changes.time?.before || updatedGameState.time,
+          timeEnd: updatedGameState.time,
           locationId: updatedGameState.locationId,
-          type: log.type || "turn_update",
-          summary: log.summary || req.body.actionSummary || "Turno actualizado.",
-          involvedCharacterIds: log.involvedCharacterIds || ["char_lucas"],
-          involvedNpcIds: log.involvedNpcIds || [],
-          involvedFactionIds: log.involvedFactionIds || [],
-          mechanicalChanges: log.mechanicalChanges || changes,
-          visibility: log.visibility || "private",
-          source: log.source || "player_action",
-          tags: log.tags || [],
+          type: "turn_update",
+          summary: body.actionSummary || "Turno actualizado.",
+          involvedCharacterIds: ["char_lucas"],
+          mechanicalChanges: changes,
+          visibility: "private",
+          source: "player_action",
         });
       }
-    } else if (req.body.actionSummary || Object.keys(changes).length > 0) {
-      logsToCreate.push({
-        logId: createLogId(),
-        day: updatedGameState.currentDay,
-        timeStart: changes.time?.before || updatedGameState.time,
-        timeEnd: updatedGameState.time,
-        locationId: updatedGameState.locationId,
-        type: "turn_update",
-        summary: req.body.actionSummary || "Turno actualizado.",
-        involvedCharacterIds: ["char_lucas"],
-        mechanicalChanges: changes,
-        visibility: "private",
-        source: "player_action",
-      });
-    }
 
-    if (logsToCreate.length > 0) {
-      await EventLog.insertMany(logsToCreate);
-    }
+      await validateEventLogsForInsert(logsToCreate, session);
+      await gameState.save({ session });
 
-    return res.json({
+      if (changes.time) {
+        const routineSync = await syncNpcRoutines({
+          day: gameState.currentDay,
+          time: gameState.time,
+          session,
+        });
+
+        if (routineSync.updatedCount > 0) {
+          changes.routineSync = routineSync;
+        }
+      }
+
+      if (logsToCreate.length > 0) {
+        await EventLog.insertMany(logsToCreate, { session });
+      }
+
+      updatedGameState = gameState.toObject();
+
+      responsePayload = {
       ok: true,
       message: "Turno aplicado correctamente.",
       changes,
       gameState: updatedGameState,
       eventLogsCreated: logsToCreate.length,
+      };
     });
+
+    return res.json(responsePayload);
   } catch (error) {
     const statusCode = error.statusCode || 500;
 
@@ -882,6 +1038,10 @@ async function applyTurn(req, res) {
       error: statusCode === 500 ? "Error aplicando turno." : error.message,
       details: error.details || error.message,
     });
+  } finally {
+    if (session) {
+      await session.endSession();
+    }
   }
 }
 

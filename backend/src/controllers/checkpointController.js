@@ -17,6 +17,34 @@ const Faction = require("../models/Faction");
 const RoutineOverride = require("../models/RoutineOverride");
 const CombatEncounter = require("../models/CombatEncounter");
 const NpcRelationship = require("../models/NpcRelationship");
+const CharacterMagicKnowledge = require("../models/CharacterMagicKnowledge");
+const MagicDiscipline = require("../models/MagicDiscipline");
+const MagicTechnique = require("../models/MagicTechnique");
+const TravelRoute = require("../models/TravelRoute");
+const WeatherState = require("../models/WeatherState");
+
+const RESTORE_COLLECTIONS = [
+  ["characters", Character],
+  ["npcs", Npc],
+  ["npcMemories", NpcMemory],
+  ["rumors", Rumor],
+  ["locations", Location],
+  ["worldEvents", WorldEvent],
+  ["missions", Mission],
+  ["eventLogs", EventLog],
+  ["shops", Shop],
+  ["shopStocks", ShopStock],
+  ["items", Item],
+  ["factions", Faction],
+  ["routineOverrides", RoutineOverride],
+  ["combatEncounters", CombatEncounter],
+  ["npcRelationships", NpcRelationship],
+  ["characterMagicKnowledge", CharacterMagicKnowledge],
+  ["magicDisciplines", MagicDiscipline],
+  ["magicTechniques", MagicTechnique],
+  ["travelRoutes", TravelRoute],
+  ["weatherStates", WeatherState],
+];
 
 function createCheckpointId(gameState) {
   const safeTime = String(gameState.time || "0000").replace(":", "");
@@ -48,6 +76,11 @@ async function buildFullSnapshot(gameId) {
     routineOverrides,
     combatEncounters,
     npcRelationships,
+    characterMagicKnowledge,
+    magicDisciplines,
+    magicTechniques,
+    travelRoutes,
+    weatherStates,
   ] = await Promise.all([
     Character.find({}).lean(),
     Npc.find({}).lean(),
@@ -64,6 +97,11 @@ async function buildFullSnapshot(gameId) {
     RoutineOverride.find({}).lean(),
     CombatEncounter.find({}).lean(),
     NpcRelationship.find({}).lean(),
+    CharacterMagicKnowledge.find({}).lean(),
+    MagicDiscipline.find({}).lean(),
+    MagicTechnique.find({}).lean(),
+    TravelRoute.find({}).lean(),
+    WeatherState.find({}).lean(),
   ]);
 
   return {
@@ -84,6 +122,11 @@ async function buildFullSnapshot(gameId) {
       routineOverrides,
       combatEncounters,
       npcRelationships,
+      characterMagicKnowledge,
+      magicDisciplines,
+      magicTechniques,
+      travelRoutes,
+      weatherStates,
     },
   };
 }
@@ -164,14 +207,113 @@ async function getCheckpoint(req, res) {
   });
 }
 
-async function restoreCollection(Model, docs) {
-  if (!Array.isArray(docs)) return;
+function getSnapshotDocId(collectionKey, doc) {
+  return (
+    doc.gameId ||
+    doc.characterId ||
+    doc.npcId ||
+    doc.memoryId ||
+    doc.rumorId ||
+    doc.locationId ||
+    doc.eventId ||
+    doc.missionId ||
+    doc.logId ||
+    doc.shopId ||
+    doc.stockId ||
+    doc.itemId ||
+    doc.factionId ||
+    doc.overrideId ||
+    doc.encounterId ||
+    doc.relationshipId ||
+    doc.knowledgeId ||
+    doc.disciplineId ||
+    doc.techniqueId ||
+    doc.routeId ||
+    doc.weatherId ||
+    doc._id ||
+    `${collectionKey}:unknown`
+  );
+}
 
-  await Model.deleteMany({});
+function formatValidationError(collectionKey, doc, error) {
+  return {
+    collection: collectionKey,
+    documentId: String(getSnapshotDocId(collectionKey, doc)),
+    message: error.message,
+  };
+}
+
+function validateSnapshotDocs(Model, collectionKey, docs) {
+  if (docs === undefined || docs === null) {
+    return [];
+  }
+
+  if (!Array.isArray(docs)) {
+    return [
+      {
+        collection: collectionKey,
+        documentId: collectionKey,
+        message: "Snapshot collection is not an array.",
+      },
+    ];
+  }
+
+  const issues = [];
+
+  for (const doc of docs) {
+    const validationError = new Model(doc).validateSync();
+    if (validationError) {
+      issues.push(formatValidationError(collectionKey, doc, validationError));
+    }
+  }
+
+  return issues;
+}
+
+function validateRollbackSnapshot(gameStateSnapshot, snapshot) {
+  const issues = [];
+
+  if (!gameStateSnapshot || !gameStateSnapshot.gameId) {
+    issues.push({
+      collection: "gameState",
+      documentId: "gameStateSnapshot",
+      message: "Checkpoint invalido: falta gameStateSnapshot.",
+    });
+    return issues;
+  }
+
+  const gameStateError = new GameState(gameStateSnapshot).validateSync();
+  if (gameStateError) {
+    issues.push(formatValidationError("gameState", gameStateSnapshot, gameStateError));
+  }
+
+  for (const [collectionKey, Model] of RESTORE_COLLECTIONS) {
+    issues.push(...validateSnapshotDocs(Model, collectionKey, snapshot[collectionKey]));
+  }
+
+  return issues;
+}
+
+async function restoreCollection(Model, collectionKey, docs, session) {
+  if (docs === undefined || docs === null) {
+    return {
+      collection: collectionKey,
+      action: "preserved_missing_from_snapshot",
+      restoredCount: null,
+    };
+  }
+
+  await Model.deleteMany({}).session(session);
 
   if (docs.length > 0) {
-    await Model.insertMany(docs);
+    await Model.insertMany(docs, { session, ordered: true });
   }
+
+  return {
+    collection: collectionKey,
+    action: "restored",
+    restoredCount: docs.length,
+  };
 }
 
 async function rollbackCheckpoint(req, res) {
@@ -204,24 +346,33 @@ async function rollbackCheckpoint(req, res) {
       });
     }
 
-    await GameState.deleteMany({ gameId: gameStateSnapshot.gameId });
-    await GameState.create(gameStateSnapshot);
+    const validationIssues = validateRollbackSnapshot(gameStateSnapshot, snapshot);
 
-    await restoreCollection(Character, snapshot.characters);
-    await restoreCollection(Npc, snapshot.npcs);
-    await restoreCollection(NpcMemory, snapshot.npcMemories);
-    await restoreCollection(Rumor, snapshot.rumors);
-    await restoreCollection(Location, snapshot.locations);
-    await restoreCollection(WorldEvent, snapshot.worldEvents);
-    await restoreCollection(Mission, snapshot.missions);
-    await restoreCollection(EventLog, snapshot.eventLogs);
-    await restoreCollection(Shop, snapshot.shops);
-    await restoreCollection(ShopStock, snapshot.shopStocks);
-    await restoreCollection(Item, snapshot.items);
-    await restoreCollection(Faction, snapshot.factions);
-    await restoreCollection(RoutineOverride, snapshot.routineOverrides);
-    await restoreCollection(CombatEncounter, snapshot.combatEncounters);
-    await restoreCollection(NpcRelationship, snapshot.npcRelationships);
+    if (validationIssues.length > 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "Checkpoint incompatible con el schema actual.",
+        details: validationIssues.slice(0, 20),
+      });
+    }
+
+    const session = await mongoose.startSession();
+    const restoreSummary = [];
+
+    try {
+      await session.withTransaction(async () => {
+        await GameState.deleteMany({ gameId: gameStateSnapshot.gameId }).session(session);
+        await GameState.create([gameStateSnapshot], { session });
+
+        for (const [collectionKey, Model] of RESTORE_COLLECTIONS) {
+          restoreSummary.push(
+            await restoreCollection(Model, collectionKey, snapshot[collectionKey], session)
+          );
+        }
+      });
+    } finally {
+      await session.endSession();
+    }
 
     return res.json({
       ok: true,
@@ -232,12 +383,18 @@ async function rollbackCheckpoint(req, res) {
         day: checkpoint.day,
         time: checkpoint.time,
       },
+      restoreSummary,
     });
   } catch (error) {
+    console.error("Rollback checkpoint failed:", error.stack || error.message);
+
     return res.status(500).json({
       ok: false,
       error: "Error aplicando rollback.",
-      details: error.message,
+      details: {
+        message: error.message,
+        name: error.name,
+      },
     });
   }
 }

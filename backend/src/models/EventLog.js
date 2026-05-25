@@ -71,7 +71,17 @@ const eventLogSchema = new mongoose.Schema(
 
     source: {
       type: String,
-      enum: ["player_action", "system", "npc_action", "world_event", "admin"],
+      enum: [
+        "player_action",
+        "system",
+        "npc_action",
+        "world_event",
+        "admin",
+        "system_correction",
+        "mechanical_audit",
+        "backend_validation",
+        "admin_fix",
+      ],
       default: "system",
     },
 

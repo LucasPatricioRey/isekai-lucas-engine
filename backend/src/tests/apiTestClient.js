@@ -79,6 +79,10 @@ async function getCanonicalState() {
     locationId: gameState.locationId,
     moneyCopper: gameState.moneyCopper,
     mpCurrent: gameState.lucasStatus?.mp?.current,
+    satietyCurrent: gameState.lucasStatus?.satiety?.current,
+    satietyLabel: gameState.lucasStatus?.satiety?.label,
+    energyCurrent: gameState.lucasStatus?.energy?.current,
+    energyLabel: gameState.lucasStatus?.energy?.label,
     activeMissionIds: gameState.activeMissionIds || [],
     inventoryCount: (gameState.inventory || []).length,
     skillSnapshot: Object.fromEntries((gameState.skills || []).map((skill) => [skill.skillId, skill.exp])),
@@ -91,6 +95,8 @@ function assertCanonState(state) {
   assert.equal(state.locationId, "loc_hoshimori_grulla_azul_comedor");
   assert.equal(state.moneyCopper, 1470);
   assert.equal(state.mpCurrent, 200);
+  assert.equal(state.satietyCurrent, 30);
+  assert.equal(state.energyCurrent, 59);
   assert.equal(state.activeMissionIds.length, 0);
 }
 

@@ -161,6 +161,23 @@ async function runSmokeTests() {
   if (travelRoutes.routes.length < 20) throw new Error("travel routes devolvio menos de 20 rutas");
   console.log("OK /api/travel/routes");
 
+  const travelPreview = await post("/api/travel/preview", {
+    fromLocationId: "loc_hoshimori_grulla_azul",
+    toLocationId: "loc_hoshimori_guild",
+    conditions: {
+      ignoreCurrentWeather: true,
+      startTime: "12:40",
+    },
+  });
+  if (!travelPreview.ok) throw new Error("travel preview fallo");
+  if (travelPreview.preview?.timing?.finalMinutes !== 20) {
+    throw new Error("travel preview Grulla Azul -> Gremio no devolvio 20 minutos");
+  }
+  if (travelPreview.preview?.biologicalCostPreview?.satietyDelta !== -1) {
+    throw new Error("travel preview no devolvio coste biologico esperado");
+  }
+  console.log("OK /api/travel/preview");
+
   const combatActions = await request("/api/combat/actions");
   if (!combatActions.ok) throw new Error("combat actions fallo");
   if (!Array.isArray(combatActions.actions)) throw new Error("combat actions no devolvio actions");

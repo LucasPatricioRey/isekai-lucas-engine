@@ -19,7 +19,7 @@ const EXPECTED = {
   satietyCurrent: 30,
   energyCurrent: 59,
   activeCombatCount: 0,
-  officialCheckpointId: "checkpoint_d10_1200_1779684235944",
+  officialCheckpointId: "checkpoint_d10_1200_1779723391623",
 };
 
 function count(value) {

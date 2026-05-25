@@ -29,7 +29,7 @@ Fuente: `npm run audit:coverage`, script `src/utils/auditLiveCoverage.js`.
 | Energia | 59/100, cansancio leve/energia media | coincide |
 | MP | 200/200 | coincide |
 | Combates activos | 0 | coincide |
-| Checkpoint oficial | `checkpoint_d10_1200_1779684235944` | presente |
+| Checkpoint oficial | `checkpoint_d10_1200_1779723391623` | presente |
 
 ## Actualizacion G2/G3
 
@@ -488,7 +488,7 @@ Resultado vivo tras ejecutar G13/G21/G22 con `MONGODB_URI` y backend local apunt
 
 - `npm run check`: OK.
 - `npm run seed:hoshimori-weather`: OK.
-- `npm test`: OK, 9/9 subtests.
+- `npm test`: OK, 10/10 subtests tras hardening posterior.
 - `npm run smoke`: OK.
 - `npm run audit:hoshimori-weather`: OK.
 - `npm run audit:openapi`: OK.
@@ -545,6 +545,37 @@ Estado G23:
 - Documentacion y readiness tecnico quedan completos.
 - La validacion final de UX requiere pruebas manuales en GPT Builder Preview usando `docs/gpt-playtest-script.md` y `docs/gpt-response-rubric.md`.
 
+## Actualizacion hardening rollback/applyTurn
+
+Se corrigieron dos fallos criticos detectados en partida real:
+
+- Rollback a `checkpoint_d10_1200_1779723391623` devolvia HTTP 500 por un hook de `NpcRelationship` incompatible con la version actual de Mongoose (`next is not a function`).
+- `applyTurn` podia avanzar tiempo/viaje sin coste biologico declarativo, sin ubicacion tecnica y con riesgo de mutacion parcial si fallaba `EventLog`.
+
+Cambios aplicados:
+
+- `NpcRelationship.pre("validate")` ya no depende de callback `next`.
+- Rollback ahora prevalida `GameState` y colecciones del snapshot antes de borrar/restaurar.
+- Rollback usa transaction cuando MongoDB la soporta y devuelve errores con `{ ok:false, error, details }` sin secretos.
+- Checkpoints viejos que no tengan colecciones nuevas preservan esas colecciones en lugar de borrarlas.
+- Checkpoints nuevos incluyen tambien knowledge magico, disciplinas, tecnicas, rutas y clima.
+- `EventLog.source` acepta fuentes tecnicas: `system_correction`, `mechanical_audit`, `backend_validation`, `admin_fix`.
+- `applyTurn` prevalida `EventLog` antes de tocar estado.
+- `applyTurn` usa transaction para GameState, logs y patches soportados.
+- `applyTurn` acepta `activityCost` y calcula saciedad/energia con `biologicalClockService`.
+- `applyTurn` acepta `gameStatePatch.locationId` y valida que la location exista.
+- `applyTurn` rechaza avances a hora exacta `:00` sin `activityCost`, `lucasPatch` o `biologicalCostExemptReason`.
+- `previewTravel` devuelve `biologicalCostPreview` con categoria, minutos, deltas, estado actual/proyectado y si procesa en frontera horaria.
+- `audit:checkpoint-rollback` prueba checkpoint oficial, mutacion controlada, rollback temporal y restauracion final canonica.
+
+Evidencia:
+
+- `npm test` OK: 10/10 subtests.
+- `apiTurnHardening.test.js` confirma `previewTravel` La Grulla Azul -> Gremio 20 min desde 12:40 a 13:00 con coste -1 saciedad/-2 energia.
+- `apiTurnHardening.test.js` confirma que `applyTurn` aplica `activityCost`, actualiza `locationId`, rechaza hora exacta sin coste/exencion y rechaza `EventLog.source` invalido sin mutar.
+- `apiTurnHardening.test.js` confirma que `system_correction` es aceptado.
+- `rollback` al checkpoint oficial funciona con el codigo local y deja estado canon intacto.
+
 ## Tabla de cobertura
 
 Estados usados:
@@ -561,8 +592,8 @@ Estados usados:
 |---|---|---|---|---|---|---|
 | Autoridad, regla madre y no inventar | `rules_engine.md` 0-3, 25 | Docs indexados, `context/full`, `search/db`, `search/docs`, `turn/apply` | API responde health/context/search | partial | Smoke OK; docs search OK; backend no fuerza todas las reglas narrativas | Mantener como instrucciones GPT + agregar validadores solo donde haya estado vivo |
 | Formato obligatorio de respuesta | `rules_engine.md` 4 | No hay renderer/formato backend; solo docs | Indexado en docs | indexed_docs_only | No hay modelo/ruta de formato | Resolver en instrucciones GPT; no meter en MongoDB salvo logs/estado |
-| Tiempo exacto y bloques | `rules_engine.md` 5 | `GameState.time`, `block`, `turnController.getBlockFromTime`, `worldTickService` preview | Dia 10 12:00, Mediodia | partial | `audit:coverage` confirma tiempo; `audit:world-tick` preview 12:00->14:00 sin mutar estado | G14 futuro: world tick apply real, avance de dia y reglas de cambio de dia integradas |
-| Reloj biologico suavizado | `rules_engine.md` 6 | `GameState.biologicalClock`, `biologicalClockService`, endpoint preview `/api/needs/activity-cost/preview`; deltas directos siguen en `turn/apply` | `pendingAccumulation: []`; preview G9 validado sin mutar | partial | `audit:biological-clock` OK: costes por hora y labels coinciden; GameState intacto | G9 futuro: acumulador persistente por hora exacta e integracion automatica en `applyTurn` |
+| Tiempo exacto y bloques | `rules_engine.md` 5 | `GameState.time`, `block`, `turnController.getBlockFromTime`, `worldTickService` preview; `applyTurn` exige coste biologico/exencion al llegar a `:00` | Dia 10 12:00, Mediodia | partial | `audit:coverage` confirma tiempo; `audit:world-tick` preview 12:00->14:00 sin mutar estado; tests rechazan avance a hora exacta sin coste/exencion | G14 futuro: world tick apply real, avance de dia y reglas de cambio de dia integradas |
+| Reloj biologico suavizado | `rules_engine.md` 6 | `GameState.biologicalClock`, `biologicalClockService`, endpoint preview `/api/needs/activity-cost/preview`; `applyTurn.activityCost` calcula y aplica coste declarativo | `pendingAccumulation: []`; preview G9 validado; coste declarativo aplicado por tests | partial | `audit:biological-clock` OK; tests confirman viaje 20 min aplica -1/-2 y hora exacta requiere coste/exencion | G9 futuro: acumulador persistente por hora exacta e integracion automatica total en `applyTurn` |
 | Vida, heridas y condiciones | `rules_engine.md` 7 | `GameState.lucasStatus`, heridas/condiciones, combate agrega heridas | Sin heridas activas | partial | Modelos y patches existen; validacion de causa depende del GPT | Endurecer validadores de heridas/condiciones |
 | Comidas, raciones y contrato | `rules_engine.md` 8 | `Item`, `JobContract`, `seedHoshimoriJobs.js`, `jobService`, previews de turno | Alimentos base vivos; contrato activo de La Grulla Azul vivo con comidas de contrato | seeded_mongodb | G8: contrato `job_contract_lucas_grulla_azul_d10`, comida ligera +20/+2 y principal +30/+5; preview no muta GameState | G8 futuro: completar turno real con pago/comida y validaciones de ausencia |
 | Dinero y comercio basico | `rules_engine.md` 9 | `Item`, `Shop`, `ShopStock`, `economyService`, `shopStockPatches`, `GET /api/economy/shops`, `GET /api/economy/items/:itemId` | 9 shops vivos, 36 items, 39 stocks | seeded_mongodb | `seed:hoshimori-economy` OK; `audit:hoshimori-economy` OK; Borin/Liora/Sella/Hilda/Merek consultables | G6 futuro/G16: venta transaccional, fiado profundo, precios variables sofisticados, bancos/deudas/impuestos |
@@ -577,7 +608,7 @@ Estados usados:
 | Rumores y propagacion | `rules_engine.md` 20.1; `world_bible.md` 17 | `Rumor` con `source`, `applyRumorPatches`, `seedHoshimoriRumors.js`, `auditHoshimoriRumors.js`; search/context consultan rumores | 8 rumores G5 activos vivos; contexto y busqueda los ven | seeded_mongodb | `seed:hoshimori-rumors` OK; `audit:hoshimori-rumors` OK; `context/full` muestra 4 rumores relevantes; `search/db?q=barro` y `search/db?q=Bosque` encuentran rumores | G5 avanzado/G14: propagacion por tick, distorsion gradual, expiracion y cambios por eventos |
 | Reputacion y facciones | `rules_engine.md` 20.2-20.3; `world_bible.md` 10, 15 | `Faction`, links de NPC, reputacion con Lucas | 3 facciones aparecen con query amplia | partial | `/api/search/db?q=a` devuelve `factions=3` | G15: ley, testigos, acceso, sospecha |
 | Inventario, propiedad y objetos | `rules_engine.md` 21 | Inventario en `GameState`, `Item`, validacion de item existente al agregar | Inventario Lucas vivo; 36 items G6 existen como catalogo base | partial | `audit:hoshimori-economy`: 36/36 items, sin objetos magicos comunes; `turn/apply` rechaza item inexistente al agregar | G17: durabilidad avanzada, crafting, recursos y reparacion profunda |
-| Viaje, exploracion y zonas seguras | `rules_engine.md` 22; `world_bible.md` 7, 13 | `TravelRoute`, `travelService`, endpoints `/api/travel/routes` y `/api/travel/preview`; integracion read-only con `weatherService` | 23 rutas G18 vivas; travel preview funcional; clima actual puede modificar rutas exteriores | seeded_mongodb | `seed:hoshimori-routes` OK; `audit:hoshimori-routes` OK: Grulla->mercado 15, Grulla->gremio 20, Grulla->bosque 90 sin clima; `audit:hoshimori-weather` OK: Camino del Molino con barro residual redondea a 35 min | G18 futuro: viaje real mutador, encuentros aleatorios avanzados, carga/heridas integradas en acciones reales |
+| Viaje, exploracion y zonas seguras | `rules_engine.md` 22; `world_bible.md` 7, 13 | `TravelRoute`, `travelService`, endpoints `/api/travel/routes` y `/api/travel/preview`; integracion read-only con `weatherService`; `biologicalCostPreview` | 23 rutas G18 vivas; travel preview funcional; clima actual puede modificar rutas exteriores | seeded_mongodb | `seed:hoshimori-routes` OK; `audit:hoshimori-routes` OK; test Grulla->Gremio desde 12:40 llega 13:00 con coste -1/-2; `audit:hoshimori-weather` OK: Camino del Molino con barro residual redondea a 35 min | G18 futuro: viaje real mutador completo y encuentros aleatorios avanzados |
 | Pipeline de acciones complejas | `rules_engine.md` 23-24 | `turn/apply` procesa patches; no orquestador de pipeline | Patches funcionan si GPT los manda bien | partial | Endpoint existe, pero validacion semantica es incompleta | Mantener GPT como planificador, mover reglas criticas al backend |
 | Hoshimori: ubicaciones principales | `world_bible.md` 6.3, 19 | `Location` model; seeds iniciales/world essentials; `seedHoshimoriCore.js` prepara 25 ubicaciones canonicas | 25/25 ubicaciones esperadas vivas | seeded_mongodb | `seed:hoshimori-core` OK y `audit:hoshimori-core` OK reportados; missing locations 0; GameState intacto | Mantener auditoria como regresion; G6/G7 pueden apoyarse en estas locations |
 | Hoshimori: roster base 25 NPCs | `world_bible.md` 11 | `seedInitialState` tiene 4; `seedHoshimoriRoster` prepara 21 mas; `seedHoshimoriCore.js` consolida 25 NPCs con rutinas base | 25/25 NPCs esperados vivos | seeded_mongodb | `seed:hoshimori-core` OK y `audit:hoshimori-core` OK reportados; missing NPCs 0; Narek/Pavo/Borin/Liora aparecen en `search/db` | G4: relaciones NPC-NPC, memorias base y conocimiento no omnisciente |
@@ -594,9 +625,9 @@ Estados usados:
 | Busqueda DB | `rules_engine.md` 3.2 | `/api/search/db` busca modelos principales | Funciona | implemented_backend | Queries Narek/lobo/a responden | Mantener; agregar resumen admin read-only si hace falta |
 | Busqueda docs | `rules_engine.md` 3.2; ambos docs | `WorldDocumentIndex`, `seedDocuments`, `/api/search/docs` | Funciona con `romance` | seeded_mongodb | `search/docs?q=romance` devuelve 4 docs | Mantener seed docs alineado con archivos |
 | Contexto completo | `rules_engine.md` 3.2 | `/api/context/full` junta estado, location, NPCs cercanos, shops, rumors, missions, factions, combat | Funciona y es de alcance cercano | implemented_backend | `context/full` devuelve 4 nearby NPCs y 4 rumores activos relevantes en Grulla | Documentar que no es roster completo |
-| Checkpoints y rollback | `rules_engine.md` 3.4 | `Checkpoint`, rutas create/list/get/rollback | Checkpoints vivos; oficial presente | implemented_backend | `/api/checkpoints` lista `checkpoint_d10_1200_1779684235944` | Separar admin/in-game en OpenAPI; no exponer rollback al GPT normal |
+| Checkpoints y rollback | `rules_engine.md` 3.4 | `Checkpoint`, rutas create/list/get/rollback; rollback transaccional con prevalidacion y compatibilidad con snapshots viejos | Checkpoints vivos; oficial `checkpoint_d10_1200_1779723391623` presente | implemented_backend | `npm test` y `audit:checkpoint-rollback` confirman rollback oficial y estado final canonico; colecciones nuevas ausentes se preservan | Mantener rollback fuera del OpenAPI normal; usarlo solo en auditorias/admin |
 | Smoke test | README, `smokeTestRender.js` | `npm run smoke` cubre health/context/search/npc/location/economy/missions/jobs/needs/progression/magic/weather/travel/combat/world tick/checkpoints | Smoke OK contra backend local con DB viva para endpoints G8-G13/G18/G14-base | implemented_backend | Smoke ampliado con `/api/weather/current`, `/api/weather/effects/preview`, `/api/travel/routes`, `/api/combat/actions` y `/api/world/tick/preview` | Repetir remoto tras redeploy de Render |
-| Tests automatizados | `rules_engine.md` 26 | Node test runner nativo; `src/tests/apiReadOnly.test.js`, `src/tests/apiPreviews.test.js`, `src/tests/apiTestClient.js` | Tests usan MongoDB vivo y API local temporal sin mutar canon | implemented_backend | `npm test` OK: 9/9 subtests; cubre read-only, previews, item inexistente y tiempo hacia atras; snapshots canonicos intactos | Ampliar a pruebas transaccionales cuando existan mutadores reales seguros |
+| Tests automatizados | `rules_engine.md` 26 | Node test runner nativo; `src/tests/apiReadOnly.test.js`, `src/tests/apiPreviews.test.js`, `src/tests/apiTurnHardening.test.js`, `src/tests/apiTestClient.js` | Tests usan MongoDB vivo y API local temporal; mutaciones controladas restauran checkpoint oficial | implemented_backend | `npm test` OK: 10/10 subtests; cubre read-only, previews, rechazo sin coste biologico, EventLog invalido atomico, source tecnico y rollback oficial | Ampliar a pruebas transaccionales para compra/misiones cuando existan mutadores finales seguros |
 | OpenAPI / GPT Actions | `rules_engine.md` 26 | `docs/openapi-gpt-action.json`; `auditOpenApiCoverage.js`; script `audit:openapi` | No aplica como estado MongoDB; documenta API publica protegida | implemented_backend | `audit:openapi` OK: 36 operaciones incluidas, rollback/admin/mutadores peligrosos excluidos, `ApiKeyAuth` presente | G23: probar en GPT Builder Preview y ajustar instrucciones/formato |
 | UX/formato final y GPT Builder | `rules_engine.md` 4, 25-26 | `gpt-builder-final-checklist.md`, `gpt-playtest-script.md`, `gpt-response-rubric.md`, `auditGptReadiness.js` | No aplica como entidad MongoDB; readiness verifica estado canon vivo | completed-docs | `audit:gpt-readiness` valida archivos, OpenAPI, endpoints criticos, estado canon y prompts sugeridos | Ejecutar pruebas manuales en GPT Builder Preview y corregir instrucciones si aparecen fallos de formato |
 | Admin/debug seguro | `rules_engine.md` 26 | Checkpoints y scripts utilitarios; no resumen read-only de colecciones | No endpoint de conteo seguro | partial | Se audita con busquedas indirectas | Proponer `/api/admin/coverage-summary`, no implementar en G1 |

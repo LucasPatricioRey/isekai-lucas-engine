@@ -102,7 +102,7 @@ describe("read-only API coverage", () => {
     assert.equal(checkpoints.status, 200);
     assert.ok(
       (checkpoints.data.checkpoints || []).some(
-        (checkpoint) => checkpoint.checkpointId === "checkpoint_d10_1200_1779684235944"
+        (checkpoint) => checkpoint.checkpointId === "checkpoint_d10_1200_1779723391623"
       )
     );
   });

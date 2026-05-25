@@ -1,6 +1,7 @@
 const GameState = require("../models/GameState");
 const Location = require("../models/Location");
 const TravelRoute = require("../models/TravelRoute");
+const { calculateActivityCost } = require("./biologicalClockService");
 const { previewWeatherEffects } = require("./weatherService");
 
 const EXTERIOR_ROUTE_TYPES = new Set(["town", "road", "wilderness", "regional"]);
@@ -27,6 +28,10 @@ function addMinutesToDayTime(day, time, minutesToAdd) {
     day: day + dayDelta,
     time: minutesToTime(total),
   };
+}
+
+function isValidTime(value) {
+  return typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
 function roundUpToFive(value) {
@@ -250,7 +255,29 @@ async function previewTravel({
   }
 
   const finalMinutes = roundUpToFive(total);
-  const arrival = addMinutesToDayTime(gameState.currentDay, gameState.time, finalMinutes);
+  const previewStartDay = Number.isInteger(conditions.startDay) ? conditions.startDay : gameState.currentDay;
+  const previewStartTime = isValidTime(conditions.startTime) ? conditions.startTime : gameState.time;
+  const arrival = addMinutesToDayTime(previewStartDay, previewStartTime, finalMinutes);
+  const activityCategory = conditions.activityCategory || "viaje_caminata_suave";
+  const biologicalCost = calculateActivityCost({
+    category: activityCategory,
+    minutes: finalMinutes,
+    currentEnergy: gameState.lucasStatus?.energy?.current,
+    currentSatiety: gameState.lucasStatus?.satiety?.current,
+  });
+  const biologicalCostPreview = {
+    category: biologicalCost.categoryId,
+    label: biologicalCost.label,
+    minutes: finalMinutes,
+    satietyDelta: biologicalCost.delta.satiety,
+    energyDelta: biologicalCost.delta.energy,
+    processesAtHourBoundary: arrival.time.endsWith(":00") && finalMinutes > 0,
+    currentStatus: {
+      satiety: gameState.lucasStatus?.satiety || null,
+      energy: gameState.lucasStatus?.energy || null,
+    },
+    projectedStatus: biologicalCost.projected || null,
+  };
 
   return {
     dryRun: true,
@@ -265,14 +292,15 @@ async function previewTravel({
       toLocation: locationById.get(actualToLocationId) || null,
     },
     timing: {
-      startDay: gameState.currentDay,
-      startTime: gameState.time,
+      startDay: previewStartDay,
+      startTime: previewStartTime,
       baseMinutes: route.baseMinutes,
       finalMinutes,
       expectedArrivalDay: arrival.day,
       expectedArrivalTime: arrival.time,
       roundedToFiveMinutes: finalMinutes !== Math.round(total),
     },
+    biologicalCostPreview,
     conditions,
     appliedModifiers,
     weatherPreview,
@@ -294,4 +322,5 @@ module.exports = {
   minutesToTime,
   addMinutesToDayTime,
   roundUpToFive,
+  isValidTime,
 };

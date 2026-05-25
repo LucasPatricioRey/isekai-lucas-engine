@@ -45,26 +45,34 @@ function findRoutineEntry(routineBase, time) {
   );
 }
 
-async function findRoutineOverride(npcId, day, time) {
-  const overrides = await RoutineOverride.find({
+async function findRoutineOverride(npcId, day, time, session = null) {
+  const query = RoutineOverride.find({
     npcId,
     day,
     status: { $in: ["scheduled", "active"] },
   }).lean();
+
+  if (session) query.session(session);
+
+  const overrides = await query;
 
   return overrides
     .filter((override) => isTimeInRange(time, override.timeStart, override.timeEnd))
     .sort((a, b) => (b.priority || 0) - (a.priority || 0))[0];
 }
 
-async function syncNpcRoutines({ day, time }) {
-  const npcs = await Npc.find({}).exec();
+async function syncNpcRoutines({ day, time, session = null }) {
+  const query = Npc.find({});
+
+  if (session) query.session(session);
+
+  const npcs = await query.exec();
 
   const updated = [];
   const skipped = [];
 
   for (const npc of npcs) {
-    const override = await findRoutineOverride(npc.npcId, day, time);
+    const override = await findRoutineOverride(npc.npcId, day, time, session);
     const routine = override || findRoutineEntry(npc.routineBase, time);
 
     if (!routine) {
@@ -109,7 +117,7 @@ async function syncNpcRoutines({ day, time }) {
         : `Rutina base aplicada para ${time}`,
     };
 
-    await npc.save();
+    await npc.save({ session });
 
     updated.push({
       npcId: npc.npcId,

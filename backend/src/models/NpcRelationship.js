@@ -85,7 +85,7 @@ const npcRelationshipSchema = new mongoose.Schema(
   }
 );
 
-npcRelationshipSchema.pre("validate", function normalizeRelationshipPair(next) {
+npcRelationshipSchema.pre("validate", function normalizeRelationshipPair() {
   if (this.npcAId && this.npcBId) {
     const [npcAId, npcBId] = normalizePair(this.npcAId, this.npcBId);
     this.npcAId = npcAId;
@@ -95,8 +95,6 @@ npcRelationshipSchema.pre("validate", function normalizeRelationshipPair(next) {
       this.relationshipId = `rel_${npcAId}_${npcBId}`;
     }
   }
-
-  next();
 });
 
 npcRelationshipSchema.index({ npcAId: 1, npcBId: 1 }, { unique: true });

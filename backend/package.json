@@ -36,7 +36,8 @@
     "audit:world-tick": "node src/utils/auditWorldTick.js",
     "audit:hoshimori-weather": "node src/utils/auditHoshimoriWeather.js",
     "audit:openapi": "node src/utils/auditOpenApiCoverage.js",
-    "audit:gpt-readiness": "node src/utils/auditGptReadiness.js"
+    "audit:gpt-readiness": "node src/utils/auditGptReadiness.js",
+    "audit:checkpoint-rollback": "node src/utils/auditCheckpointRollback.js"
   },
   "keywords": [],
   "author": "",

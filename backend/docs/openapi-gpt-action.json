@@ -68,6 +68,38 @@
             "type": "object",
             "additionalProperties": true
           },
+          "activityCost": {
+            "type": "object",
+            "description": "Costo biologico declarativo calculado por backend. Usar para viajes, trabajo, entreno o actividades con tiempo.",
+            "properties": {
+              "category": {
+                "type": "string",
+                "examples": ["viaje_caminata_suave", "trabajo_normal", "entreno_moderado"]
+              },
+              "minutes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": ["category", "minutes"]
+          },
+          "gameStatePatch": {
+            "type": "object",
+            "description": "Cambios tecnicos validados sobre GameState. Actualmente permite locationId.",
+            "properties": {
+              "locationId": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "biologicalCostExemptReason": {
+            "type": "string",
+            "description": "Razon explicita para avanzar hasta una hora exacta sin activityCost/lucasPatch."
+          },
           "inventoryPatch": {
             "type": "array",
             "items": {
