@@ -8,7 +8,8 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "seed": "node src/seeds/seedInitialState.js",
-    "check": "node src/utils/checkProject.js"
+    "check": "node src/utils/checkProject.js",
+    "smoke": "node src/utils/smokeTestRender.js"
   },
   "keywords": [],
   "author": "",
