@@ -10,11 +10,13 @@
     "seed": "node src/seeds/seedInitialState.js",
     "seed:hoshimori-core": "node src/seeds/seedHoshimoriCore.js",
     "seed:hoshimori-social": "node src/seeds/seedHoshimoriSocialGraph.js",
+    "seed:hoshimori-rumors": "node src/seeds/seedHoshimoriRumors.js",
     "check": "node src/utils/checkProject.js",
     "smoke": "node src/utils/smokeTestRender.js",
     "audit:coverage": "node src/utils/auditLiveCoverage.js",
     "audit:hoshimori-core": "node src/utils/auditHoshimoriCore.js",
-    "audit:hoshimori-social": "node src/utils/auditHoshimoriSocialGraph.js"
+    "audit:hoshimori-social": "node src/utils/auditHoshimoriSocialGraph.js",
+    "audit:hoshimori-rumors": "node src/utils/auditHoshimoriRumors.js"
   },
   "keywords": [],
   "author": "",

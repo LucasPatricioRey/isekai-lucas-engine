@@ -73,6 +73,7 @@ async function searchDb(req, res) {
         { content: regex },
         { originalContent: regex },
         { origin: regex },
+        { source: regex },
         { tags: regex },
       ],
     }).limit(10).lean(),

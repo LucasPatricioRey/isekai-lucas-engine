@@ -24,6 +24,12 @@ const rumorSchema = new mongoose.Schema(
       default: "",
     },
 
+    source: {
+      type: String,
+      default: "",
+      index: true,
+    },
+
     sourceType: {
       type: String,
       enum: [
