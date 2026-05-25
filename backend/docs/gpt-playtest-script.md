@@ -1,0 +1,88 @@
+# GPT Builder Playtest Script
+
+Objetivo: probar el GPT personalizado en Preview sin romper canon. Las pruebas A y B no deben mutar estado. Las pruebas C solo se hacen con checkpoint previo y rollback manual externo.
+
+## A. Lecturas in-game sin mutacion
+
+Cada prompt debe resolverse con Actions read-only o Knowledge, sin `applyTurn`.
+
+1. `Mostrame el estado actual de Lucas.`
+2. `Busca informacion de Fern. Que sabe el backend sobre ella ahora?`
+3. `Mostrame la cartelera del gremio de Hoshimori.`
+4. `Mostrame rumores cercanos a la ubicacion actual de Lucas.`
+5. `Mostrame el stock de Pavo.`
+6. `Mostrame rutas disponibles desde La Grulla Azul.`
+7. `Mostrame tecnicas magicas basicas seguras que Lucas podria practicar sin aprender un hechizo ofensivo real.`
+8. `Mostrame el clima actual de Hoshimori y si afecta rutas cercanas.`
+
+Resultado esperado:
+
+- No cambia dia/hora/dinero/MP/inventario/misiones/combates.
+- El GPT no inventa NPCs presentes.
+- El GPT distingue hechos vivos de rumores.
+- El GPT no revela texto de `world_bible.md` como documento interno.
+
+## B. Previews sin mutacion
+
+Cada prompt debe usar endpoints preview/dryRun cuando existan y explicar que no aplica cambios reales.
+
+1. `Lucas piensa si le conviene ir al mercado a comprar una racion normal. Evaluame la opcion sin moverlo todavia.`
+2. `Previsualiza el viaje de La Grulla Azul al mercado.`
+3. `Previsualiza una practica de respiracion de mana de 30 minutos.`
+4. `Previsualiza el coste de entrenar moderado 1 hora.`
+5. `Previsualiza el world tick de 12:00 a 14:00 sin aplicar cambios.`
+6. `Previsualiza una accion de combate. Si no hay encuentro activo, decime claramente que no hay combate activo.`
+
+Resultado esperado:
+
+- No llama mutadores reales.
+- No avanza hora real de partida.
+- No cambia MP/EXP/dinero/inventario.
+- No crea encuentros ni loot.
+- Si no hay combate activo, no inventa uno.
+
+## C. Mutaciones reales controladas, solo con checkpoint previo
+
+Estas pruebas no son para el GPT normal sin supervision. Hacerlas solo si se acepta tocar estado temporalmente y existe rollback manual externo preparado.
+
+Preparacion:
+
+1. Crear checkpoint test con titulo claro.
+2. Anotar checkpointId.
+3. Ejecutar una sola mutacion.
+4. Verificar resultado.
+5. Hacer rollback manual externo al checkpoint test.
+6. Confirmar que el estado canon vuelve a Dia 10 12:00, dinero 1470, MP 200/200, `activeMissionIds` vacio y combates 0.
+
+Pruebas controladas:
+
+1. `Crea un checkpoint de prueba antes de tocar estado.`
+2. `Acepta una mision simple de Porcelana.`
+3. `Compra una racion normal a Pavo.`
+4. `Almuerza una comida de contrato en La Grulla Azul.`
+
+Resultado esperado:
+
+- El GPT pregunta antes de una mutacion ambigua.
+- No hace varias mutaciones mezcladas.
+- No entrega recompensa sin prueba.
+- No genera EXP/loot inventado.
+- Rollback manual externo deja el canon intacto.
+
+## Checklist posterior a cada bloque
+
+Preguntar al GPT:
+
+```text
+Confirmame el estado actual exacto de Lucas y si hubo alguna mutacion aplicada.
+```
+
+Debe responder con:
+
+- Dia y hora exactos.
+- Ubicacion exacta.
+- Dinero en oro/plata/cobre.
+- HP/MP/saciedad/energia si corresponde.
+- Misiones activas.
+- Combates activos.
+- Si el bloque fue preview/read-only, debe decir que no mutó estado.

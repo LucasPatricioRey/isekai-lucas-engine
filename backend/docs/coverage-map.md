@@ -2,7 +2,7 @@
 
 Fecha de auditoria: 2026-05-25  
 Backend vivo auditado: `https://isekai-lucas-engine.onrender.com`  
-Modo G1 original: solo lectura. Actualizaciones posteriores G2/G3/G4/G5/G6/G7/G8-G13/G18/G14-base/G21/G22 ejecutaron seeds idempotentes, tests read-only o previews read-only sin rollbacks, aceptaciones de mision, creacion de checkpoints ni mutaciones de partida.
+Modo G1 original: solo lectura. Actualizaciones posteriores G2/G3/G4/G5/G6/G7/G8-G13/G18/G14-base/G21/G22/G23 ejecutaron seeds idempotentes, tests read-only, previews read-only o documentacion operativa sin rollbacks, aceptaciones de mision, creacion de checkpoints ni mutaciones de partida.
 
 ## Resumen ejecutivo
 
@@ -12,7 +12,7 @@ G1 compara tres niveles:
 2. Representacion en repo: modelos, seeds, servicios, rutas, smoke tests y docs indexables.
 3. Representacion viva en Render/MongoDB usando endpoints protegidos por `x-api-key`.
 
-Hallazgo principal: el repo ya tiene una base tecnica amplia y, tras G2/G3/G4/G5/G6/G7/G8-G13/G18/G14-base/G21/G22, MongoDB vivo contiene el nucleo de Hoshimori: 25 NPCs esperados, 25 ubicaciones principales, 12 relaciones NPC-NPC base, 4 memorias canonicas base, 8 rumores base activos, 36 items economicos, 9 shops, 39 filas de stock, 11 misiones iniciales disponibles, 1 contrato laboral activo de Lucas en La Grulla Azul, 12 disciplinas magicas, 7 tecnicas/plantillas magicas base, 23 rutas de viaje de Hoshimori y 1 clima simple regional de Dia 10. Ademas existen servicios/endpoints de preview para reloj biologico, progresion de EXP, practica magica segura, acciones de combate, viaje, clima, world tick/offscreen y OpenAPI de GPT Actions alineado. `npm test` cubre flujos read-only/preview y rechazos seguros. El estado canon de partida sigue Dia 10 12:00. Lo que todavia no cubre el 100% del texto son completar turnos reales con pago, acumulador biologico persistente, validacion estricta de EXP dentro de cada accion, venta/compra transaccional completa, propagacion avanzada de rumores, relaciones avanzadas/romance, secretos, cadenas de misiones, practica magica mutadora, desbloqueo real de hechizos, viaje real mutador, encuentros aleatorios avanzados, clima avanzado y world tick apply real.
+Hallazgo principal: el repo ya tiene una base tecnica amplia y, tras G2/G3/G4/G5/G6/G7/G8-G13/G18/G14-base/G21/G22/G23, MongoDB vivo contiene el nucleo de Hoshimori: 25 NPCs esperados, 25 ubicaciones principales, 12 relaciones NPC-NPC base, 4 memorias canonicas base, 8 rumores base activos, 36 items economicos, 9 shops, 39 filas de stock, 11 misiones iniciales disponibles, 1 contrato laboral activo de Lucas en La Grulla Azul, 12 disciplinas magicas, 7 tecnicas/plantillas magicas base, 23 rutas de viaje de Hoshimori y 1 clima simple regional de Dia 10. Ademas existen servicios/endpoints de preview para reloj biologico, progresion de EXP, practica magica segura, acciones de combate, viaje, clima, world tick/offscreen y OpenAPI de GPT Actions alineado. `npm test` cubre flujos read-only/preview y rechazos seguros. G23 agrega checklist final de GPT Builder, playtest script, rubrica de respuesta y auditoria de readiness. El estado canon de partida sigue Dia 10 12:00. Lo que todavia no cubre el 100% del texto son completar turnos reales con pago, acumulador biologico persistente, validacion estricta de EXP dentro de cada accion, venta/compra transaccional completa, propagacion avanzada de rumores, relaciones avanzadas/romance, secretos, cadenas de misiones, practica magica mutadora, desbloqueo real de hechizos, viaje real mutador, encuentros aleatorios avanzados, clima avanzado y world tick apply real.
 
 ## Estado vivo confirmado
 
@@ -512,6 +512,39 @@ Resultado vivo tras ejecutar G13/G21/G22 con `MONGODB_URI` y backend local apunt
 - Combates activos finales: 0.
 - Weather/travel/world tick previews no mutaron estado.
 
+## Actualizacion G23
+
+Se agrego documentacion de cierre para validar el GPT personalizado en ChatGPT Builder sin tocar canon innecesariamente:
+
+- `docs/gpt-builder-final-checklist.md`
+- `docs/gpt-playtest-script.md`
+- `docs/gpt-response-rubric.md`
+- `src/utils/auditGptReadiness.js`
+- script `audit:gpt-readiness`
+
+Cobertura documental:
+
+- Lista explicita de archivos para Knowledge: `docs/rules_engine.md` y `docs/world_bible.md`.
+- Ubicacion donde pegar instrucciones comprimidas.
+- Ubicacion donde importar `docs/openapi-gpt-action.json`.
+- Configuracion de auth: API Key en header `x-api-key`.
+- Lista de endpoints que no deben exponerse: rollback, admin peligroso y mutadores destructivos/no necesarios.
+- Playtest separado entre lecturas sin mutacion, previews sin mutacion y mutaciones reales controladas solo con checkpoint previo y rollback manual externo.
+- Rubrica de respuesta para formato, tono, estado, no invencion, previews y mutaciones ambiguas.
+
+Cobertura tecnica:
+
+- `audit:gpt-readiness` valida que existan OpenAPI, Knowledge docs, coverage map y docs G23.
+- Valida que OpenAPI incluya endpoints criticos y excluya rollback.
+- Consulta endpoints criticos read-only.
+- Confirma estado canon Dia 10 12:00, ubicacion `loc_hoshimori_grulla_azul_comedor`, dinero 1470, MP 200/200, misiones activas 0 y combates activos 0.
+- Imprime prompts sugeridos para GPT Builder Preview.
+
+Estado G23:
+
+- Documentacion y readiness tecnico quedan completos.
+- La validacion final de UX requiere pruebas manuales en GPT Builder Preview usando `docs/gpt-playtest-script.md` y `docs/gpt-response-rubric.md`.
+
 ## Tabla de cobertura
 
 Estados usados:
@@ -522,6 +555,7 @@ Estados usados:
 - `partial`: existe parte del sistema, pero falta contenido o validacion critica.
 - `missing`: no hay implementacion suficiente para que el backend lo sostenga.
 - `future_optional`: conviene postergar hasta que el juego lo necesite.
+- `completed-docs`: documentacion y checklist listos; validacion final es manual fuera del backend.
 
 | Area / seccion | Fuente en docs | Representacion en repo | Representacion en MongoDB vivo | Estado | Evidencia | Proxima accion recomendada |
 |---|---|---|---|---|---|---|
@@ -564,6 +598,7 @@ Estados usados:
 | Smoke test | README, `smokeTestRender.js` | `npm run smoke` cubre health/context/search/npc/location/economy/missions/jobs/needs/progression/magic/weather/travel/combat/world tick/checkpoints | Smoke OK contra backend local con DB viva para endpoints G8-G13/G18/G14-base | implemented_backend | Smoke ampliado con `/api/weather/current`, `/api/weather/effects/preview`, `/api/travel/routes`, `/api/combat/actions` y `/api/world/tick/preview` | Repetir remoto tras redeploy de Render |
 | Tests automatizados | `rules_engine.md` 26 | Node test runner nativo; `src/tests/apiReadOnly.test.js`, `src/tests/apiPreviews.test.js`, `src/tests/apiTestClient.js` | Tests usan MongoDB vivo y API local temporal sin mutar canon | implemented_backend | `npm test` OK: 9/9 subtests; cubre read-only, previews, item inexistente y tiempo hacia atras; snapshots canonicos intactos | Ampliar a pruebas transaccionales cuando existan mutadores reales seguros |
 | OpenAPI / GPT Actions | `rules_engine.md` 26 | `docs/openapi-gpt-action.json`; `auditOpenApiCoverage.js`; script `audit:openapi` | No aplica como estado MongoDB; documenta API publica protegida | implemented_backend | `audit:openapi` OK: 36 operaciones incluidas, rollback/admin/mutadores peligrosos excluidos, `ApiKeyAuth` presente | G23: probar en GPT Builder Preview y ajustar instrucciones/formato |
+| UX/formato final y GPT Builder | `rules_engine.md` 4, 25-26 | `gpt-builder-final-checklist.md`, `gpt-playtest-script.md`, `gpt-response-rubric.md`, `auditGptReadiness.js` | No aplica como entidad MongoDB; readiness verifica estado canon vivo | completed-docs | `audit:gpt-readiness` valida archivos, OpenAPI, endpoints criticos, estado canon y prompts sugeridos | Ejecutar pruebas manuales en GPT Builder Preview y corregir instrucciones si aparecen fallos de formato |
 | Admin/debug seguro | `rules_engine.md` 26 | Checkpoints y scripts utilitarios; no resumen read-only de colecciones | No endpoint de conteo seguro | partial | Se audita con busquedas indirectas | Proponer `/api/admin/coverage-summary`, no implementar en G1 |
 
 ## Afirmaciones auditadas
@@ -607,6 +642,10 @@ Smoke test:
 
 `src/utils/smokeTestRender.js` existe y cubre health, context, search, npc, location, economy, missions, detalle de mision estable, jobs, preview de necesidades, preview de skills, catalogo magico, clima, rutas de viaje, acciones de combate, world tick preview, combat y checkpoints. Fue ejecutado durante G1 y ampliado en G6/G7/G8-G13/G18/G14-base.
 
+Readiness GPT Builder:
+
+`src/utils/auditGptReadiness.js` valida archivos de Knowledge/docs/OpenAPI/G23, endpoints criticos, estado canon y prompts sugeridos para Preview. No muta estado.
+
 Docs indexados:
 
 `seedDocuments.js` indexa `docs/rules_engine.md` y `docs/world_bible.md` en `WorldDocumentIndex`. La API viva confirma busqueda por `/api/search/docs`.
@@ -632,7 +671,7 @@ Justificacion: hoy G1 puede inferir huecos por busqueda y endpoints profundos, p
 
 ## Proximas acciones recomendadas
 
-1. Usar `npm test`, `npm run audit:hoshimori-core`, `npm run audit:hoshimori-social`, `npm run audit:hoshimori-rumors`, `npm run audit:hoshimori-economy`, `npm run audit:hoshimori-missions`, `npm run audit:hoshimori-jobs`, `npm run audit:biological-clock`, `npm run audit:skill-progression`, `npm run audit:magic-basics`, `npm run audit:combat-advanced`, `npm run audit:hoshimori-routes`, `npm run audit:hoshimori-weather`, `npm run audit:world-tick` y `npm run audit:openapi` como regresiones read-only.
+1. Usar `npm test`, `npm run audit:gpt-readiness`, `npm run audit:hoshimori-core`, `npm run audit:hoshimori-social`, `npm run audit:hoshimori-rumors`, `npm run audit:hoshimori-economy`, `npm run audit:hoshimori-missions`, `npm run audit:hoshimori-jobs`, `npm run audit:biological-clock`, `npm run audit:skill-progression`, `npm run audit:magic-basics`, `npm run audit:combat-advanced`, `npm run audit:hoshimori-routes`, `npm run audit:hoshimori-weather`, `npm run audit:world-tick` y `npm run audit:openapi` como regresiones read-only.
 2. Implementar completar turnos reales solo con validadores de horario, pago, comida, ausencia, EventLog y pruebas con rollback/checkpoint.
 3. Integrar acumulador biologico persistente en `turn/apply` o world tick, procesando solo horas exactas `:00`.
 4. Usar `skillProgressionService` como validador obligatorio para `skillPatch`, y agregar anti-farmeo real con historial diario.
@@ -641,5 +680,5 @@ Justificacion: hoy G1 puede inferir huecos por busqueda y endpoints profundos, p
 7. Implementar world tick apply real con transaccion, bloqueo por combate activo, expiracion de misiones y restock controlado.
 8. Implementar venta/compra transaccional y fiado profundo solo cuando se disene el flujo de acciones economicas.
 9. Implementar propagacion avanzada de rumores y expiracion/consecuencias de misiones dentro del world tick, no por tiempo real.
-10. Probar `docs/openapi-gpt-action.json` en GPT Builder Preview y cerrar G23 con pruebas de formato/acciones.
+10. Probar `docs/openapi-gpt-action.json` en GPT Builder Preview con `docs/gpt-playtest-script.md` y puntuar respuestas con `docs/gpt-response-rubric.md`.
 11. Convertir `auditLiveCoverage.js` en chequeo recurrente y, mas adelante, respaldarlo con `/api/admin/coverage-summary`.
