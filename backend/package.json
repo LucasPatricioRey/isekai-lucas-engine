@@ -9,10 +9,12 @@
     "dev": "nodemon src/server.js",
     "seed": "node src/seeds/seedInitialState.js",
     "seed:hoshimori-core": "node src/seeds/seedHoshimoriCore.js",
+    "seed:hoshimori-social": "node src/seeds/seedHoshimoriSocialGraph.js",
     "check": "node src/utils/checkProject.js",
     "smoke": "node src/utils/smokeTestRender.js",
     "audit:coverage": "node src/utils/auditLiveCoverage.js",
-    "audit:hoshimori-core": "node src/utils/auditHoshimoriCore.js"
+    "audit:hoshimori-core": "node src/utils/auditHoshimoriCore.js",
+    "audit:hoshimori-social": "node src/utils/auditHoshimoriSocialGraph.js"
   },
   "keywords": [],
   "author": "",

@@ -15,6 +15,7 @@ const Item = require("../models/Item");
 const Faction = require("../models/Faction");
 const RoutineOverride = require("../models/RoutineOverride");
 const CombatEncounter = require("../models/CombatEncounter");
+const NpcRelationship = require("../models/NpcRelationship");
 
 function unique(values) {
   return Array.from(new Set(values.filter(Boolean)));
@@ -95,6 +96,7 @@ async function getFullContext(req, res) {
       recentEventLogs,
       routineOverrides,
       activeCombatEncounters,
+      socialRelationships,
     ] = await Promise.all([
       ShopStock.find({
         shopId: { $in: shopIds },
@@ -168,6 +170,16 @@ async function getFullContext(req, res) {
         .sort({ createdAt: -1 })
         .limit(5)
         .lean(),
+
+      NpcRelationship.find({
+        $or: [
+          { npcAId: { $in: nearbyNpcIds } },
+          { npcBId: { $in: nearbyNpcIds } },
+        ],
+      })
+        .sort({ familiarity: -1, trust: -1 })
+        .limit(80)
+        .lean(),
     ]);
 
     const itemIds = unique(shopStocks.map((stock) => stock.itemId));
@@ -205,6 +217,7 @@ async function getFullContext(req, res) {
         shopStocks,
         stockItems,
         factionSummaries,
+        socialRelationships,
         routineOverrides,
         activeCombatEncounters,
         recentEventLogs,

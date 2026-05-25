@@ -3,6 +3,7 @@ const NpcMemory = require("../models/NpcMemory");
 const Rumor = require("../models/Rumor");
 const EventLog = require("../models/EventLog");
 const RoutineOverride = require("../models/RoutineOverride");
+const NpcRelationship = require("../models/NpcRelationship");
 
 async function getNpcFull(req, res) {
   const { npcId } = req.params;
@@ -16,7 +17,7 @@ async function getNpcFull(req, res) {
     });
   }
 
-  const [memories, rumors, recentEventLogs, routineOverrides] = await Promise.all([
+  const [memories, rumors, recentEventLogs, routineOverrides, socialRelationships] = await Promise.all([
     NpcMemory.find({ npcId })
       .sort({ importance: -1, createdDay: -1, createdTime: -1 })
       .limit(50)
@@ -41,6 +42,13 @@ async function getNpcFull(req, res) {
       .sort({ day: -1, timeStart: -1 })
       .limit(20)
       .lean(),
+
+    NpcRelationship.find({
+      $or: [{ npcAId: npcId }, { npcBId: npcId }],
+    })
+      .sort({ familiarity: -1, trust: -1 })
+      .limit(50)
+      .lean(),
   ]);
 
   return res.json({
@@ -50,6 +58,7 @@ async function getNpcFull(req, res) {
     rumors,
     recentEventLogs,
     routineOverrides,
+    socialRelationships,
   });
 }
 

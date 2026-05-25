@@ -10,6 +10,7 @@ const Shop = require("../models/Shop");
 const Faction = require("../models/Faction");
 const EnemyTemplate = require("../models/EnemyTemplate");
 const CombatEncounter = require("../models/CombatEncounter");
+const NpcRelationship = require("../models/NpcRelationship");
 const WorldDocumentIndex = require("../models/WorldDocumentIndex");
 
 function escapeRegex(text) {
@@ -45,6 +46,7 @@ async function searchDb(req, res) {
     factions,
     enemyTemplates,
     combatEncounters,
+    npcRelationships,
   ] = await Promise.all([
     Npc.find({
       $or: [
@@ -164,6 +166,19 @@ async function searchDb(req, res) {
         { locationId: regex },
       ],
     }).limit(10).lean(),
+
+    NpcRelationship.find({
+      $or: [
+        { relationshipId: regex },
+        { npcAId: regex },
+        { npcBId: regex },
+        { type: regex },
+        { publicSummary: regex },
+        { privateNotes: regex },
+        { source: regex },
+        { tags: regex },
+      ],
+    }).limit(10).lean(),
   ]);
 
   return res.json({
@@ -182,6 +197,7 @@ async function searchDb(req, res) {
       factions,
       enemyTemplates,
       combatEncounters,
+      npcRelationships,
     },
   });
 }

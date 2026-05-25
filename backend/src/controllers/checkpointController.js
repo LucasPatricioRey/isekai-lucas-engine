@@ -16,6 +16,7 @@ const Item = require("../models/Item");
 const Faction = require("../models/Faction");
 const RoutineOverride = require("../models/RoutineOverride");
 const CombatEncounter = require("../models/CombatEncounter");
+const NpcRelationship = require("../models/NpcRelationship");
 
 function createCheckpointId(gameState) {
   const safeTime = String(gameState.time || "0000").replace(":", "");
@@ -46,6 +47,7 @@ async function buildFullSnapshot(gameId) {
     factions,
     routineOverrides,
     combatEncounters,
+    npcRelationships,
   ] = await Promise.all([
     Character.find({}).lean(),
     Npc.find({}).lean(),
@@ -61,6 +63,7 @@ async function buildFullSnapshot(gameId) {
     Faction.find({}).lean(),
     RoutineOverride.find({}).lean(),
     CombatEncounter.find({}).lean(),
+    NpcRelationship.find({}).lean(),
   ]);
 
   return {
@@ -80,6 +83,7 @@ async function buildFullSnapshot(gameId) {
       factions,
       routineOverrides,
       combatEncounters,
+      npcRelationships,
     },
   };
 }
@@ -217,6 +221,7 @@ async function rollbackCheckpoint(req, res) {
     await restoreCollection(Faction, snapshot.factions);
     await restoreCollection(RoutineOverride, snapshot.routineOverrides);
     await restoreCollection(CombatEncounter, snapshot.combatEncounters);
+    await restoreCollection(NpcRelationship, snapshot.npcRelationships);
 
     return res.json({
       ok: true,
