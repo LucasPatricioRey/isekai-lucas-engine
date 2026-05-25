@@ -31,6 +31,31 @@ Fuente: `npm run audit:coverage`, script `src/utils/auditLiveCoverage.js`.
 | Combates activos | 0 | coincide |
 | Checkpoint oficial | `checkpoint_d10_1200_1779684235944` | presente |
 
+## Actualizacion G2/G3
+
+Se agregaron herramientas para sembrar y auditar el nucleo de Hoshimori:
+
+- `src/seeds/seedHoshimoriCore.js`
+- `src/utils/auditHoshimoriCore.js`
+- scripts `seed:hoshimori-core` y `audit:hoshimori-core`
+
+Resultado de ejecucion local en este entorno:
+
+- `npm run check`: OK.
+- `npm run seed:hoshimori-core`: no ejecutado contra MongoDB porque no existe `.env` ni `MONGODB_URI` en el entorno local. El script fallo antes de escribir datos.
+- `npm run audit:hoshimori-core`: fallo correctamente contra Render porque la DB viva aun no contiene el nucleo completo.
+- `npm run smoke`: OK.
+
+Evidencia viva antes de ejecutar el seed con credenciales Atlas:
+
+- NPCs esperados Hoshimori: 25.
+- NPCs encontrados por API: 4.
+- NPCs faltantes por API: 21.
+- Ubicaciones esperadas Hoshimori: 25.
+- Ubicaciones encontradas por API: 7.
+- Ubicaciones faltantes por API: 18.
+- Estado canon sigue Dia 10 12:00, dinero 1470, combates activos 0.
+
 ## Tabla de cobertura
 
 Estados usados:
@@ -64,8 +89,8 @@ Estados usados:
 | Inventario, propiedad y objetos | `rules_engine.md` 21 | Inventario en `GameState`, `Item`, validacion de item existente al agregar | Inventario Lucas vivo; 5 items base en seed | partial | `turn/apply` rechaza item inexistente al agregar | Completar catalogo G6/G17 |
 | Viaje, exploracion y zonas seguras | `rules_engine.md` 22; `world_bible.md` 7, 13 | Solo docs y strings de zonas en enemigos | No hay rutas vivas | indexed_docs_only | Sin modelos Route/TravelService; ubicaciones de bosque/camino faltan | G18 tras G2 |
 | Pipeline de acciones complejas | `rules_engine.md` 23-24 | `turn/apply` procesa patches; no orquestador de pipeline | Patches funcionan si GPT los manda bien | partial | Endpoint existe, pero validacion semantica es incompleta | Mantener GPT como planificador, mover reglas criticas al backend |
-| Hoshimori: ubicaciones principales | `world_bible.md` 6.3, 19 | `Location` model; seeds iniciales/world essentials | Confirmadas vivas: Grulla, comedor, cocina, gremio, mercado, templo, herreria | partial | GET manual a plaza, patio, molino, bosque, colinas, panaderia, guardia, consejo, curtidor dio 404 | G2 primero despues de G1 |
-| Hoshimori: roster base 25 NPCs | `world_bible.md` 11 | `seedInitialState` tiene 4; `seedHoshimoriRoster` prepara 21 mas | Vivo confirmado: 4 NPCs por query amplia; Narek ausente | partial | `/api/search/db?q=a`: `npcs=4`; `search/db?q=Narek`: 0 | G3 requiere cargar/validar roster vivo |
+| Hoshimori: ubicaciones principales | `world_bible.md` 6.3, 19 | `Location` model; seeds iniciales/world essentials; `seedHoshimoriCore.js` prepara 25 ubicaciones canonicas | Vivo confirmado antes de seed: 7/25 ubicaciones esperadas | partial | `audit:hoshimori-core`: 18 ubicaciones faltantes; el seed no corrio por falta de `MONGODB_URI` local | Ejecutar `npm run seed:hoshimori-core` en entorno con Atlas vivo y repetir auditoria |
+| Hoshimori: roster base 25 NPCs | `world_bible.md` 11 | `seedInitialState` tiene 4; `seedHoshimoriRoster` prepara 21 mas; `seedHoshimoriCore.js` consolida 25 NPCs con rutinas base | Vivo confirmado antes de seed: 4/25 NPCs esperados | partial | `audit:hoshimori-core`: 21 NPCs faltantes; Narek/Pavo/Borin/Liora no aparecen como NPC | Ejecutar seed en entorno con `MONGODB_URI`; luego marcar `seeded_mongodb` si `audit:hoshimori-core` pasa |
 | Hoshimori: red social base | `world_bible.md` 12 | Relaciones solo con Lucas; no Npc-Npc | No red social NPC-NPC viva | missing | No hay `NpcRelationship`; memorias vivas 0 por query amplia | G4 |
 | Region cercana a Hoshimori | `world_bible.md` 13 | Docs indexados; algunos enemy zones textuales | No locations vivas confirmadas | indexed_docs_only | Faltan `loc_hoshimori_mill`, bosque/colinas | G18/G2 |
 | Regiones y ciudades mayores | `world_bible.md` 14 | Docs indexados | No entidades vivas confirmadas | future_optional | `search/docs` encuentra Valdoria; DB solo faccion Corona | G19 post-Hoshimori |
@@ -137,9 +162,9 @@ Justificacion: hoy G1 puede inferir huecos por busqueda y endpoints profundos, p
 
 ## Proximas acciones recomendadas
 
-1. No avanzar a sistemas complejos antes de cerrar G2/G3.
-2. Completar ubicaciones vivas de Hoshimori y verificar `getLocationFull`.
-3. Cargar/completar roster vivo de 25 NPCs y verificar `getNpcFull`.
+1. Ejecutar `npm run seed:hoshimori-core` en un entorno con `MONGODB_URI` apuntando a Atlas vivo o en shell segura de Render.
+2. Repetir `npm run audit:hoshimori-core`, `npm run smoke` y `npm run audit:coverage`.
+3. Si la auditoria pasa, cambiar G2/G3 de `partial` a `seeded_mongodb`.
 4. Agregar red social/memorias base y rumores iniciales.
 5. Expandir economia/misiones solo despues de que locations/NPCs existan vivos.
 6. Convertir `auditLiveCoverage.js` en chequeo recurrente y, mas adelante, respaldarlo con `/api/admin/coverage-summary`.
