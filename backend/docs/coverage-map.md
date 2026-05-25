@@ -2,7 +2,7 @@
 
 Fecha de auditoria: 2026-05-25  
 Backend vivo auditado: `https://isekai-lucas-engine.onrender.com`  
-Modo G1 original: solo lectura. Actualizaciones posteriores G2/G3/G4/G5/G6/G7 ejecutaron seeds idempotentes de cobertura sin rollbacks, aceptaciones de mision, creacion de checkpoints ni mutaciones de partida.
+Modo G1 original: solo lectura. Actualizaciones posteriores G2/G3/G4/G5/G6/G7/G8-G10 ejecutaron seeds idempotentes o previews read-only sin rollbacks, aceptaciones de mision, creacion de checkpoints ni mutaciones de partida.
 
 ## Resumen ejecutivo
 
@@ -12,7 +12,7 @@ G1 compara tres niveles:
 2. Representacion en repo: modelos, seeds, servicios, rutas, smoke tests y docs indexables.
 3. Representacion viva en Render/MongoDB usando endpoints protegidos por `x-api-key`.
 
-Hallazgo principal: el repo ya tiene una base tecnica amplia y, tras G2/G3/G4/G5/G6/G7, MongoDB vivo contiene el nucleo de Hoshimori: 25 NPCs esperados, 25 ubicaciones principales, 12 relaciones NPC-NPC base, 4 memorias canonicas base, 8 rumores base activos, 36 items economicos, 9 shops, 39 filas de stock y 11 misiones iniciales disponibles. El estado canon de partida sigue Dia 10 12:00. Lo que todavia no cubre el 100% del texto son venta/compra transaccional completa, propagacion avanzada de rumores, relaciones avanzadas/romance, secretos, cadenas de misiones, magia, viajes y world tick.
+Hallazgo principal: el repo ya tiene una base tecnica amplia y, tras G2/G3/G4/G5/G6/G7/G8-G10, MongoDB vivo contiene el nucleo de Hoshimori: 25 NPCs esperados, 25 ubicaciones principales, 12 relaciones NPC-NPC base, 4 memorias canonicas base, 8 rumores base activos, 36 items economicos, 9 shops, 39 filas de stock, 11 misiones iniciales disponibles y 1 contrato laboral activo de Lucas en La Grulla Azul. Ademas existen servicios/endpoints de preview para reloj biologico y progresion de EXP. El estado canon de partida sigue Dia 10 12:00. Lo que todavia no cubre el 100% del texto son completar turnos reales con pago, acumulador biologico persistente, validacion estricta de EXP dentro de cada accion, venta/compra transaccional completa, propagacion avanzada de rumores, relaciones avanzadas/romance, secretos, cadenas de misiones, magia, viajes y world tick.
 
 ## Estado vivo confirmado
 
@@ -247,6 +247,75 @@ Resultado vivo tras ejecutar G7 con `MONGODB_URI`:
 - Referencias faltantes de facciones/NPCs/locations/items/enemigos/rumores/shops: 0.
 - Misiones con romance, secretos privados o recompensa magica: 0.
 
+## Actualizacion G8-G10
+
+Se agrego la base tecnica combinada para trabajos, necesidades biologicas y progresion de habilidades:
+
+- `src/models/JobContract.js`
+- `src/seeds/seedHoshimoriJobs.js`
+- `src/services/jobService.js`
+- `src/services/biologicalClockService.js`
+- `src/services/skillProgressionService.js`
+- `src/utils/auditHoshimoriJobs.js`
+- `src/utils/auditBiologicalClock.js`
+- `src/utils/auditSkillProgression.js`
+- scripts `seed:hoshimori-jobs`, `audit:hoshimori-jobs`, `audit:biological-clock`, `audit:skill-progression`
+
+Endpoints nuevos protegidos por API key:
+
+- `GET /api/jobs/contracts/active`
+- `GET /api/jobs/shifts/available`
+- `POST /api/jobs/shifts/:shiftId/preview`
+- `POST /api/needs/activity-cost/preview`
+- `POST /api/progression/skills/preview`
+
+G8 contenido vivo sembrado:
+
+- 1 contrato laboral activo: `job_contract_lucas_grulla_azul_d10`.
+- Lugar: La Grulla Azul.
+- Empleador: Roberto Valen.
+- Pago base: 140 cobre/dia.
+- Turno manana: 07:00-12:00.
+- Turno tarde: 14:00-20:30.
+- Comidas de contrato: comida ligera/desayuno +20 saciedad/+2 energia; comida principal +30 saciedad/+5 energia.
+- Tareas tipicas y reglas de ausencia documentadas en el contrato.
+- No se modifica `GameState`; los previews indican explicitamente `willMutateGameState: false`.
+
+G9 contenido tecnico:
+
+- Servicio central con categorias de actividad de `rules_engine.md` 6.3.
+- Costes por hora confirmados: actividad normal -3/-4, trabajo normal -3/-6, viaje suave -3/-5, trabajo fuerte -7/-11, entreno moderado -5/-8, entreno intenso -8/-14.
+- Labels centralizados para saciedad y energia.
+- Preview de bloque biologico sin aplicar automaticamente al GameState.
+
+G10 contenido tecnico:
+
+- Servicio central con fases, EXP por fase, level-up y cambio de fase.
+- Validacion basica por habilidad/categoria para Fuerza, Resistencia, Vitalidad, Agilidad, Percepcion, Mana y Magia.
+- Preview de multiplicadores: maestro x2, Aqua x5 solo magico, energia baja reduce EXP.
+- Estructura TODO para anti-farmeo real cuando exista historial diario.
+- No reemplaza todavia la mutacion de `turn/apply`; queda como preview/validacion central.
+
+Resultado vivo tras ejecutar G8-G10 con `MONGODB_URI` y backend local apuntando a MongoDB vivo:
+
+- `npm run check`: OK.
+- `npm run seed:hoshimori-jobs`: OK.
+- `npm run smoke`: OK contra backend local con endpoints nuevos.
+- `npm run audit:hoshimori-jobs`: OK.
+- `npm run audit:biological-clock`: OK.
+- `npm run audit:skill-progression`: OK.
+- `npm run audit:coverage`: OK.
+- `npm run audit:hoshimori-core`: OK.
+- `npm run audit:hoshimori-social`: OK.
+- `npm run audit:hoshimori-rumors`: OK.
+- `npm run audit:hoshimori-economy`: OK.
+- `npm run audit:hoshimori-missions`: OK.
+- GameState sigue Dia 10, hora 12:00, ubicacion `loc_hoshimori_grulla_azul_comedor`.
+- `moneyCopper` sigue 1470.
+- `activeMissionIds` sigue vacio.
+- Combates activos: 0.
+- Previews de trabajo/necesidades/EXP no mutan estado.
+
 ## Tabla de cobertura
 
 Estados usados:
@@ -263,14 +332,14 @@ Estados usados:
 | Autoridad, regla madre y no inventar | `rules_engine.md` 0-3, 25 | Docs indexados, `context/full`, `search/db`, `search/docs`, `turn/apply` | API responde health/context/search | partial | Smoke OK; docs search OK; backend no fuerza todas las reglas narrativas | Mantener como instrucciones GPT + agregar validadores solo donde haya estado vivo |
 | Formato obligatorio de respuesta | `rules_engine.md` 4 | No hay renderer/formato backend; solo docs | Indexado en docs | indexed_docs_only | No hay modelo/ruta de formato | Resolver en instrucciones GPT; no meter en MongoDB salvo logs/estado |
 | Tiempo exacto y bloques | `rules_engine.md` 5 | `GameState.time`, `block`, `turnController.getBlockFromTime` | Dia 10 12:00, Mediodia | partial | `audit:coverage` confirma tiempo; `turn/apply` no permite retroceder dentro del dia | Agregar avance de dia y reglas de cambio de dia en G14/G9 |
-| Reloj biologico suavizado | `rules_engine.md` 6 | `GameState.biologicalClock`, deltas directos en `turn/apply` | `pendingAccumulation: []` | partial | Schema existe; no hay procesador estricto por hora | G9 antes de balance avanzado |
+| Reloj biologico suavizado | `rules_engine.md` 6 | `GameState.biologicalClock`, `biologicalClockService`, endpoint preview `/api/needs/activity-cost/preview`; deltas directos siguen en `turn/apply` | `pendingAccumulation: []`; preview G9 validado sin mutar | partial | `audit:biological-clock` OK: costes por hora y labels coinciden; GameState intacto | G9 futuro: acumulador persistente por hora exacta e integracion automatica en `applyTurn` |
 | Vida, heridas y condiciones | `rules_engine.md` 7 | `GameState.lucasStatus`, heridas/condiciones, combate agrega heridas | Sin heridas activas | partial | Modelos y patches existen; validacion de causa depende del GPT | Endurecer validadores de heridas/condiciones |
-| Comidas, raciones y contrato | `rules_engine.md` 8 | `Item`, inventario inicial, comida/raciones en seed; no hay contrato laboral formal | Alimentos base vivos; Pavo, Grulla y Hilda tienen stock de comida | partial | G6: Pavo conserva racion pequena/normal; Grulla tiene comida/sopa/servicio de habitacion; Hilda pan simple/de viaje | Crear sistema de trabajos/contrato en G8 |
+| Comidas, raciones y contrato | `rules_engine.md` 8 | `Item`, `JobContract`, `seedHoshimoriJobs.js`, `jobService`, previews de turno | Alimentos base vivos; contrato activo de La Grulla Azul vivo con comidas de contrato | seeded_mongodb | G8: contrato `job_contract_lucas_grulla_azul_d10`, comida ligera +20/+2 y principal +30/+5; preview no muta GameState | G8 futuro: completar turno real con pago/comida y validaciones de ausencia |
 | Dinero y comercio basico | `rules_engine.md` 9 | `Item`, `Shop`, `ShopStock`, `economyService`, `shopStockPatches`, `GET /api/economy/shops`, `GET /api/economy/items/:itemId` | 9 shops vivos, 36 items, 39 stocks | seeded_mongodb | `seed:hoshimori-economy` OK; `audit:hoshimori-economy` OK; Borin/Liora/Sella/Hilda/Merek consultables | G6 futuro/G16: venta transaccional, fiado profundo, precios variables sofisticados, bancos/deudas/impuestos |
 | Bancos, deudas, alquileres, impuestos | `rules_engine.md` 9.7, `world_bible.md` 4.6 | No hay modelos especificos `Loan/Debt/Rental/Tax/BankAccount` | No confirmado vivo | future_optional | Solo docs y algunas facciones; sin endpoints | Postergar hasta G16 |
-| Progresion de habilidades y EXP | `rules_engine.md` 10-13 | Skills embebidas en `GameState`; `applySkillExp` con level-up | Skills de Lucas vivas | partial | Hay skills y EXP, pero no valida rangos, maestro, Aqua, energia baja, anti-farmeo | G10: centralizar tabla y validadores |
+| Progresion de habilidades y EXP | `rules_engine.md` 10-13 | Skills embebidas en `GameState`; `skillProgressionService`; endpoint preview `/api/progression/skills/preview`; `turn/apply` aun usa logica propia | Skills de Lucas vivas; previews G10 no mutantes | partial | `audit:skill-progression` OK: level-up, cambio de fase, Aqua solo magico, energia baja reduce EXP, estado intacto | G10 futuro: usar servicio como validador obligatorio en cada `skillPatch` y agregar anti-farmeo real |
 | Magia, MP y practica | `rules_engine.md` 14; `world_bible.md` 1.4, 9.3 | MP, skills `skill_mana`/`skill_magia`, flag `knownSpells` | MP 200/200, `knownSpells: []` | partial | No hay catalogo de hechizos ni templates | G11 despues de EXP/biologia |
-| Entrenamiento fisico, trabajo y viaje | `rules_engine.md` 15 | Deltas por `turn/apply`; no hay `Job`, `Route`, `TravelService` | Trabajo actual en flags, sin contrato formal | partial | `flags.currentJob: La Grulla Azul`; no hay endpoints de jobs | G8 y G18 |
+| Entrenamiento fisico, trabajo y viaje | `rules_engine.md` 15 | `JobContract`, `jobService`, previews de turnos; deltas por `turn/apply`; no hay `Route`/`TravelService` | Trabajo actual formalizado como contrato G8; viajes siguen sin grafo | partial | `audit:hoshimori-jobs` OK: 2 turnos, pago 140/dia, Roberto/location/faction existen, preview no muta | G8 futuro para completar turnos reales; G18 para rutas/viajes |
 | Combate narrativo con numeros | `rules_engine.md` 16; `world_bible.md` 16 | `EnemyTemplate`, `CombatEncounter`, `combatService`, rutas `/api/combat/*` | 5 enemigos vivos; 0 combates activos | seeded_mongodb | `audit:coverage`: 5 enemy templates, active combats 0 | G12: acciones, armas, multiples enemigos, loot/proof |
 | Gremio, MG y misiones | `rules_engine.md` 17; `world_bible.md` 18 | `Mission`, `missionService`, rutas board/accept/report/expire, `seedHoshimoriMissions.js`, `auditHoshimoriMissions.js` | 11 misiones iniciales disponibles Porcelana/Cobre | seeded_mongodb | `seed:hoshimori-missions` OK; `audit:hoshimori-missions` OK; 11/11 con marcador G7, `activeMissionIds` vacio, recompensas no negativas, pruebas requeridas | G7 futuro/G14-G15: cadenas, expiracion offscreen, consecuencias/reputacion y recompensas complejas |
 | NPCs, conocimiento, escena viva | `rules_engine.md` 18; `world_bible.md` 11 | `Npc`, `NpcMemory`, `RoutineOverride`, `NpcRelationship`, `getNpcFull`; seeds core/social/rumors preparados | 25 NPCs de Hoshimori vivos; 4 memorias G4 vivas; rumores G5 distribuidos por NPC/location | partial | `audit:hoshimori-core`, `audit:hoshimori-social` y `audit:hoshimori-rumors` OK | Ampliar memoria privada solo con canon verificable; no hacer NPCs omniscientes |
@@ -286,6 +355,7 @@ Estados usados:
 | Hoshimori: rumores base | `world_bible.md` 17, 19; `rules_engine.md` 20.1 | `Rumor`, `seedHoshimoriRumors.js`, `auditHoshimoriRumors.js`, `context/full`, `search/db` | 8/8 rumores base activos vivos | seeded_mongodb | Marcador G5 8/8; no `confirmed`; romance/secretos 0; no todos los NPCs conocen todo; GameState intacto | Implementar propagacion simple por avance de tiempo solo cuando exista world tick |
 | Hoshimori: economia base | `rules_engine.md` 8-9, 21; `world_bible.md` 6, 19 | `Item`, `Shop`, `ShopStock`, `seedHoshimoriEconomy.js`, `auditHoshimoriEconomy.js`, endpoints read-only de shops/items | 36/36 items, 9/9 shops, 39/39 stock rows vivos | seeded_mongodb | `audit:hoshimori-economy`: stock no negativo, precios no negativos, owners/locations/factions OK, magia comun 0, GameState intacto | G7/G8 pueden consumir economia; G16 para bancos/deudas/impuestos |
 | Hoshimori: cartelera inicial del gremio | `rules_engine.md` 17; `world_bible.md` 18-19 | `Mission`, `seedHoshimoriMissions.js`, `auditHoshimoriMissions.js`, filtros read-only por `riskLevel`/`sourceFactionId` en board | 11/11 misiones G7 vivas y disponibles | seeded_mongodb | Board API devuelve 11; detalle `mission_d10_grulla_delivery_guild` OK; no high/extreme, no romance/secretos/recompensas magicas; GameState y combates intactos | G8 puede apoyarse en encargos no combativos; G14/G15 para expiracion/consecuencias offscreen |
+| Hoshimori: trabajo en La Grulla Azul | `rules_engine.md` 8, 15; `world_bible.md` 6, 11 | `JobContract`, `seedHoshimoriJobs.js`, `jobService`, `GET /api/jobs/contracts/active`, `GET /api/jobs/shifts/available`, `POST /api/jobs/shifts/:shiftId/preview` | 1 contrato activo vivo con 2 turnos | seeded_mongodb | `seed:hoshimori-jobs` OK; `audit:hoshimori-jobs` OK; GameState Dia 10 12:00, dinero 1470, activeMissionIds vacio, combates 0 | Implementar endpoint mutador de completar turno solo con validadores, checkpoint/rollback de test y EventLog |
 | Region cercana a Hoshimori | `world_bible.md` 13 | Docs indexados; algunas locations core cercanas y enemy zones textuales | Camino del Molino, molino, bosque y colinas base existen como locations core | partial | `audit:hoshimori-core` OK reportado para 25 locations; faltan rutas regionales, aldeas/granjas y rosters externos | G18 y G19 despues de Hoshimori economico/social |
 | Regiones y ciudades mayores | `world_bible.md` 14 | Docs indexados | No entidades vivas confirmadas | future_optional | `search/docs` encuentra Valdoria; DB solo faccion Corona | G19 post-Hoshimori |
 | Amenazas, fauna y monstruos | `world_bible.md` 16 | `EnemyTemplate`, `seedEnemyTemplates` | 5 enemigos vivos | seeded_mongodb | `search/db?q=lobo` devuelve 1 enemyTemplate; `/api/combat/enemies` devuelve 5 | Ampliar con zonas/loot en G12/G17 |
@@ -295,7 +365,7 @@ Estados usados:
 | Busqueda docs | `rules_engine.md` 3.2; ambos docs | `WorldDocumentIndex`, `seedDocuments`, `/api/search/docs` | Funciona con `romance` | seeded_mongodb | `search/docs?q=romance` devuelve 4 docs | Mantener seed docs alineado con archivos |
 | Contexto completo | `rules_engine.md` 3.2 | `/api/context/full` junta estado, location, NPCs cercanos, shops, rumors, missions, factions, combat | Funciona y es de alcance cercano | implemented_backend | `context/full` devuelve 4 nearby NPCs y 4 rumores activos relevantes en Grulla | Documentar que no es roster completo |
 | Checkpoints y rollback | `rules_engine.md` 3.4 | `Checkpoint`, rutas create/list/get/rollback | Checkpoints vivos; oficial presente | implemented_backend | `/api/checkpoints` lista `checkpoint_d10_1200_1779684235944` | Separar admin/in-game en OpenAPI; no exponer rollback al GPT normal |
-| Smoke test | README, `smokeTestRender.js` | `npm run smoke` cubre health/context/search/npc/location/economy/missions/combat/checkpoints | Smoke remoto OK | implemented_backend | Ejecutado OK en G1 | Expandir a tests no mutantes |
+| Smoke test | README, `smokeTestRender.js` | `npm run smoke` cubre health/context/search/npc/location/economy/missions/jobs/needs/progression/combat/checkpoints | Smoke OK contra backend local con DB viva para endpoints G8-G10; remoto OK para endpoints ya desplegados | implemented_backend | Ejecutado OK en G8-G10 con `SMOKE_BASE_URL=http://localhost:4010` | Expandir a tests no mutantes y repetir remoto tras redeploy |
 | Tests automatizados | `rules_engine.md` 26 | `npm test` sigue placeholder | No aplica | missing | `package.json`: `test` imprime "no test specified" | G21 |
 | OpenAPI / GPT Actions | `rules_engine.md` 26 | No se encontro archivo OpenAPI/swagger | No aplica | missing | `rg openapi|swagger` solo encuentra menciones pendientes | G22 |
 | Admin/debug seguro | `rules_engine.md` 26 | Checkpoints y scripts utilitarios; no resumen read-only de colecciones | No endpoint de conteo seguro | partial | Se audita con busquedas indirectas | Proponer `/api/admin/coverage-summary`, no implementar en G1 |
@@ -323,11 +393,11 @@ Cambio G5: `Rumor` ahora incluye `source` para auditar seeds vivos sin depender 
 
 Seeds existentes:
 
-`seedInitialState.js`, `seedWorldEssentials.js`, `seedHoshimoriRoster.js`, `seedHoshimoriRoutines.js`, `seedHoshimoriCore.js`, `seedHoshimoriSocialGraph.js`, `seedHoshimoriRumors.js`, `seedHoshimoriEconomy.js`, `seedHoshimoriMissions.js`, `seedEnemyTemplates.js`, `seedDocuments.js`, mas scripts de limpieza/reparacion. En G1 no se ejecuto ningun seed; G2/G3/G4/G5/G6/G7 usaron seeds idempotentes.
+`seedInitialState.js`, `seedWorldEssentials.js`, `seedHoshimoriRoster.js`, `seedHoshimoriRoutines.js`, `seedHoshimoriCore.js`, `seedHoshimoriSocialGraph.js`, `seedHoshimoriRumors.js`, `seedHoshimoriEconomy.js`, `seedHoshimoriMissions.js`, `seedHoshimoriJobs.js`, `seedEnemyTemplates.js`, `seedDocuments.js`, mas scripts de limpieza/reparacion. En G1 no se ejecuto ningun seed; G2/G3/G4/G5/G6/G7/G8 usaron seeds idempotentes.
 
 Rutas existentes:
 
-`/api/context/full`, `/api/turn/apply`, `/api/search/db`, `/api/search/docs`, `/api/npcs/:npcId/full`, `/api/locations/:locationId/full`, `/api/checkpoints`, `/api/world/sync-routines`, `/api/economy/shops`, `/api/economy/shops/:shopId/stock`, `/api/economy/items/:itemId`, `/api/economy/restock-daily`, `/api/missions/*`, `/api/combat/*`.
+`/api/context/full`, `/api/turn/apply`, `/api/search/db`, `/api/search/docs`, `/api/npcs/:npcId/full`, `/api/locations/:locationId/full`, `/api/checkpoints`, `/api/world/sync-routines`, `/api/economy/shops`, `/api/economy/shops/:shopId/stock`, `/api/economy/items/:itemId`, `/api/economy/restock-daily`, `/api/missions/*`, `/api/combat/*`, `/api/jobs/*`, `/api/needs/activity-cost/preview`, `/api/progression/skills/preview`.
 
 G5 confirma que `context/full` trae rumores activos por ubicacion/NPC cercano y que `search/db` puede encontrarlos.
 
@@ -335,9 +405,11 @@ G6 confirma que shops principales e items basicos pueden consultarse por endpoin
 
 G7 confirma que `GET /api/missions/board` y `GET /api/missions/:missionId` pueden consultar una cartelera inicial viva sin aceptar misiones. La cartelera se puede filtrar por `rank`, `locationId`, `riskLevel` y `sourceFactionId`.
 
+G8-G10 confirman que jobs, needs y progression exponen endpoints read-only/dryRun. Todavia no hay mutador real de completar turno ni integracion obligatoria de EXP/biologia en `turn/apply`.
+
 Smoke test:
 
-`src/utils/smokeTestRender.js` existe y cubre health, context, search, npc, location, economy, missions, detalle de mision estable, combat y checkpoints. Fue ejecutado durante G1 y ampliado en G6/G7.
+`src/utils/smokeTestRender.js` existe y cubre health, context, search, npc, location, economy, missions, detalle de mision estable, jobs, preview de necesidades, preview de skills, combat y checkpoints. Fue ejecutado durante G1 y ampliado en G6/G7/G8-G10.
 
 Docs indexados:
 
@@ -364,8 +436,10 @@ Justificacion: hoy G1 puede inferir huecos por busqueda y endpoints profundos, p
 
 ## Proximas acciones recomendadas
 
-1. Usar `npm run audit:hoshimori-core`, `npm run audit:hoshimori-social`, `npm run audit:hoshimori-rumors`, `npm run audit:hoshimori-economy` y `npm run audit:hoshimori-missions` como regresiones read-only.
-2. Implementar G8 sobre el trabajo de La Grulla Azul sin aceptar misiones ni mutar dinero fuera de endpoints validados.
-3. Implementar venta/compra transaccional y fiado profundo solo cuando se disene el flujo de acciones economicas.
-4. Implementar propagacion avanzada de rumores y expiracion/consecuencias de misiones dentro del world tick, no por tiempo real.
-5. Convertir `auditLiveCoverage.js` en chequeo recurrente y, mas adelante, respaldarlo con `/api/admin/coverage-summary`.
+1. Usar `npm run audit:hoshimori-core`, `npm run audit:hoshimori-social`, `npm run audit:hoshimori-rumors`, `npm run audit:hoshimori-economy`, `npm run audit:hoshimori-missions`, `npm run audit:hoshimori-jobs`, `npm run audit:biological-clock` y `npm run audit:skill-progression` como regresiones read-only.
+2. Implementar completar turnos reales solo con validadores de horario, pago, comida, ausencia, EventLog y pruebas con rollback/checkpoint.
+3. Integrar acumulador biologico persistente en `turn/apply` o world tick, procesando solo horas exactas `:00`.
+4. Usar `skillProgressionService` como validador obligatorio para `skillPatch`, y agregar anti-farmeo real con historial diario.
+5. Implementar venta/compra transaccional y fiado profundo solo cuando se disene el flujo de acciones economicas.
+6. Implementar propagacion avanzada de rumores y expiracion/consecuencias de misiones dentro del world tick, no por tiempo real.
+7. Convertir `auditLiveCoverage.js` en chequeo recurrente y, mas adelante, respaldarlo con `/api/admin/coverage-summary`.

@@ -22,6 +22,13 @@ async function request(path, options = {}) {
   return data;
 }
 
+async function post(path, body) {
+  return request(path, {
+    method: "POST",
+    body: JSON.stringify(body || {}),
+  });
+}
+
 async function runSmokeTests() {
   console.log(`Probando API en: ${BASE_URL}`);
 
@@ -85,6 +92,41 @@ async function runSmokeTests() {
   if (!missionDetail.ok) throw new Error("mission detail fallo");
   if (!missionDetail.mission?.missionId) throw new Error("mission detail no devolvio mission");
   console.log("OK /api/missions/mission_d10_grulla_delivery_guild");
+
+  const activeJob = await request("/api/jobs/contracts/active");
+  if (!activeJob.ok) throw new Error("active job contract fallo");
+  if (!activeJob.contract?.contractId) throw new Error("active job contract no devolvio contract");
+  console.log("OK /api/jobs/contracts/active");
+
+  const shiftPreview = await post("/api/jobs/shifts/shift_grulla_afternoon_1400_2030/preview", {});
+  if (!shiftPreview.ok) throw new Error("job shift preview fallo");
+  if (shiftPreview.preview?.mutation?.willMutateGameState !== false) {
+    throw new Error("job shift preview no es dryRun");
+  }
+  console.log("OK /api/jobs/shifts/.../preview");
+
+  const activityPreview = await post("/api/needs/activity-cost/preview", {
+    category: "trabajo_normal",
+    minutes: 60,
+  });
+  if (!activityPreview.ok) throw new Error("activity cost preview fallo");
+  if (activityPreview.preview?.totalDelta?.energy !== -6) {
+    throw new Error("activity cost preview no coincide con trabajo_normal");
+  }
+  console.log("OK /api/needs/activity-cost/preview");
+
+  const skillPreview = await post("/api/progression/skills/preview", {
+    skillId: "skill_mana",
+    category: "practica_basica_1h_solo",
+    expDelta: 4,
+    currentEnergy: 80,
+    modifiers: { aquaBlessing: true },
+  });
+  if (!skillPreview.ok) throw new Error("skill progression preview fallo");
+  if (skillPreview.preview?.validation?.effectiveExpDelta !== 20) {
+    throw new Error("skill progression preview no aplico Aqua a Mana");
+  }
+  console.log("OK /api/progression/skills/preview");
 
   const combatEnemies = await request("/api/combat/enemies");
   if (!combatEnemies.ok) throw new Error("combat enemies fallo");

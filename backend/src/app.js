@@ -12,6 +12,9 @@ const worldRoutes = require("./routes/worldRoutes");
 const economyRoutes = require("./routes/economyRoutes");
 const missionRoutes = require("./routes/missionRoutes");
 const combatRoutes = require("./routes/combatRoutes");
+const jobRoutes = require("./routes/jobRoutes");
+const needsRoutes = require("./routes/needsRoutes");
+const progressionRoutes = require("./routes/progressionRoutes");
 
 const app = express();
 
@@ -36,6 +39,9 @@ app.use("/api/world", worldRoutes);
 app.use("/api/economy", economyRoutes);
 app.use("/api/missions", missionRoutes);
 app.use("/api/combat", combatRoutes);
+app.use("/api/jobs", jobRoutes);
+app.use("/api/needs", needsRoutes);
+app.use("/api/progression", progressionRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
