@@ -7,7 +7,8 @@ const Npc = require("../models/Npc");
 const NpcMemory = require("../models/NpcMemory");
 const NpcRelationship = require("../models/NpcRelationship");
 
-const SOURCE = "seed_hoshimori_social_g4";
+const SOURCE = "g4_hoshimori_social_seed";
+const MARKER_TAGS = ["g4", "hoshimori", "social_graph"];
 const CREATED_DAY = 10;
 const CREATED_TIME = "12:00";
 
@@ -15,19 +16,28 @@ function normalizePair(npcAId, npcBId) {
   return [npcAId, npcBId].sort();
 }
 
+function unique(values) {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
 function relationship(npcAId, npcBId, data) {
   const [a, b] = normalizePair(npcAId, npcBId);
+  const tags = unique([...MARKER_TAGS, SOURCE, ...(data.tags || [])]);
 
   return {
+    ...data,
     relationshipId: `rel_${a}_${b}`,
     npcAId: a,
     npcBId: b,
-    knownToLucas: false,
+    knownToLucas: data.knownToLucas ?? false,
     source: SOURCE,
-    tags: ["hoshimori", "g4_social_graph", SOURCE, ...(data.tags || [])],
-    privateNotes: "",
-    ...data,
+    tags,
+    privateNotes: data.privateNotes || "",
   };
+}
+
+function pairQuery(entry) {
+  return { npcAId: entry.npcAId, npcBId: entry.npcBId };
 }
 
 const relationships = [
@@ -143,7 +153,7 @@ const memories = [
     importance: "normal",
     relatedNpcIds: ["npc_roberto_valen"],
     relatedLocationIds: ["loc_hoshimori_grulla_azul"],
-    tags: ["hoshimori", "g4_social_memory", SOURCE, "lucas_work"],
+    tags: ["g4", "hoshimori", "social_memory", SOURCE, "lucas_work"],
   },
   {
     memoryId: "memory_g4_fern_lucas_magic_awakened",
@@ -158,7 +168,7 @@ const memories = [
     importance: "important",
     relatedNpcIds: ["npc_fern"],
     relatedLocationIds: ["loc_hoshimori_grulla_azul"],
-    tags: ["hoshimori", "g4_social_memory", SOURCE, "lucas_magic", "private"],
+    tags: ["g4", "hoshimori", "social_memory", SOURCE, "lucas_magic", "private"],
   },
   {
     memoryId: "memory_g4_yara_lucas_grulla_worker",
@@ -173,7 +183,7 @@ const memories = [
     importance: "normal",
     relatedNpcIds: ["npc_yara_mils"],
     relatedLocationIds: ["loc_hoshimori_grulla_azul", "loc_hoshimori_grulla_azul_cocina"],
-    tags: ["hoshimori", "g4_social_memory", SOURCE, "lucas_work"],
+    tags: ["g4", "hoshimori", "social_memory", SOURCE, "lucas_work"],
   },
   {
     memoryId: "memory_g4_garrick_lucas_volunteer",
@@ -188,7 +198,7 @@ const memories = [
     importance: "normal",
     relatedNpcIds: ["npc_garrick_thorne"],
     relatedLocationIds: ["loc_hoshimori_guild"],
-    tags: ["hoshimori", "g4_social_memory", SOURCE, "guild", "lucas_volunteer"],
+    tags: ["g4", "hoshimori", "social_memory", SOURCE, "guild", "lucas_volunteer"],
   },
 ];
 
@@ -222,7 +232,7 @@ async function seedHoshimoriSocialGraph() {
     relationships.map((entry) => ({
       updateOne: {
         filter: { npcAId: entry.npcAId, npcBId: entry.npcBId },
-        update: { $setOnInsert: entry },
+        update: { $set: entry },
         upsert: true,
       },
     })),
@@ -230,35 +240,51 @@ async function seedHoshimoriSocialGraph() {
   );
 
   await NpcMemory.bulkWrite(
-    memories.map((entry) => ({
-      updateOne: {
-        filter: { memoryId: entry.memoryId },
-        update: {
-          $setOnInsert: {
-            ...entry,
-            sourceId: SOURCE,
-            shareConditions: [],
-            createdDay: CREATED_DAY,
-            createdTime: CREATED_TIME,
-            lastReferencedDay: CREATED_DAY,
-            decayType: "none",
+    memories.map((entry) => {
+      const { tags, ...memoryOnInsert } = entry;
+
+      return {
+        updateOne: {
+          filter: { memoryId: entry.memoryId },
+          update: {
+            $set: {
+              sourceId: SOURCE,
+              tags,
+            },
+            $setOnInsert: {
+              ...memoryOnInsert,
+              shareConditions: [],
+              createdDay: CREATED_DAY,
+              createdTime: CREATED_TIME,
+              lastReferencedDay: CREATED_DAY,
+              decayType: "none",
+            },
           },
+          upsert: true,
         },
-        upsert: true,
-      },
-    })),
+      };
+    }),
     { ordered: false }
   );
 
-  const [relationshipCount, memoryCount] = await Promise.all([
-    NpcRelationship.countDocuments({ tags: SOURCE }),
-    NpcMemory.countDocuments({ tags: SOURCE }),
+  const expectedPairQueries = relationships.map(pairQuery);
+  const relationshipQuery =
+    expectedPairQueries.length > 0 ? { $or: expectedPairQueries } : { relationshipId: "__none__" };
+
+  const [relationshipCount, markerRelationshipCount, memoryCount] = await Promise.all([
+    NpcRelationship.countDocuments(relationshipQuery),
+    NpcRelationship.countDocuments({
+      source: SOURCE,
+      tags: { $all: MARKER_TAGS },
+    }),
+    NpcMemory.countDocuments({ sourceId: SOURCE, tags: SOURCE }),
   ]);
 
   console.log("Hoshimori social graph seed completed.");
   console.log(`Expected relationships in seed: ${relationships.length}`);
   console.log(`Expected memories in seed: ${memories.length}`);
-  console.log(`MongoDB G4 relationships: ${relationshipCount}`);
+  console.log(`MongoDB G4 relationship pairs: ${relationshipCount}`);
+  console.log(`MongoDB G4 relationships with marker: ${markerRelationshipCount}`);
   console.log(`MongoDB G4 memories: ${memoryCount}`);
 
   await mongoose.disconnect();

@@ -18,7 +18,8 @@ const BASE_URL =
   "https://isekai-lucas-engine.onrender.com";
 
 const API_KEY = process.env.API_KEY || process.env.AUDIT_API_KEY || "dev-secret";
-const SOURCE = "seed_hoshimori_social_g4";
+const SOURCE = "g4_hoshimori_social_seed";
+const MARKER_TAGS = ["g4", "hoshimori", "social_graph"];
 
 const EXPECTED_STATE = {
   day: 10,
@@ -61,6 +62,11 @@ function normalizePair(npcAId, npcBId) {
   return [npcAId, npcBId].sort();
 }
 
+function pairQuery(left, right) {
+  const [npcAId, npcBId] = normalizePair(left, right);
+  return { npcAId, npcBId };
+}
+
 function endpoint(path) {
   return `${BASE_URL}${path}`;
 }
@@ -95,15 +101,6 @@ function assertEqual(issues, label, actual, expected) {
 
   if (!ok) {
     issues.push(`${label}: got ${actual}, expected ${expected}`);
-  }
-}
-
-function assertAtLeast(issues, label, actual, expected) {
-  const ok = actual >= expected;
-  console.log(`${ok ? "PASS" : "FAIL"} ${label}: ${actual} (minimum ${expected})`);
-
-  if (!ok) {
-    issues.push(`${label}: got ${actual}, expected at least ${expected}`);
   }
 }
 
@@ -169,19 +166,35 @@ async function main() {
   assertEqual(issues, "db moneyCopper", dbGameState?.moneyCopper, EXPECTED_STATE.moneyCopper);
 
   section("Relationship Coverage");
-  const relationshipCount = await NpcRelationship.countDocuments({ tags: SOURCE });
-  assertAtLeast(issues, "G4 relationship count", relationshipCount, EXPECTED_PAIRS.length);
+  const expectedPairQueries = EXPECTED_PAIRS.map(([left, right]) => pairQuery(left, right));
+  const relationshipQuery =
+    expectedPairQueries.length > 0 ? { $or: expectedPairQueries } : { relationshipId: "__none__" };
+  const [relationshipCount, markerRelationshipCount] = await Promise.all([
+    NpcRelationship.countDocuments(relationshipQuery),
+    NpcRelationship.countDocuments({
+      source: SOURCE,
+      tags: { $all: MARKER_TAGS },
+    }),
+  ]);
+
+  assertEqual(issues, "G4 relationship pair count", relationshipCount, EXPECTED_PAIRS.length);
+  console.log(`G4 relationships with marker: ${markerRelationshipCount}`);
 
   const missingPairs = [];
   const pairRows = [];
 
   for (const [left, right] of EXPECTED_PAIRS) {
-    const [npcAId, npcBId] = normalizePair(left, right);
+    const { npcAId, npcBId } = pairQuery(left, right);
     const entry = await NpcRelationship.findOne({ npcAId, npcBId }).lean();
+    const hasMarker =
+      entry?.source === SOURCE &&
+      MARKER_TAGS.every((tag) => Array.isArray(entry.tags) && entry.tags.includes(tag));
 
     pairRows.push({
       pair: `${left}<->${right}`,
       exists: Boolean(entry),
+      hasMarker,
+      source: entry?.source || "",
       type: entry?.type || "",
       trust: entry?.trust ?? "",
       familiarity: entry?.familiarity ?? "",
