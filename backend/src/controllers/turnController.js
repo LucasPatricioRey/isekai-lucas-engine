@@ -8,6 +8,7 @@ const Rumor = require("../models/Rumor");
 const WorldEvent = require("../models/WorldEvent");
 const Location = require("../models/Location");
 const ShopStock = require("../models/ShopStock");
+const Item = require("../models/Item");
 
 const PHASE_ORDER = [
   "Principiante",
@@ -46,6 +47,11 @@ function getBlockFromTime(time) {
   if (hour >= 12 && hour < 14) return "Mediodía";
   if (hour >= 14 && hour < 18) return "Tarde";
   return "Noche";
+}
+
+function timeToMinutes(time) {
+  const [hours, minutes] = time.split(":").map(Number);
+  return hours * 60 + minutes;
 }
 
 function createId(prefix) {
@@ -145,7 +151,7 @@ function applySkillExp(skill, expDelta) {
   };
 }
 
-function applyInventoryPatch(inventory, patch) {
+async function applyInventoryPatch(inventory, patch) {
   const { op, itemId, quantity = 1, condition = "normal", equipped = false, notes = "" } = patch;
 
   if (!["add", "remove", "set_quantity"].includes(op)) {
@@ -154,6 +160,16 @@ function applyInventoryPatch(inventory, patch) {
 
   if (!itemId) {
     throw validationError("inventoryPatch.itemId es obligatorio.");
+  }
+
+  if (op === "add" || op === "set_quantity") {
+    const itemExists = await Item.exists({ itemId });
+
+    if (!itemExists) {
+      throw validationError("No se puede agregar item inexistente al inventario.", {
+        itemId,
+      });
+    }
   }
 
   if (!Number.isInteger(quantity) || quantity < 1) {
@@ -599,6 +615,17 @@ async function applyTurn(req, res) {
         });
       }
 
+      if (from && timeToMinutes(to) < timeToMinutes(from)) {
+        return res.status(400).json({
+          ok: false,
+          error: "timeAdvance.to no puede ser anterior a timeAdvance.from dentro del mismo dia.",
+          details: {
+            from,
+            to,
+          },
+        });
+      }
+
       changes.time = {
         before: gameState.time,
         after: to,
@@ -693,7 +720,7 @@ async function applyTurn(req, res) {
       const inventoryChanges = [];
 
       for (const patch of req.body.inventoryPatch) {
-        inventoryChanges.push(applyInventoryPatch(gameState.inventory, patch));
+        inventoryChanges.push(await applyInventoryPatch(gameState.inventory, patch));
       }
 
       if (inventoryChanges.length > 0) {
