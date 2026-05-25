@@ -2,6 +2,7 @@
   listEnemies,
   getEnemy,
   startEncounter,
+  listActiveEncounters,
   getEncounter,
   applyCombatRound,
 } = require("../services/combatService");
@@ -65,6 +66,24 @@ async function startEncounterController(req, res) {
   }
 }
 
+async function listActiveEncountersController(req, res) {
+  try {
+    const encounters = await listActiveEncounters({
+      gameId: req.query.gameId || "isekai_lucas_main",
+    });
+
+    return res.json({
+      ok: true,
+      encounters,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      ok: false,
+      error: error.message,
+    });
+  }
+}
+
 async function getEncounterController(req, res) {
   try {
     const encounter = await getEncounter(req.params.encounterId);
@@ -113,6 +132,7 @@ module.exports = {
   listEnemiesController,
   getEnemyController,
   startEncounterController,
+  listActiveEncountersController,
   getEncounterController,
   applyCombatRoundController,
 };

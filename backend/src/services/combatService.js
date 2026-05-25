@@ -136,6 +136,15 @@ async function startEncounter({
   return encounter.toObject();
 }
 
+async function listActiveEncounters({ gameId = "isekai_lucas_main" } = {}) {
+  return CombatEncounter.find({
+    gameId,
+    status: "active",
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+}
+
 async function getEncounter(encounterId) {
   const encounter = await CombatEncounter.findOne({ encounterId }).lean();
 
@@ -341,6 +350,7 @@ module.exports = {
   listEnemies,
   getEnemy,
   startEncounter,
+  listActiveEncounters,
   getEncounter,
   applyCombatRound,
 };

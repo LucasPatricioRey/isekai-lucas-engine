@@ -70,6 +70,11 @@ async function runSmokeTests() {
   if (!Array.isArray(combatEnemies.enemies)) throw new Error("combat enemies no devolvio enemies");
   console.log("OK /api/combat/enemies");
 
+  const activeCombats = await request("/api/combat/encounters/active");
+  if (!activeCombats.ok) throw new Error("combat active encounters fallo");
+  if (!Array.isArray(activeCombats.encounters)) throw new Error("combat active encounters no devolvio encounters");
+  console.log("OK /api/combat/encounters/active");
+
   const checkpoints = await request("/api/checkpoints");
   if (!checkpoints.ok) throw new Error("checkpoints fallo");
   console.log("OK /api/checkpoints");
