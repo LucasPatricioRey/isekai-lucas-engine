@@ -12,6 +12,8 @@ async function getMissionBoardController(req, res) {
       status: req.query.status,
       locationId: req.query.locationId,
       rank: req.query.rank,
+      riskLevel: req.query.riskLevel,
+      sourceFactionId: req.query.sourceFactionId,
     });
 
     return res.json({

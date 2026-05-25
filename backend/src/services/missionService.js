@@ -23,7 +23,7 @@ function createLogId() {
   return `log_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function getMissionBoard({ status, locationId, rank } = {}) {
+async function getMissionBoard({ status, locationId, rank, riskLevel, sourceFactionId } = {}) {
   const query = {};
 
   if (status) {
@@ -34,6 +34,8 @@ async function getMissionBoard({ status, locationId, rank } = {}) {
 
   if (locationId) query.locationId = locationId;
   if (rank) query.rank = rank;
+  if (riskLevel) query.riskLevel = riskLevel;
+  if (sourceFactionId) query.sourceFactionId = sourceFactionId;
 
   return Mission.find(query)
     .sort({ status: 1, rank: 1, postedDay: -1, postedTime: -1 })

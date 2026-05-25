@@ -78,7 +78,13 @@ async function runSmokeTests() {
   const missions = await request("/api/missions/board");
   if (!missions.ok) throw new Error("missions board fallo");
   if (!Array.isArray(missions.missions)) throw new Error("missions board no devolvio missions");
+  if (missions.missions.length < 5) throw new Error("missions board devolvio menos de 5 misiones");
   console.log("OK /api/missions/board");
+
+  const missionDetail = await request("/api/missions/mission_d10_grulla_delivery_guild");
+  if (!missionDetail.ok) throw new Error("mission detail fallo");
+  if (!missionDetail.mission?.missionId) throw new Error("mission detail no devolvio mission");
+  console.log("OK /api/missions/mission_d10_grulla_delivery_guild");
 
   const combatEnemies = await request("/api/combat/enemies");
   if (!combatEnemies.ok) throw new Error("combat enemies fallo");
