@@ -86,6 +86,69 @@ describe("turn hardening and rollback coverage", () => {
     assert.equal(invalidSource.data.ok, false);
     assertSameState(beforeState, await getCanonicalState());
 
+    const mismatchedActivityCost = await post("/api/turn/apply", {
+      actionSummary: "Intento invalido de test: activityCost no coincide con tiempo real.",
+      timeAdvance: {
+        from: "12:00",
+        to: "12:20",
+      },
+      activityCost: {
+        category: "viaje_caminata_suave",
+        minutes: 10,
+        reason: "Coste biologico inconsistente de test",
+      },
+    });
+    assert.equal(mismatchedActivityCost.status, 400);
+    assert.match(mismatchedActivityCost.data.error, /activityCost\.minutes/);
+    assertSameState(beforeState, await getCanonicalState());
+
+    const acceptedMission = await post("/api/turn/apply", {
+      actionSummary: "Test controlado: Lucas acepta una mision simple.",
+      missionPatch: {
+        op: "accept",
+        missionId: "mission_d10_grulla_delivery_guild",
+      },
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de missionPatch accept.",
+          visibility: "hidden",
+        },
+      ],
+    });
+    assert.equal(acceptedMission.status, 200);
+    assert.equal(acceptedMission.data.ok, true);
+    assert.equal(acceptedMission.data.changes.missions[0].op, "accept");
+    assert.equal(acceptedMission.data.changes.missions[0].after.status, "accepted");
+    assert.ok(
+      acceptedMission.data.gameState.activeMissionIds.includes("mission_d10_grulla_delivery_guild")
+    );
+
+    const reportedMission = await post("/api/turn/apply", {
+      actionSummary: "Test controlado: Lucas presenta reporte de mision.",
+      missionPatch: {
+        op: "report",
+        missionId: "mission_d10_grulla_delivery_guild",
+        reportSummary: "Reporte de prueba controlada.",
+      },
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de missionPatch report.",
+          visibility: "hidden",
+        },
+      ],
+    });
+    assert.equal(reportedMission.status, 200);
+    assert.equal(reportedMission.data.ok, true);
+    assert.equal(reportedMission.data.changes.missions[0].op, "report");
+    assert.equal(reportedMission.data.changes.missions[0].after.proofStatus, "submitted");
+
+    const missionRollback = await post(`/api/checkpoints/${tempCheckpointId}/rollback`, {});
+    assert.equal(missionRollback.status, 200);
+    assert.equal(missionRollback.data.ok, true);
+    assertSameState(beforeState, await getCanonicalState());
+
     const applied = await post("/api/turn/apply", {
       actionSummary: "Test controlado: viaje interno La Grulla Azul al Gremio.",
       timeAdvance: {

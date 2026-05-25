@@ -38,11 +38,21 @@ Mantener instrucciones tecnicas fuera de la narracion. El GPT puede razonar con 
 
 ## OpenAPI / Actions
 
-Pegar el contenido completo de:
+Para el GPT Builder normal, pegar el contenido completo de:
+
+- `docs/openapi-gpt-action-compact.json`
+
+Este schema mantiene 30 operaciones y usa `applyTurn.missionPatch` para aceptar/reportar misiones sin exponer mutadores directos de misiones.
+
+El schema full de referencia tecnica queda en:
 
 - `docs/openapi-gpt-action.json`
 
-en **Configure > Actions > Import from schema**.
+El schema opcional para una segunda Action tecnica/read-only queda en:
+
+- `docs/openapi-gpt-action-admin.json`
+
+en **Configure > Actions > Import from schema** solo si se quiere separar modo tecnico seguro.
 
 Servidor esperado:
 
@@ -84,7 +94,9 @@ npm run check
 npm test
 npm run smoke
 npm run audit:openapi
+npm run audit:openapi-compact
 npm run audit:gpt-readiness
+npm run audit:gpt-readiness-compact
 ```
 
 Condicion minima para abrir Preview:

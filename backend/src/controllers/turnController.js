@@ -9,6 +9,7 @@ const WorldEvent = require("../models/WorldEvent");
 const Location = require("../models/Location");
 const ShopStock = require("../models/ShopStock");
 const Item = require("../models/Item");
+const Mission = require("../models/Mission");
 const { syncNpcRoutines } = require("../services/routineService");
 const { calculateActivityCost } = require("../services/biologicalClockService");
 
@@ -68,6 +69,10 @@ function getBlockFromTime(time) {
 function timeToMinutes(time) {
   const [hours, minutes] = time.split(":").map(Number);
   return hours * 60 + minutes;
+}
+
+function diffTimeMinutes(from, to) {
+  return timeToMinutes(to) - timeToMinutes(from);
 }
 
 function createId(prefix) {
@@ -615,6 +620,117 @@ async function applyShopStockPatches(patches, session = null) {
   return results;
 }
 
+function isMissionExpired(mission, gameState) {
+  if (!mission.expiresDay) return false;
+
+  if (mission.expiresDay < gameState.currentDay) return true;
+  if (mission.expiresDay > gameState.currentDay) return false;
+  if (!mission.expiresTime) return false;
+
+  return timeToMinutes(mission.expiresTime) <= timeToMinutes(gameState.time);
+}
+
+function normalizeMissionPatches(missionPatch) {
+  if (!missionPatch) return [];
+  return Array.isArray(missionPatch) ? missionPatch : [missionPatch];
+}
+
+async function applyMissionPatches(gameState, missionPatch, session = null) {
+  const patches = normalizeMissionPatches(missionPatch);
+  const results = [];
+
+  for (const patch of patches) {
+    const op = patch.op || patch.operation;
+    const missionId = patch.missionId;
+    const characterId = patch.characterId || "char_lucas";
+
+    if (!["accept", "report"].includes(op)) {
+      throw validationError("missionPatch.op debe ser accept o report.", { op });
+    }
+
+    if (!missionId) {
+      throw validationError("missionPatch.missionId es obligatorio.");
+    }
+
+    const mission = await Mission.findOne({ missionId }).session(session);
+
+    if (!mission) {
+      throw validationError(`No existe misión con id: ${missionId}`);
+    }
+
+    const before = {
+      status: mission.status,
+      acceptedByCharacterId: mission.acceptedByCharacterId,
+      acceptedDay: mission.acceptedDay,
+      proofStatus: mission.proofStatus,
+      activeMissionIds: [...(gameState.activeMissionIds || [])],
+    };
+
+    if (op === "accept") {
+      if (mission.status !== "available") {
+        throw validationError(`La misión no está disponible. Estado actual: ${mission.status}`, {
+          missionId,
+          status: mission.status,
+        });
+      }
+
+      if (isMissionExpired(mission, gameState)) {
+        throw validationError("La misión ya expiró por tiempo de partida.", {
+          missionId,
+          expiresDay: mission.expiresDay,
+          expiresTime: mission.expiresTime,
+        });
+      }
+
+      mission.status = "accepted";
+      mission.acceptedByCharacterId = characterId;
+      mission.acceptedDay = gameState.currentDay;
+
+      if (!gameState.activeMissionIds.includes(mission.missionId)) {
+        gameState.activeMissionIds.push(mission.missionId);
+      }
+    }
+
+    if (op === "report") {
+      if (mission.status !== "accepted") {
+        throw validationError(`Solo se puede reportar una misión aceptada. Estado actual: ${mission.status}`, {
+          missionId,
+          status: mission.status,
+        });
+      }
+
+      if (mission.acceptedByCharacterId && mission.acceptedByCharacterId !== characterId) {
+        throw validationError("La misión fue aceptada por otro personaje.", {
+          missionId,
+          acceptedByCharacterId: mission.acceptedByCharacterId,
+          characterId,
+        });
+      }
+
+      mission.proofStatus = patch.proofStatus || "submitted";
+    }
+
+    await mission.save({ session });
+
+    results.push({
+      op,
+      missionId: mission.missionId,
+      title: mission.title,
+      reportSummary: patch.reportSummary || "",
+      before,
+      after: {
+        status: mission.status,
+        acceptedByCharacterId: mission.acceptedByCharacterId,
+        acceptedDay: mission.acceptedDay,
+        proofStatus: mission.proofStatus,
+        activeMissionIds: [...(gameState.activeMissionIds || [])],
+      },
+    });
+  }
+
+  return results;
+}
+
 function validateEventLogInputs(eventLogs) {
   if (!Array.isArray(eventLogs)) return;
 
@@ -688,7 +804,7 @@ function validateHourBoundaryCost({ timeAdvance, currentTime, body }) {
 
   if (!isValidTime(from) || !isValidTime(to)) return;
 
-  const minutes = timeToMinutes(to) - timeToMinutes(from);
+  const minutes = diffTimeMinutes(from, to);
 
   if (minutes > 0 && to.endsWith(":00")) {
     const hasActivityCost = Boolean(body.activityCost);
@@ -701,6 +817,33 @@ function validateHourBoundaryCost({ timeAdvance, currentTime, body }) {
         { from, to, minutes }
       );
     }
+  }
+}
+
+function validateActivityCostMinutes({ timeAdvance, currentTime, body }) {
+  if (!timeAdvance || !body.activityCost) return;
+
+  const from = timeAdvance.from || currentTime;
+  const to = timeAdvance.to;
+
+  if (!isValidTime(from) || !isValidTime(to)) return;
+
+  const expectedMinutes = diffTimeMinutes(from, to);
+  if (expectedMinutes <= 0) return;
+
+  const actualMinutes = body.activityCost.minutes;
+  const hasExemption = Boolean(String(body.biologicalCostExemptReason || "").trim());
+  const hasValidatedOverride =
+    body.activityCost.allowMinutesMismatch === true &&
+    String(body.activityCost.overrideReason || "").trim().length >= 8;
+
+  if (actualMinutes !== expectedMinutes && !hasExemption && !hasValidatedOverride) {
+    throw validationError("activityCost.minutes debe coincidir con la diferencia real de timeAdvance.", {
+      from,
+      to,
+      expectedMinutes,
+      receivedMinutes: actualMinutes,
+    });
   }
 }
 
@@ -778,6 +921,11 @@ async function applyTurn(req, res) {
         }
 
         validateHourBoundaryCost({
+          timeAdvance: { from: effectiveFrom, to },
+          currentTime: gameState.time,
+          body,
+        });
+        validateActivityCostMinutes({
           timeAdvance: { from: effectiveFrom, to },
           currentTime: gameState.time,
           body,
@@ -960,6 +1108,11 @@ async function applyTurn(req, res) {
       if (Array.isArray(body.shopStockPatches)) {
         const shopStockChanges = await applyShopStockPatches(body.shopStockPatches, session);
         if (shopStockChanges.length > 0) changes.shopStocks = shopStockChanges;
+      }
+
+      if (body.missionPatch) {
+        const missionChanges = await applyMissionPatches(gameState, body.missionPatch, session);
+        if (missionChanges.length > 0) changes.missions = missionChanges;
       }
 
       const logsToCreate = [];

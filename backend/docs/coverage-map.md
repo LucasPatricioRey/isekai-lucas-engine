@@ -685,6 +685,16 @@ OpenAPI:
 
 `docs/openapi-gpt-action.json` existe y cubre endpoints de lectura/preview protegidos por `x-api-key`. No incluye rollback ni mutadores peligrosos para GPT normal. `npm run audit:openapi` valida cobertura esperada, exclusiones deliberadas y seguridad.
 
+G23.1 - GPT Actions hardening:
+
+| Area / seccion | Fuente en docs | Representacion en repo | Representacion en MongoDB vivo | Estado | Evidencia | Proxima accion recomendada |
+|---|---|---|---|---|---|---|
+| Schema compacto GPT Builder | `docs/gpt-builder-final-checklist.md` | `docs/openapi-gpt-action-compact.json`, `audit:openapi-compact` | No aplica, schema documental | implemented_backend | Compact con 30 operaciones, `missionPatch`, parches de economia/memoria y exclusiones peligrosas. | Pegar este schema, no el full, en GPT Builder normal. |
+| Modo tecnico seguro | `docs/gpt-builder-final-checklist.md` | `docs/openapi-gpt-action-admin.json` | Solo lectura contra endpoints existentes | partial | Schema admin opcional solo GET/read-only; no incluye rollback/reset/delete. | Si se necesita runtime/audits desde GPT, crear endpoints admin read-only especificos. |
+| Matriz full vs compact | `docs/gpt-actions-operation-matrix.md` | Tabla comparativa full/compact con tipo y dominio | No aplica | implemented_backend | Documenta operaciones incluidas/excluidas y que misiones usan `applyTurn.missionPatch`. | Revisar en cada cambio de endpoints. |
+| Misiones por applyTurn | `docs/openapi-gpt-action-compact.json` | `applyTurn.missionPatch` acepta `accept` y `report` dentro de transaccion | Mutacion real solo cuando GPT llama `applyTurn` | implemented_backend | Tests cubren accept/report con rollback temporal y checkpoint oficial. | Agregar completion/reward solo cuando haya prueba/reporte validado. |
+| Minutos biologicos estrictos | `rules_engine.md` reloj biologico | `activityCost.minutes` debe coincidir con `timeAdvance`, salvo exencion/override validado | Protege estado vivo contra coste duplicado o insuficiente | implemented_backend | Test rechaza mismatch sin mutar estado. | Mantener la regla en GPT instructions: usar previewTravel y copiar minutos/coste. |
+
 ## Endpoint admin propuesto, no implementado
 
 No hay endpoint seguro para contar colecciones vivas. Para futuras auditorias conviene crear un endpoint estrictamente read-only y protegido por API key:
