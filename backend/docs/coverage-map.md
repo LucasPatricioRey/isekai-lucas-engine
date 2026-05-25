@@ -12,7 +12,7 @@ G1 compara tres niveles:
 2. Representacion en repo: modelos, seeds, servicios, rutas, smoke tests y docs indexables.
 3. Representacion viva en Render/MongoDB usando endpoints protegidos por `x-api-key`.
 
-Hallazgo principal: el repo ya tiene una base tecnica amplia, pero MongoDB vivo esta bastante por detras de lo que los docs y algunos seeds describen. El estado canon de partida si coincide con Dia 10 12:00, pero el roster vivo, ubicaciones vivas, rumores, memorias, economia amplia, misiones y magia todavia no cubren el 100% del texto.
+Hallazgo principal: el repo ya tiene una base tecnica amplia y, tras G2/G3, MongoDB vivo contiene el nucleo de Hoshimori: 25 NPCs esperados y 25 ubicaciones principales. El estado canon de partida sigue Dia 10 12:00. Lo que todavia no cubre el 100% del texto son relaciones NPC-NPC, memorias base, rumores, economia amplia, misiones ampliadas, magia, viajes y world tick.
 
 ## Estado vivo confirmado
 
@@ -39,14 +39,31 @@ Se agregaron herramientas para sembrar y auditar el nucleo de Hoshimori:
 - `src/utils/auditHoshimoriCore.js`
 - scripts `seed:hoshimori-core` y `audit:hoshimori-core`
 
-Resultado de ejecucion local en este entorno:
+Resultado de ejecucion inicial en el entorno de Codex:
 
 - `npm run check`: OK.
 - `npm run seed:hoshimori-core`: no ejecutado contra MongoDB porque no existe `.env` ni `MONGODB_URI` en el entorno local. El script fallo antes de escribir datos.
 - `npm run audit:hoshimori-core`: fallo correctamente contra Render porque la DB viva aun no contiene el nucleo completo.
 - `npm run smoke`: OK.
 
-Evidencia viva antes de ejecutar el seed con credenciales Atlas:
+Resultado posterior reportado tras ejecutar el seed en entorno local con `MONGODB_URI` vivo:
+
+- `npm run check`: OK.
+- `npm run smoke`: OK.
+- `npm run seed:hoshimori-core`: OK.
+- `npm run audit:hoshimori-core`: OK.
+- GameState sigue Dia 10 12:00.
+- `moneyCopper` sigue 1470.
+- Combates activos: 0.
+- NPCs Hoshimori esperados: 25.
+- NPCs encontrados por API: 25.
+- NPCs faltantes: 0.
+- Ubicaciones Hoshimori esperadas: 25.
+- Ubicaciones encontradas por API: 25.
+- Ubicaciones faltantes: 0.
+- Narek/Pavo/Borin/Liora aparecen correctamente en `search/db`.
+
+Evidencia viva antes de ejecutar el seed con credenciales Atlas, preservada como antecedente:
 
 - NPCs esperados Hoshimori: 25.
 - NPCs encontrados por API: 4.
@@ -82,17 +99,17 @@ Estados usados:
 | Entrenamiento fisico, trabajo y viaje | `rules_engine.md` 15 | Deltas por `turn/apply`; no hay `Job`, `Route`, `TravelService` | Trabajo actual en flags, sin contrato formal | partial | `flags.currentJob: La Grulla Azul`; no hay endpoints de jobs | G8 y G18 |
 | Combate narrativo con numeros | `rules_engine.md` 16; `world_bible.md` 16 | `EnemyTemplate`, `CombatEncounter`, `combatService`, rutas `/api/combat/*` | 5 enemigos vivos; 0 combates activos | seeded_mongodb | `audit:coverage`: 5 enemy templates, active combats 0 | G12: acciones, armas, multiples enemigos, loot/proof |
 | Gremio, MG y misiones | `rules_engine.md` 17; `world_bible.md` 18 | `Mission`, `missionService`, rutas board/accept/report/expire | 1 mision Porcelana disponible | partial | `mission_d10_cleanup_post_rain` viva, proof pending | G7: templates/cartelera amplia y completar flujo de recompensa |
-| NPCs, conocimiento, escena viva | `rules_engine.md` 18; `world_bible.md` 11 | `Npc`, `NpcMemory`, `RoutineOverride`, `getNpcFull` | Contexto cercano: 3 NPCs; Narek no existe vivo | partial | `search/db?q=Narek` devuelve 0 NPCs; `context/full` devuelve Fern/Roberto/Yara | Correr/completar roster solo en G2/G3, no durante G1 |
+| NPCs, conocimiento, escena viva | `rules_engine.md` 18; `world_bible.md` 11 | `Npc`, `NpcMemory`, `RoutineOverride`, `getNpcFull`; `seedHoshimoriCore.js` consolida roster base | 25 NPCs de Hoshimori vivos; `context/full` sigue devolviendo solo NPCs cercanos | partial | `audit:hoshimori-core` OK reportado: 25/25 NPCs; Narek/Pavo/Borin/Liora aparecen en `search/db`; memorias/red social siguen pendientes | G4 para relaciones NPC-NPC y memorias base |
 | Relaciones, confianza, romance | `rules_engine.md` 19; `world_bible.md` 12 | `relationshipWithLucas` en `Npc`; no hay `NpcRelationship` entre NPCs | Relaciones con Lucas en NPCs iniciales | partial | No existe modelo NpcRelationship; sin red social viva entre NPCs | G4: modelo o ampliacion clara |
 | Rumores y propagacion | `rules_engine.md` 20.1; `world_bible.md` 17 | `Rumor`, `applyRumorPatches`, search/context consultan rumores | Sin rumores encontrados por busquedas vivas | partial | `/api/search/db?q=a` devuelve `rumors=0`; `search/db?q=rumor` devuelve 0 | G5: seed inicial de rumores + propagacion simple |
 | Reputacion y facciones | `rules_engine.md` 20.2-20.3; `world_bible.md` 10, 15 | `Faction`, links de NPC, reputacion con Lucas | 3 facciones aparecen con query amplia | partial | `/api/search/db?q=a` devuelve `factions=3` | G15: ley, testigos, acceso, sospecha |
 | Inventario, propiedad y objetos | `rules_engine.md` 21 | Inventario en `GameState`, `Item`, validacion de item existente al agregar | Inventario Lucas vivo; 5 items base en seed | partial | `turn/apply` rechaza item inexistente al agregar | Completar catalogo G6/G17 |
-| Viaje, exploracion y zonas seguras | `rules_engine.md` 22; `world_bible.md` 7, 13 | Solo docs y strings de zonas en enemigos | No hay rutas vivas | indexed_docs_only | Sin modelos Route/TravelService; ubicaciones de bosque/camino faltan | G18 tras G2 |
+| Viaje, exploracion y zonas seguras | `rules_engine.md` 22; `world_bible.md` 7, 13 | Docs, strings de zonas en enemigos, ubicaciones core de camino/bosque/colinas sembradas | Locations principales existen; no hay grafo de rutas ni TravelService | partial | `audit:hoshimori-core` OK reportado para locations; sin modelos Route/TravelService | G18 tras economia/misiones base |
 | Pipeline de acciones complejas | `rules_engine.md` 23-24 | `turn/apply` procesa patches; no orquestador de pipeline | Patches funcionan si GPT los manda bien | partial | Endpoint existe, pero validacion semantica es incompleta | Mantener GPT como planificador, mover reglas criticas al backend |
-| Hoshimori: ubicaciones principales | `world_bible.md` 6.3, 19 | `Location` model; seeds iniciales/world essentials; `seedHoshimoriCore.js` prepara 25 ubicaciones canonicas | Vivo confirmado antes de seed: 7/25 ubicaciones esperadas | partial | `audit:hoshimori-core`: 18 ubicaciones faltantes; el seed no corrio por falta de `MONGODB_URI` local | Ejecutar `npm run seed:hoshimori-core` en entorno con Atlas vivo y repetir auditoria |
-| Hoshimori: roster base 25 NPCs | `world_bible.md` 11 | `seedInitialState` tiene 4; `seedHoshimoriRoster` prepara 21 mas; `seedHoshimoriCore.js` consolida 25 NPCs con rutinas base | Vivo confirmado antes de seed: 4/25 NPCs esperados | partial | `audit:hoshimori-core`: 21 NPCs faltantes; Narek/Pavo/Borin/Liora no aparecen como NPC | Ejecutar seed en entorno con `MONGODB_URI`; luego marcar `seeded_mongodb` si `audit:hoshimori-core` pasa |
+| Hoshimori: ubicaciones principales | `world_bible.md` 6.3, 19 | `Location` model; seeds iniciales/world essentials; `seedHoshimoriCore.js` prepara 25 ubicaciones canonicas | 25/25 ubicaciones esperadas vivas | seeded_mongodb | `seed:hoshimori-core` OK y `audit:hoshimori-core` OK reportados; missing locations 0; GameState intacto | Mantener auditoria como regresion; G6/G7 pueden apoyarse en estas locations |
+| Hoshimori: roster base 25 NPCs | `world_bible.md` 11 | `seedInitialState` tiene 4; `seedHoshimoriRoster` prepara 21 mas; `seedHoshimoriCore.js` consolida 25 NPCs con rutinas base | 25/25 NPCs esperados vivos | seeded_mongodb | `seed:hoshimori-core` OK y `audit:hoshimori-core` OK reportados; missing NPCs 0; Narek/Pavo/Borin/Liora aparecen en `search/db` | G4: relaciones NPC-NPC, memorias base y conocimiento no omnisciente |
 | Hoshimori: red social base | `world_bible.md` 12 | Relaciones solo con Lucas; no Npc-Npc | No red social NPC-NPC viva | missing | No hay `NpcRelationship`; memorias vivas 0 por query amplia | G4 |
-| Region cercana a Hoshimori | `world_bible.md` 13 | Docs indexados; algunos enemy zones textuales | No locations vivas confirmadas | indexed_docs_only | Faltan `loc_hoshimori_mill`, bosque/colinas | G18/G2 |
+| Region cercana a Hoshimori | `world_bible.md` 13 | Docs indexados; algunas locations core cercanas y enemy zones textuales | Camino del Molino, molino, bosque y colinas base existen como locations core | partial | `audit:hoshimori-core` OK reportado para 25 locations; faltan rutas regionales, aldeas/granjas y rosters externos | G18 y G19 despues de Hoshimori economico/social |
 | Regiones y ciudades mayores | `world_bible.md` 14 | Docs indexados | No entidades vivas confirmadas | future_optional | `search/docs` encuentra Valdoria; DB solo faccion Corona | G19 post-Hoshimori |
 | Amenazas, fauna y monstruos | `world_bible.md` 16 | `EnemyTemplate`, `seedEnemyTemplates` | 5 enemigos vivos | seeded_mongodb | `search/db?q=lobo` devuelve 1 enemyTemplate; `/api/combat/enemies` devuelve 5 | Ampliar con zonas/loot en G12/G17 |
 | Clima y eventos diarios | `world_bible.md` 8; `rules_engine.md` 5.4 | `WorldEvent`; no `WeatherState` | Evento activo supply delay por barro | partial | `activeEventIds: event_d10_supply_delay_mud`; sin weather endpoint | G13 |
@@ -110,9 +127,9 @@ Estados usados:
 
 | Afirmacion | Resultado | Evidencia |
 |---|---|---|
-| La DB viva tiene 25 NPCs de Hoshimori. | FALSA | `search/db?q=Narek` devuelve 0 NPCs; Narek es parte del roster de 25. Query amplia `/api/search/db?q=a` devuelve 4 NPCs. |
+| La DB viva tiene 25 NPCs de Hoshimori. | VERDADERA tras G2/G3 | `seed:hoshimori-core` OK y `audit:hoshimori-core` OK reportados: 25/25 NPCs, missing NPCs 0; Narek/Pavo/Borin/Liora aparecen en `search/db`. |
 | `context/full` devuelve solo NPCs cercanos, no todo el roster. | VERDADERA | `context/full` devuelve 3 NPCs cercanos: Fern, Roberto Valen, Yara Mils. |
-| Faltan ubicaciones importantes de Hoshimori como Location. | VERDADERA | GET manual a ubicaciones como `loc_hoshimori_plaza`, `loc_hoshimori_guild_patio`, `loc_hoshimori_mill`, bosque/colinas/panaderia/guardia/consejo/curtidor devolvio 404. |
+| Faltan ubicaciones importantes de Hoshimori como Location. | FALSA tras G2/G3 para el core definido | `seed:hoshimori-core` OK y `audit:hoshimori-core` OK reportados: 25/25 locations, missing locations 0. Quedan fuera del core rutas regionales/otras aldeas. |
 | Hay modelos que existen pero colecciones vacias. | VERDADERA con limite de evidencia | Existen `Rumor` y `NpcMemory`; query amplia `/api/search/db?q=a` devuelve `rumors=0` y `npcMemories=0`. Sin endpoint de conteo, esto no prueba matematicamente todas las colecciones, pero si ausencia viva observable por API publica. |
 | El GPT puede consultar docs completos desde `/api/search/docs`. | VERDADERA | `search/docs?q=romance` devuelve 4 documentos indexados; otras consultas como Valdoria/Bosque tambien devuelven chunks. |
 | El combate base esta disponible en Render. | VERDADERA | `/api/combat/enemies` devuelve 5 templates: lobo, rata gigante, avispa roja, bandido menor, jabali gris. |
@@ -162,9 +179,7 @@ Justificacion: hoy G1 puede inferir huecos por busqueda y endpoints profundos, p
 
 ## Proximas acciones recomendadas
 
-1. Ejecutar `npm run seed:hoshimori-core` en un entorno con `MONGODB_URI` apuntando a Atlas vivo o en shell segura de Render.
-2. Repetir `npm run audit:hoshimori-core`, `npm run smoke` y `npm run audit:coverage`.
-3. Si la auditoria pasa, cambiar G2/G3 de `partial` a `seeded_mongodb`.
-4. Agregar red social/memorias base y rumores iniciales.
-5. Expandir economia/misiones solo despues de que locations/NPCs existan vivos.
-6. Convertir `auditLiveCoverage.js` en chequeo recurrente y, mas adelante, respaldarlo con `/api/admin/coverage-summary`.
+1. Usar `npm run audit:hoshimori-core` como regresion read-only antes de G4/G5/G6.
+2. Agregar red social/memorias base y rumores iniciales.
+3. Expandir economia/misiones sobre las locations y NPCs ya vivos.
+4. Convertir `auditLiveCoverage.js` en chequeo recurrente y, mas adelante, respaldarlo con `/api/admin/coverage-summary`.
