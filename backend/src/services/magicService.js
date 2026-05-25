@@ -1,0 +1,268 @@
+const CharacterMagicKnowledge = require("../models/CharacterMagicKnowledge");
+const GameState = require("../models/GameState");
+const MagicDiscipline = require("../models/MagicDiscipline");
+const MagicTechnique = require("../models/MagicTechnique");
+const Npc = require("../models/Npc");
+const { previewBiologicalClockBlock } = require("./biologicalClockService");
+const {
+  EXP_TO_NEXT_BY_PHASE,
+  PHASE_ORDER,
+  previewSkillProgression,
+} = require("./skillProgressionService");
+
+const DEFAULT_GAME_ID = "isekai_lucas_main";
+const DEFAULT_CHARACTER_ID = "char_lucas";
+
+function phaseRank(phase) {
+  const index = PHASE_ORDER.indexOf(phase);
+  return index === -1 ? -1 : index;
+}
+
+function skillMeetsRequirement(skill, requirement) {
+  if (!skill) return false;
+
+  const skillPhaseRank = phaseRank(skill.phase);
+  const requiredPhaseRank = phaseRank(requirement.minPhase || "Principiante");
+
+  if (skillPhaseRank < requiredPhaseRank) return false;
+  if (skillPhaseRank > requiredPhaseRank) return true;
+
+  return Number(skill.level || 0) >= Number(requirement.minLevel || 1);
+}
+
+function getMpCost(technique) {
+  const mpCost = technique.mpCost || {};
+  if (Number.isFinite(Number(mpCost.fixed))) return Number(mpCost.fixed);
+  if (Number.isFinite(Number(mpCost.min))) return Number(mpCost.min);
+  return 0;
+}
+
+function toVirtualSkill(expSuggestion) {
+  return {
+    skillId: expSuggestion.skillId,
+    name: expSuggestion.skillName || expSuggestion.skillId,
+    phase: "Principiante",
+    level: 1,
+    exp: 0,
+    expToNext: EXP_TO_NEXT_BY_PHASE.Principiante,
+    virtualPreviewOnly: true,
+  };
+}
+
+function summarizeGameState(gameState) {
+  return {
+    gameId: gameState.gameId,
+    currentDay: gameState.currentDay,
+    time: gameState.time,
+    locationId: gameState.locationId,
+    moneyCopper: gameState.moneyCopper,
+    mp: gameState.lucasStatus?.mp,
+    satiety: gameState.lucasStatus?.satiety,
+    energy: gameState.lucasStatus?.energy,
+    knownSpells: gameState.flags?.knownSpells || [],
+  };
+}
+
+async function listMagicDisciplines(filters = {}) {
+  const query = {};
+  if (filters.type) query.type = filters.type;
+  if (filters.parentDisciplineId) query.parentDisciplineId = filters.parentDisciplineId;
+
+  return MagicDiscipline.find(query).sort({ order: 1, name: 1 }).lean();
+}
+
+async function listMagicTechniques(filters = {}) {
+  const query = {};
+  if (filters.disciplineId) query.disciplineId = filters.disciplineId;
+  if (filters.kind) query.kind = filters.kind;
+  if (filters.status) query.status = filters.status;
+
+  return MagicTechnique.find(query).sort({ difficulty: 1, name: 1 }).lean();
+}
+
+async function getMagicTechnique(techniqueId) {
+  const technique = await MagicTechnique.findOne({ techniqueId }).lean();
+
+  if (!technique) {
+    const error = new Error(`No existe tecnica magica con id: ${techniqueId}`);
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return technique;
+}
+
+async function getCharacterKnownTechniqueIds(characterId) {
+  const knowledge = await CharacterMagicKnowledge.find({
+    characterId,
+    status: { $in: ["practicing", "known", "mastered"] },
+  })
+    .select("techniqueId")
+    .lean();
+
+  return new Set(knowledge.map((entry) => entry.techniqueId));
+}
+
+function getBlockingReasons({ technique, gameState, knownTechniqueIds, minutes }) {
+  const reasons = [];
+  const skillsById = new Map((gameState.skills || []).map((skill) => [skill.skillId, skill]));
+
+  if (technique.status !== "available") {
+    reasons.push(`La tecnica esta marcada como ${technique.status}.`);
+  }
+
+  if (Number(minutes) < technique.minMinutes || Number(minutes) > technique.maxMinutes) {
+    reasons.push(`La duracion debe estar entre ${technique.minMinutes} y ${technique.maxMinutes} minutos.`);
+  }
+
+  for (const requirement of technique.requirements?.skills || []) {
+    if (!skillMeetsRequirement(skillsById.get(requirement.skillId), requirement)) {
+      reasons.push(
+        `Requiere ${requirement.skillId} ${requirement.minPhase || "Principiante"} N${requirement.minLevel || 1}.`
+      );
+    }
+  }
+
+  for (const knownTechniqueId of technique.requirements?.knownTechniqueIds || []) {
+    if (!knownTechniqueIds.has(knownTechniqueId)) {
+      reasons.push(`Requiere conocer ${knownTechniqueId}.`);
+    }
+  }
+
+  const mpCost = getMpCost(technique);
+  const currentMp = gameState.lucasStatus?.mp?.current ?? 0;
+  if (mpCost > currentMp) {
+    reasons.push(`MP insuficiente: requiere ${mpCost}, actual ${currentMp}.`);
+  }
+
+  if (technique.canUnlockAutomatically) {
+    reasons.push("La tecnica no puede desbloquearse automaticamente en preview.");
+  }
+
+  return reasons;
+}
+
+async function previewMagicPractice({
+  gameId = DEFAULT_GAME_ID,
+  characterId = DEFAULT_CHARACTER_ID,
+  techniqueId,
+  minutes = null,
+  guidedByNpcId = "",
+} = {}) {
+  const [gameState, technique, knownTechniqueIds] = await Promise.all([
+    GameState.findOne({ gameId }).lean(),
+    getMagicTechnique(techniqueId),
+    getCharacterKnownTechniqueIds(characterId),
+  ]);
+
+  if (!gameState) {
+    const error = new Error(`No existe GameState para gameId: ${gameId}`);
+    error.statusCode = 404;
+    throw error;
+  }
+
+  let guide = null;
+  if (guidedByNpcId) {
+    guide = await Npc.findOne({ npcId: guidedByNpcId }).select("npcId name role").lean();
+    if (!guide) {
+      const error = new Error(`No existe NPC guia con id: ${guidedByNpcId}`);
+      error.statusCode = 404;
+      throw error;
+    }
+  }
+
+  const requestedMinutes = Number(minutes || technique.defaultMinutes);
+  const blockingReasons = getBlockingReasons({
+    technique,
+    gameState,
+    knownTechniqueIds,
+    minutes: requestedMinutes,
+  });
+  const mpCost = getMpCost(technique);
+  const canPractice = blockingReasons.length === 0;
+  const biologicalPreview = previewBiologicalClockBlock({
+    activities: [
+      {
+        category: technique.activityCategory,
+        minutes: requestedMinutes,
+      },
+    ],
+    currentStatus: {
+      satiety: gameState.lucasStatus?.satiety?.current,
+      energy: gameState.lucasStatus?.energy?.current,
+    },
+  });
+
+  const skillPreviews = [];
+
+  if (canPractice) {
+    const skillsById = new Map((gameState.skills || []).map((skill) => [skill.skillId, skill]));
+
+    for (const expSuggestion of technique.expSuggestions || []) {
+      const liveSkill = skillsById.get(expSuggestion.skillId);
+
+      if (!liveSkill && !expSuggestion.allowVirtualSkillPreview) {
+        skillPreviews.push({
+          skillId: expSuggestion.skillId,
+          blocked: true,
+          blockedReason: "La habilidad no existe en GameState y la tecnica no permite preview virtual.",
+        });
+        continue;
+      }
+
+      const scale = requestedMinutes / Number(technique.defaultMinutes || requestedMinutes || 1);
+      const baseExp = Math.max(0, Math.round(Number(expSuggestion.baseExp || 0) * scale));
+      const preview = previewSkillProgression({
+        skill: liveSkill || toVirtualSkill(expSuggestion),
+        expDelta: baseExp,
+        reason: expSuggestion.reason || technique.name,
+        category: expSuggestion.category,
+        modifiers: {
+          aquaBlessing: true,
+          hasMaster: Boolean(guide),
+        },
+        currentEnergy: gameState.lucasStatus?.energy?.current,
+      });
+
+      skillPreviews.push({
+        skillId: expSuggestion.skillId,
+        skillName: expSuggestion.skillName || liveSkill?.name || expSuggestion.skillId,
+        virtualPreviewOnly: !liveSkill,
+        baseExp,
+        ...preview,
+      });
+    }
+  }
+
+  return {
+    dryRun: true,
+    canPractice,
+    blockedReason: blockingReasons.join(" "),
+    blockingReasons,
+    technique,
+    guide,
+    minutes: requestedMinutes,
+    mpCost,
+    projectedMp: {
+      before: gameState.lucasStatus?.mp?.current ?? 0,
+      delta: canPractice ? -mpCost : 0,
+      after: canPractice ? Math.max(0, (gameState.lucasStatus?.mp?.current ?? 0) - mpCost) : gameState.lucasStatus?.mp?.current ?? 0,
+      willMutate: false,
+    },
+    biologicalPreview,
+    skillPreviews,
+    unlocks: {
+      willUnlockTechnique: false,
+      willLearnSpell: false,
+      reason: "G11 solo calcula preview; no desbloquea tecnicas ni hechizos.",
+    },
+    gameState: summarizeGameState(gameState),
+  };
+}
+
+module.exports = {
+  getMagicTechnique,
+  listMagicDisciplines,
+  listMagicTechniques,
+  previewMagicPractice,
+};

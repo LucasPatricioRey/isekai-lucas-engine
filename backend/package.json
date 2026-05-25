@@ -14,6 +14,7 @@
     "seed:hoshimori-economy": "node src/seeds/seedHoshimoriEconomy.js",
     "seed:hoshimori-missions": "node src/seeds/seedHoshimoriMissions.js",
     "seed:hoshimori-jobs": "node src/seeds/seedHoshimoriJobs.js",
+    "seed:magic-basics": "node src/seeds/seedMagicBasics.js",
     "check": "node src/utils/checkProject.js",
     "smoke": "node src/utils/smokeTestRender.js",
     "audit:coverage": "node src/utils/auditLiveCoverage.js",
@@ -24,7 +25,8 @@
     "audit:hoshimori-missions": "node src/utils/auditHoshimoriMissions.js",
     "audit:hoshimori-jobs": "node src/utils/auditHoshimoriJobs.js",
     "audit:biological-clock": "node src/utils/auditBiologicalClock.js",
-    "audit:skill-progression": "node src/utils/auditSkillProgression.js"
+    "audit:skill-progression": "node src/utils/auditSkillProgression.js",
+    "audit:magic-basics": "node src/utils/auditMagicBasics.js"
   },
   "keywords": [],
   "author": "",

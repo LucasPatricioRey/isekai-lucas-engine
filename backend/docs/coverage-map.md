@@ -2,7 +2,7 @@
 
 Fecha de auditoria: 2026-05-25  
 Backend vivo auditado: `https://isekai-lucas-engine.onrender.com`  
-Modo G1 original: solo lectura. Actualizaciones posteriores G2/G3/G4/G5/G6/G7/G8-G10 ejecutaron seeds idempotentes o previews read-only sin rollbacks, aceptaciones de mision, creacion de checkpoints ni mutaciones de partida.
+Modo G1 original: solo lectura. Actualizaciones posteriores G2/G3/G4/G5/G6/G7/G8-G11 ejecutaron seeds idempotentes o previews read-only sin rollbacks, aceptaciones de mision, creacion de checkpoints ni mutaciones de partida.
 
 ## Resumen ejecutivo
 
@@ -12,7 +12,7 @@ G1 compara tres niveles:
 2. Representacion en repo: modelos, seeds, servicios, rutas, smoke tests y docs indexables.
 3. Representacion viva en Render/MongoDB usando endpoints protegidos por `x-api-key`.
 
-Hallazgo principal: el repo ya tiene una base tecnica amplia y, tras G2/G3/G4/G5/G6/G7/G8-G10, MongoDB vivo contiene el nucleo de Hoshimori: 25 NPCs esperados, 25 ubicaciones principales, 12 relaciones NPC-NPC base, 4 memorias canonicas base, 8 rumores base activos, 36 items economicos, 9 shops, 39 filas de stock, 11 misiones iniciales disponibles y 1 contrato laboral activo de Lucas en La Grulla Azul. Ademas existen servicios/endpoints de preview para reloj biologico y progresion de EXP. El estado canon de partida sigue Dia 10 12:00. Lo que todavia no cubre el 100% del texto son completar turnos reales con pago, acumulador biologico persistente, validacion estricta de EXP dentro de cada accion, venta/compra transaccional completa, propagacion avanzada de rumores, relaciones avanzadas/romance, secretos, cadenas de misiones, magia, viajes y world tick.
+Hallazgo principal: el repo ya tiene una base tecnica amplia y, tras G2/G3/G4/G5/G6/G7/G8-G11, MongoDB vivo contiene el nucleo de Hoshimori: 25 NPCs esperados, 25 ubicaciones principales, 12 relaciones NPC-NPC base, 4 memorias canonicas base, 8 rumores base activos, 36 items economicos, 9 shops, 39 filas de stock, 11 misiones iniciales disponibles, 1 contrato laboral activo de Lucas en La Grulla Azul, 12 disciplinas magicas y 7 tecnicas/plantillas magicas base. Ademas existen servicios/endpoints de preview para reloj biologico, progresion de EXP y practica magica segura. El estado canon de partida sigue Dia 10 12:00. Lo que todavia no cubre el 100% del texto son completar turnos reales con pago, acumulador biologico persistente, validacion estricta de EXP dentro de cada accion, venta/compra transaccional completa, propagacion avanzada de rumores, relaciones avanzadas/romance, secretos, cadenas de misiones, practica magica mutadora, desbloqueo real de hechizos, viajes y world tick.
 
 ## Estado vivo confirmado
 
@@ -316,6 +316,62 @@ Resultado vivo tras ejecutar G8-G10 con `MONGODB_URI` y backend local apuntando 
 - Combates activos: 0.
 - Previews de trabajo/necesidades/EXP no mutan estado.
 
+## Actualizacion G11
+
+Se agrego la base jugable segura para magia en modo catalogo y preview:
+
+- `src/models/MagicDiscipline.js`
+- `src/models/MagicTechnique.js`
+- `src/models/CharacterMagicKnowledge.js`
+- `src/seeds/seedMagicBasics.js`
+- `src/services/magicService.js`
+- `src/controllers/magicController.js`
+- `src/routes/magicRoutes.js`
+- `src/utils/auditMagicBasics.js`
+- scripts `seed:magic-basics` y `audit:magic-basics`
+
+Endpoints nuevos protegidos por API key:
+
+- `GET /api/magic/disciplines`
+- `GET /api/magic/techniques`
+- `GET /api/magic/techniques/:techniqueId`
+- `POST /api/magic/practice/preview`
+
+Contenido vivo sembrado:
+
+- 12 disciplinas/rutas: Mana, Magia, Percepcion magica, Magia ofensiva, Fuego, Rayo/Electricidad, Hielo, Tierra/Viento, Magia defensiva, Magia curativa, Magia mental y Magia de invocacion.
+- 6 tecnicas/ejercicios seguros iniciales: respiracion de mana basica, sentir flujo interno, meditacion de mana, percepcion magica basica, teoria de estructura magica principiante y canalizacion segura en reposo.
+- 1 plantilla bloqueada de referencia ofensiva (`technique_locked_offensive_spark`) para probar requisitos sin ensenar un hechizo real.
+- No se siembra conocimiento magico aprendido en `CharacterMagicKnowledge`.
+- No se crean objetos magicos.
+
+Resultado vivo tras ejecutar G11 con `MONGODB_URI` y backend local apuntando a MongoDB vivo:
+
+- `npm run check`: OK.
+- `npm run seed:magic-basics`: OK.
+- `npm run smoke`: OK contra backend local con endpoints nuevos.
+- `npm run audit:magic-basics`: OK.
+- `npm run audit:coverage`: OK.
+- `npm run audit:hoshimori-core`: OK.
+- `npm run audit:hoshimori-social`: OK.
+- `npm run audit:hoshimori-rumors`: OK.
+- `npm run audit:hoshimori-economy`: OK.
+- `npm run audit:hoshimori-missions`: OK.
+- `npm run audit:hoshimori-jobs`: OK.
+- `npm run audit:biological-clock`: OK.
+- `npm run audit:skill-progression`: OK.
+- GameState sigue Dia 10, hora 12:00, ubicacion `loc_hoshimori_grulla_azul_comedor`.
+- `moneyCopper` sigue 1470.
+- MP actual sigue 200/200.
+- `activeMissionIds` sigue vacio.
+- Combates activos: 0.
+- Preview de respiracion de mana funciona sin mutar estado.
+- Preview de percepcion magica basica funciona sin mutar estado.
+- Aqua x5 aplica solo a aprendizaje magico y no a habilidades fisicas.
+- Tecnica ofensiva bloqueada no puede practicarse sin requisitos.
+- Hechizos avanzados aprendidos: 0.
+- Objetos magicos G11 creados: 0.
+
 ## Tabla de cobertura
 
 Estados usados:
@@ -338,7 +394,7 @@ Estados usados:
 | Dinero y comercio basico | `rules_engine.md` 9 | `Item`, `Shop`, `ShopStock`, `economyService`, `shopStockPatches`, `GET /api/economy/shops`, `GET /api/economy/items/:itemId` | 9 shops vivos, 36 items, 39 stocks | seeded_mongodb | `seed:hoshimori-economy` OK; `audit:hoshimori-economy` OK; Borin/Liora/Sella/Hilda/Merek consultables | G6 futuro/G16: venta transaccional, fiado profundo, precios variables sofisticados, bancos/deudas/impuestos |
 | Bancos, deudas, alquileres, impuestos | `rules_engine.md` 9.7, `world_bible.md` 4.6 | No hay modelos especificos `Loan/Debt/Rental/Tax/BankAccount` | No confirmado vivo | future_optional | Solo docs y algunas facciones; sin endpoints | Postergar hasta G16 |
 | Progresion de habilidades y EXP | `rules_engine.md` 10-13 | Skills embebidas en `GameState`; `skillProgressionService`; endpoint preview `/api/progression/skills/preview`; `turn/apply` aun usa logica propia | Skills de Lucas vivas; previews G10 no mutantes | partial | `audit:skill-progression` OK: level-up, cambio de fase, Aqua solo magico, energia baja reduce EXP, estado intacto | G10 futuro: usar servicio como validador obligatorio en cada `skillPatch` y agregar anti-farmeo real |
-| Magia, MP y practica | `rules_engine.md` 14; `world_bible.md` 1.4, 9.3 | MP, skills `skill_mana`/`skill_magia`, flag `knownSpells` | MP 200/200, `knownSpells: []` | partial | No hay catalogo de hechizos ni templates | G11 despues de EXP/biologia |
+| Magia, MP y practica | `rules_engine.md` 14; `world_bible.md` 1.4, 9.3 | MP, skills `skill_mana`/`skill_magia`, `knownSpells`, `MagicDiscipline`, `MagicTechnique`, `CharacterMagicKnowledge`, `magicService`, endpoints `/api/magic/*` | MP 200/200, `knownSpells: []`, 12 disciplinas G11, 7 tecnicas/plantillas G11, 0 hechizos avanzados aprendidos | partial | `seed:magic-basics` OK; `audit:magic-basics` OK; previews de respiracion de mana y percepcion magica no mutan estado; Aqua x5 solo magico; ofensiva bloqueada sin requisitos | G11 futuro: practica mutadora, desbloqueo real de hechizos, maestro/instructor profundo y reaccion social avanzada |
 | Entrenamiento fisico, trabajo y viaje | `rules_engine.md` 15 | `JobContract`, `jobService`, previews de turnos; deltas por `turn/apply`; no hay `Route`/`TravelService` | Trabajo actual formalizado como contrato G8; viajes siguen sin grafo | partial | `audit:hoshimori-jobs` OK: 2 turnos, pago 140/dia, Roberto/location/faction existen, preview no muta | G8 futuro para completar turnos reales; G18 para rutas/viajes |
 | Combate narrativo con numeros | `rules_engine.md` 16; `world_bible.md` 16 | `EnemyTemplate`, `CombatEncounter`, `combatService`, rutas `/api/combat/*` | 5 enemigos vivos; 0 combates activos | seeded_mongodb | `audit:coverage`: 5 enemy templates, active combats 0 | G12: acciones, armas, multiples enemigos, loot/proof |
 | Gremio, MG y misiones | `rules_engine.md` 17; `world_bible.md` 18 | `Mission`, `missionService`, rutas board/accept/report/expire, `seedHoshimoriMissions.js`, `auditHoshimoriMissions.js` | 11 misiones iniciales disponibles Porcelana/Cobre | seeded_mongodb | `seed:hoshimori-missions` OK; `audit:hoshimori-missions` OK; 11/11 con marcador G7, `activeMissionIds` vacio, recompensas no negativas, pruebas requeridas | G7 futuro/G14-G15: cadenas, expiracion offscreen, consecuencias/reputacion y recompensas complejas |
@@ -365,7 +421,7 @@ Estados usados:
 | Busqueda docs | `rules_engine.md` 3.2; ambos docs | `WorldDocumentIndex`, `seedDocuments`, `/api/search/docs` | Funciona con `romance` | seeded_mongodb | `search/docs?q=romance` devuelve 4 docs | Mantener seed docs alineado con archivos |
 | Contexto completo | `rules_engine.md` 3.2 | `/api/context/full` junta estado, location, NPCs cercanos, shops, rumors, missions, factions, combat | Funciona y es de alcance cercano | implemented_backend | `context/full` devuelve 4 nearby NPCs y 4 rumores activos relevantes en Grulla | Documentar que no es roster completo |
 | Checkpoints y rollback | `rules_engine.md` 3.4 | `Checkpoint`, rutas create/list/get/rollback | Checkpoints vivos; oficial presente | implemented_backend | `/api/checkpoints` lista `checkpoint_d10_1200_1779684235944` | Separar admin/in-game en OpenAPI; no exponer rollback al GPT normal |
-| Smoke test | README, `smokeTestRender.js` | `npm run smoke` cubre health/context/search/npc/location/economy/missions/jobs/needs/progression/combat/checkpoints | Smoke OK contra backend local con DB viva para endpoints G8-G10; remoto OK para endpoints ya desplegados | implemented_backend | Ejecutado OK en G8-G10 con `SMOKE_BASE_URL=http://localhost:4010` | Expandir a tests no mutantes y repetir remoto tras redeploy |
+| Smoke test | README, `smokeTestRender.js` | `npm run smoke` cubre health/context/search/npc/location/economy/missions/jobs/needs/progression/magic/combat/checkpoints | Smoke OK contra backend local con DB viva para endpoints G8-G11; remoto OK para endpoints ya desplegados | implemented_backend | Ejecutado OK en G11 con `SMOKE_BASE_URL=http://localhost:4010` | Expandir a tests no mutantes y repetir remoto tras redeploy |
 | Tests automatizados | `rules_engine.md` 26 | `npm test` sigue placeholder | No aplica | missing | `package.json`: `test` imprime "no test specified" | G21 |
 | OpenAPI / GPT Actions | `rules_engine.md` 26 | No se encontro archivo OpenAPI/swagger | No aplica | missing | `rg openapi|swagger` solo encuentra menciones pendientes | G22 |
 | Admin/debug seguro | `rules_engine.md` 26 | Checkpoints y scripts utilitarios; no resumen read-only de colecciones | No endpoint de conteo seguro | partial | Se audita con busquedas indirectas | Proponer `/api/admin/coverage-summary`, no implementar en G1 |
@@ -387,17 +443,17 @@ Estados usados:
 
 Modelos existentes:
 
-`Character`, `Checkpoint`, `CombatEncounter`, `EnemyTemplate`, `EventLog`, `Faction`, `GameState`, `Item`, `Location`, `Mission`, `Npc`, `NpcMemory`, `RoutineOverride`, `Rumor`, `Shop`, `ShopStock`, `WorldDocumentIndex`, `WorldEvent`.
+`Character`, `CharacterMagicKnowledge`, `Checkpoint`, `CombatEncounter`, `EnemyTemplate`, `EventLog`, `Faction`, `GameState`, `Item`, `JobContract`, `Location`, `MagicDiscipline`, `MagicTechnique`, `Mission`, `Npc`, `NpcMemory`, `NpcRelationship`, `RoutineOverride`, `Rumor`, `Shop`, `ShopStock`, `WorldDocumentIndex`, `WorldEvent`.
 
 Cambio G5: `Rumor` ahora incluye `source` para auditar seeds vivos sin depender solo de tags/texto.
 
 Seeds existentes:
 
-`seedInitialState.js`, `seedWorldEssentials.js`, `seedHoshimoriRoster.js`, `seedHoshimoriRoutines.js`, `seedHoshimoriCore.js`, `seedHoshimoriSocialGraph.js`, `seedHoshimoriRumors.js`, `seedHoshimoriEconomy.js`, `seedHoshimoriMissions.js`, `seedHoshimoriJobs.js`, `seedEnemyTemplates.js`, `seedDocuments.js`, mas scripts de limpieza/reparacion. En G1 no se ejecuto ningun seed; G2/G3/G4/G5/G6/G7/G8 usaron seeds idempotentes.
+`seedInitialState.js`, `seedWorldEssentials.js`, `seedHoshimoriRoster.js`, `seedHoshimoriRoutines.js`, `seedHoshimoriCore.js`, `seedHoshimoriSocialGraph.js`, `seedHoshimoriRumors.js`, `seedHoshimoriEconomy.js`, `seedHoshimoriMissions.js`, `seedHoshimoriJobs.js`, `seedMagicBasics.js`, `seedEnemyTemplates.js`, `seedDocuments.js`, mas scripts de limpieza/reparacion. En G1 no se ejecuto ningun seed; G2/G3/G4/G5/G6/G7/G8/G11 usaron seeds idempotentes.
 
 Rutas existentes:
 
-`/api/context/full`, `/api/turn/apply`, `/api/search/db`, `/api/search/docs`, `/api/npcs/:npcId/full`, `/api/locations/:locationId/full`, `/api/checkpoints`, `/api/world/sync-routines`, `/api/economy/shops`, `/api/economy/shops/:shopId/stock`, `/api/economy/items/:itemId`, `/api/economy/restock-daily`, `/api/missions/*`, `/api/combat/*`, `/api/jobs/*`, `/api/needs/activity-cost/preview`, `/api/progression/skills/preview`.
+`/api/context/full`, `/api/turn/apply`, `/api/search/db`, `/api/search/docs`, `/api/npcs/:npcId/full`, `/api/locations/:locationId/full`, `/api/checkpoints`, `/api/world/sync-routines`, `/api/economy/shops`, `/api/economy/shops/:shopId/stock`, `/api/economy/items/:itemId`, `/api/economy/restock-daily`, `/api/missions/*`, `/api/combat/*`, `/api/jobs/*`, `/api/needs/activity-cost/preview`, `/api/progression/skills/preview`, `/api/magic/*`.
 
 G5 confirma que `context/full` trae rumores activos por ubicacion/NPC cercano y que `search/db` puede encontrarlos.
 
@@ -405,11 +461,11 @@ G6 confirma que shops principales e items basicos pueden consultarse por endpoin
 
 G7 confirma que `GET /api/missions/board` y `GET /api/missions/:missionId` pueden consultar una cartelera inicial viva sin aceptar misiones. La cartelera se puede filtrar por `rank`, `locationId`, `riskLevel` y `sourceFactionId`.
 
-G8-G10 confirman que jobs, needs y progression exponen endpoints read-only/dryRun. Todavia no hay mutador real de completar turno ni integracion obligatoria de EXP/biologia en `turn/apply`.
+G8-G10 confirman que jobs, needs y progression exponen endpoints read-only/dryRun. G11 confirma que magia expone catalogo y preview read-only. Todavia no hay mutador real de completar turno, practica magica real ni integracion obligatoria de EXP/biologia en `turn/apply`.
 
 Smoke test:
 
-`src/utils/smokeTestRender.js` existe y cubre health, context, search, npc, location, economy, missions, detalle de mision estable, jobs, preview de necesidades, preview de skills, combat y checkpoints. Fue ejecutado durante G1 y ampliado en G6/G7/G8-G10.
+`src/utils/smokeTestRender.js` existe y cubre health, context, search, npc, location, economy, missions, detalle de mision estable, jobs, preview de necesidades, preview de skills, catalogo magico, combat y checkpoints. Fue ejecutado durante G1 y ampliado en G6/G7/G8-G11.
 
 Docs indexados:
 
@@ -436,10 +492,11 @@ Justificacion: hoy G1 puede inferir huecos por busqueda y endpoints profundos, p
 
 ## Proximas acciones recomendadas
 
-1. Usar `npm run audit:hoshimori-core`, `npm run audit:hoshimori-social`, `npm run audit:hoshimori-rumors`, `npm run audit:hoshimori-economy`, `npm run audit:hoshimori-missions`, `npm run audit:hoshimori-jobs`, `npm run audit:biological-clock` y `npm run audit:skill-progression` como regresiones read-only.
+1. Usar `npm run audit:hoshimori-core`, `npm run audit:hoshimori-social`, `npm run audit:hoshimori-rumors`, `npm run audit:hoshimori-economy`, `npm run audit:hoshimori-missions`, `npm run audit:hoshimori-jobs`, `npm run audit:biological-clock`, `npm run audit:skill-progression` y `npm run audit:magic-basics` como regresiones read-only.
 2. Implementar completar turnos reales solo con validadores de horario, pago, comida, ausencia, EventLog y pruebas con rollback/checkpoint.
 3. Integrar acumulador biologico persistente en `turn/apply` o world tick, procesando solo horas exactas `:00`.
 4. Usar `skillProgressionService` como validador obligatorio para `skillPatch`, y agregar anti-farmeo real con historial diario.
-5. Implementar venta/compra transaccional y fiado profundo solo cuando se disene el flujo de acciones economicas.
-6. Implementar propagacion avanzada de rumores y expiracion/consecuencias de misiones dentro del world tick, no por tiempo real.
-7. Convertir `auditLiveCoverage.js` en chequeo recurrente y, mas adelante, respaldarlo con `/api/admin/coverage-summary`.
+5. Implementar practica magica mutadora solo con validacion de MP, requisitos, EventLog, aprendizaje explicito y pruebas con rollback/checkpoint.
+6. Implementar venta/compra transaccional y fiado profundo solo cuando se disene el flujo de acciones economicas.
+7. Implementar propagacion avanzada de rumores y expiracion/consecuencias de misiones dentro del world tick, no por tiempo real.
+8. Convertir `auditLiveCoverage.js` en chequeo recurrente y, mas adelante, respaldarlo con `/api/admin/coverage-summary`.

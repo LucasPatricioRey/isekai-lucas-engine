@@ -128,6 +128,18 @@ async function runSmokeTests() {
   }
   console.log("OK /api/progression/skills/preview");
 
+  const magicDisciplines = await request("/api/magic/disciplines");
+  if (!magicDisciplines.ok) throw new Error("magic disciplines fallo");
+  if (!Array.isArray(magicDisciplines.disciplines)) throw new Error("magic disciplines no devolvio disciplines");
+  if (magicDisciplines.disciplines.length < 12) throw new Error("magic disciplines devolvio menos de 12 disciplinas");
+  console.log("OK /api/magic/disciplines");
+
+  const magicTechniques = await request("/api/magic/techniques");
+  if (!magicTechniques.ok) throw new Error("magic techniques fallo");
+  if (!Array.isArray(magicTechniques.techniques)) throw new Error("magic techniques no devolvio techniques");
+  if (magicTechniques.techniques.length < 6) throw new Error("magic techniques devolvio menos de 6 tecnicas");
+  console.log("OK /api/magic/techniques");
+
   const combatEnemies = await request("/api/combat/enemies");
   if (!combatEnemies.ok) throw new Error("combat enemies fallo");
   if (!Array.isArray(combatEnemies.enemies)) throw new Error("combat enemies no devolvio enemies");

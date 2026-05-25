@@ -74,6 +74,11 @@ const SKILL_ACTIVITY_RANGES = {
     exploracion_peligrosa: { min: 3, max: 8, unit: "scene" },
     guardia_nocturna: { min: 4, max: 10, unit: "shift" },
   },
+  skill_percepcion_magica: {
+    practica_percepcion_magica_30min: { min: 8, max: 8, unit: "block" },
+    observar_flujo_30min: { min: 4, max: 8, unit: "block" },
+    practica_guiada_1h: { min: 8, max: 15, unit: "hour" },
+  },
   skill_mana: {
     intento_impulsivo_menor_10min: { min: 0, max: 0, unit: "scene" },
     practica_basica_10_30min: { min: 1, max: 5, unit: "block" },
@@ -87,6 +92,11 @@ const SKILL_ACTIVITY_RANGES = {
     practica_guiada_hechizo_1h: { min: 8, max: 15, unit: "hour" },
     practica_sin_maestro: { min: 2, max: 6, unit: "hour" },
     uso_exitoso_hechizo_conocido: { min: 2, max: 8, unit: "scene" },
+    hechizo_imposible: { min: 0, max: 0, unit: "scene" },
+  },
+  skill_magia_ofensiva: {
+    teoria_ofensiva_1h: { min: 1, max: 4, unit: "hour" },
+    practica_guiada_1h: { min: 4, max: 10, unit: "hour" },
     hechizo_imposible: { min: 0, max: 0, unit: "scene" },
   },
 };
@@ -131,6 +141,10 @@ const CATEGORY_ALIASES = {
   leer_gestos_charla: "leer_gestos_charla",
   exploracion_peligrosa: "exploracion_peligrosa",
   guardia_nocturna: "guardia_nocturna",
+  practica_percepcion_magica_30min: "practica_percepcion_magica_30min",
+  "practica percepcion magica 30min": "practica_percepcion_magica_30min",
+  observar_flujo_30min: "observar_flujo_30min",
+  "observar flujo 30min": "observar_flujo_30min",
   intento_impulsivo_menor_10min: "intento_impulsivo_menor_10min",
   practica_basica_10_30min: "practica_basica_10_30min",
   practica_basica_1h_solo: "practica_basica_1h_solo",
@@ -142,6 +156,8 @@ const CATEGORY_ALIASES = {
   practica_sin_maestro: "practica_sin_maestro",
   uso_exitoso_hechizo_conocido: "uso_exitoso_hechizo_conocido",
   hechizo_imposible: "hechizo_imposible",
+  teoria_ofensiva_1h: "teoria_ofensiva_1h",
+  "teoria ofensiva 1h": "teoria_ofensiva_1h",
 };
 
 function normalizeText(value) {
