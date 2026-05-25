@@ -9,6 +9,7 @@ const WorldEvent = require("../models/WorldEvent");
 const Location = require("../models/Location");
 const ShopStock = require("../models/ShopStock");
 const Item = require("../models/Item");
+const { syncNpcRoutines } = require("../services/routineService");
 
 const PHASE_ORDER = [
   "Principiante",
@@ -755,6 +756,17 @@ async function applyTurn(req, res) {
     }
 
     await gameState.save();
+
+    if (changes.time) {
+      const routineSync = await syncNpcRoutines({
+        day: gameState.currentDay,
+        time: gameState.time,
+      });
+
+      if (routineSync.updatedCount > 0) {
+        changes.routineSync = routineSync;
+      }
+    }
 
     const updatedGameState = gameState.toObject();
 

@@ -8,6 +8,7 @@ const searchRoutes = require("./routes/searchRoutes");
 const npcRoutes = require("./routes/npcRoutes");
 const locationRoutes = require("./routes/locationRoutes");
 const checkpointRoutes = require("./routes/checkpointRoutes");
+const worldRoutes = require("./routes/worldRoutes");
 
 const app = express();
 
@@ -28,6 +29,7 @@ app.use("/api/search", searchRoutes);
 app.use("/api/npcs", npcRoutes);
 app.use("/api/locations", locationRoutes);
 app.use("/api/checkpoints", checkpointRoutes);
+app.use("/api/world", worldRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
