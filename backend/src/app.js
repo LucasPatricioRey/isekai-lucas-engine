@@ -16,6 +16,7 @@ const jobRoutes = require("./routes/jobRoutes");
 const needsRoutes = require("./routes/needsRoutes");
 const progressionRoutes = require("./routes/progressionRoutes");
 const magicRoutes = require("./routes/magicRoutes");
+const travelRoutes = require("./routes/travelRoutes");
 
 const app = express();
 
@@ -44,6 +45,7 @@ app.use("/api/jobs", jobRoutes);
 app.use("/api/needs", needsRoutes);
 app.use("/api/progression", progressionRoutes);
 app.use("/api/magic", magicRoutes);
+app.use("/api/travel", travelRoutes);
 
 app.use((req, res) => {
   res.status(404).json({

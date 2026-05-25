@@ -140,6 +140,29 @@ async function runSmokeTests() {
   if (magicTechniques.techniques.length < 6) throw new Error("magic techniques devolvio menos de 6 tecnicas");
   console.log("OK /api/magic/techniques");
 
+  const travelRoutes = await request("/api/travel/routes");
+  if (!travelRoutes.ok) throw new Error("travel routes fallo");
+  if (!Array.isArray(travelRoutes.routes)) throw new Error("travel routes no devolvio routes");
+  if (travelRoutes.routes.length < 20) throw new Error("travel routes devolvio menos de 20 rutas");
+  console.log("OK /api/travel/routes");
+
+  const combatActions = await request("/api/combat/actions");
+  if (!combatActions.ok) throw new Error("combat actions fallo");
+  if (!Array.isArray(combatActions.actions)) throw new Error("combat actions no devolvio actions");
+  if (combatActions.actions.length < 9) throw new Error("combat actions devolvio menos de 9 acciones");
+  console.log("OK /api/combat/actions");
+
+  const worldTickPreview = await post("/api/world/tick/preview", {
+    fromTime: "12:00",
+    toTime: "14:00",
+    dryRun: true,
+  });
+  if (!worldTickPreview.ok) throw new Error("world tick preview fallo");
+  if (worldTickPreview.preview?.willMutateGameState !== false) {
+    throw new Error("world tick preview no es dryRun");
+  }
+  console.log("OK /api/world/tick/preview");
+
   const combatEnemies = await request("/api/combat/enemies");
   if (!combatEnemies.ok) throw new Error("combat enemies fallo");
   if (!Array.isArray(combatEnemies.enemies)) throw new Error("combat enemies no devolvio enemies");

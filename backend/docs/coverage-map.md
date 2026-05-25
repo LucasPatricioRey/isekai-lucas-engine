@@ -2,7 +2,7 @@
 
 Fecha de auditoria: 2026-05-25  
 Backend vivo auditado: `https://isekai-lucas-engine.onrender.com`  
-Modo G1 original: solo lectura. Actualizaciones posteriores G2/G3/G4/G5/G6/G7/G8-G11 ejecutaron seeds idempotentes o previews read-only sin rollbacks, aceptaciones de mision, creacion de checkpoints ni mutaciones de partida.
+Modo G1 original: solo lectura. Actualizaciones posteriores G2/G3/G4/G5/G6/G7/G8-G12/G18/G14-base ejecutaron seeds idempotentes o previews read-only sin rollbacks, aceptaciones de mision, creacion de checkpoints ni mutaciones de partida.
 
 ## Resumen ejecutivo
 
@@ -12,7 +12,7 @@ G1 compara tres niveles:
 2. Representacion en repo: modelos, seeds, servicios, rutas, smoke tests y docs indexables.
 3. Representacion viva en Render/MongoDB usando endpoints protegidos por `x-api-key`.
 
-Hallazgo principal: el repo ya tiene una base tecnica amplia y, tras G2/G3/G4/G5/G6/G7/G8-G11, MongoDB vivo contiene el nucleo de Hoshimori: 25 NPCs esperados, 25 ubicaciones principales, 12 relaciones NPC-NPC base, 4 memorias canonicas base, 8 rumores base activos, 36 items economicos, 9 shops, 39 filas de stock, 11 misiones iniciales disponibles, 1 contrato laboral activo de Lucas en La Grulla Azul, 12 disciplinas magicas y 7 tecnicas/plantillas magicas base. Ademas existen servicios/endpoints de preview para reloj biologico, progresion de EXP y practica magica segura. El estado canon de partida sigue Dia 10 12:00. Lo que todavia no cubre el 100% del texto son completar turnos reales con pago, acumulador biologico persistente, validacion estricta de EXP dentro de cada accion, venta/compra transaccional completa, propagacion avanzada de rumores, relaciones avanzadas/romance, secretos, cadenas de misiones, practica magica mutadora, desbloqueo real de hechizos, viajes y world tick.
+Hallazgo principal: el repo ya tiene una base tecnica amplia y, tras G2/G3/G4/G5/G6/G7/G8-G12/G18/G14-base, MongoDB vivo contiene el nucleo de Hoshimori: 25 NPCs esperados, 25 ubicaciones principales, 12 relaciones NPC-NPC base, 4 memorias canonicas base, 8 rumores base activos, 36 items economicos, 9 shops, 39 filas de stock, 11 misiones iniciales disponibles, 1 contrato laboral activo de Lucas en La Grulla Azul, 12 disciplinas magicas, 7 tecnicas/plantillas magicas base y 23 rutas de viaje de Hoshimori. Ademas existen servicios/endpoints de preview para reloj biologico, progresion de EXP, practica magica segura, acciones de combate, viaje y world tick/offscreen. El estado canon de partida sigue Dia 10 12:00. Lo que todavia no cubre el 100% del texto son completar turnos reales con pago, acumulador biologico persistente, validacion estricta de EXP dentro de cada accion, venta/compra transaccional completa, propagacion avanzada de rumores, relaciones avanzadas/romance, secretos, cadenas de misiones, practica magica mutadora, desbloqueo real de hechizos, viaje real mutador, encuentros aleatorios, clima avanzado y world tick apply real.
 
 ## Estado vivo confirmado
 
@@ -372,6 +372,73 @@ Resultado vivo tras ejecutar G11 con `MONGODB_URI` y backend local apuntando a M
 - Hechizos avanzados aprendidos: 0.
 - Objetos magicos G11 creados: 0.
 
+## Actualizacion G12/G18/G14 base
+
+Se agrego una base controlada para combate avanzado, rutas de viaje y world tick/offscreen en modo preview:
+
+- `src/services/combatActionService.js`
+- `src/services/travelService.js`
+- `src/services/worldTickService.js`
+- `src/models/TravelRoute.js`
+- `src/seeds/seedHoshimoriRoutes.js`
+- `src/controllers/travelController.js`
+- `src/routes/travelRoutes.js`
+- `src/utils/auditCombatAdvanced.js`
+- `src/utils/auditHoshimoriRoutes.js`
+- `src/utils/auditWorldTick.js`
+- scripts `seed:hoshimori-routes`, `audit:combat-advanced`, `audit:hoshimori-routes` y `audit:world-tick`
+
+Endpoints nuevos protegidos por API key:
+
+- `GET /api/combat/actions`
+- `POST /api/combat/encounters/:encounterId/actions/preview`
+- `GET /api/travel/routes`
+- `GET /api/travel/routes/:routeId`
+- `POST /api/travel/preview`
+- `POST /api/world/tick/preview`
+
+Contenido vivo sembrado por G18:
+
+- 23 rutas de Hoshimori confirmadas en MongoDB.
+- Rutas internas, urbanas, camino del molino, borde/zona media/profundidad del Bosque de los Susurros y Colinas Grises.
+- Cada ruta tiene origen/destino, minutos base, tipo, peligro, terreno, bidireccionalidad, modificadores, source/tags y notas.
+
+Cobertura G12:
+
+- 9 acciones disponibles: `attack`, `defend`, `dodge`, `retreat`, `intimidate`, `use_item`, `cast_magic_preview`, `surrender`, `protect`.
+- Los previews validan combate activo o fixture in-memory, vida/energia/saciedad/heridas, item requerido cuando aplica y coste esperado.
+- Los previews no aplican dano, no cierran combate, no crean loot y no mutan `GameState`.
+
+Cobertura G18:
+
+- `previewTravel` calcula duracion, llegada esperada, riesgo y warnings sin mutar estado.
+- Grulla Azul -> mercado: 15 min.
+- Grulla Azul -> gremio: 20 min.
+- Grulla Azul -> borde del Bosque de los Susurros: 90 min.
+- Mal clima/lluvia leve exterior aplica +25% y redondea a multiplo de 5.
+- No crea encuentros aleatorios.
+
+Cobertura G14 base:
+
+- `previewWorldTick` calcula rutinas NPC candidatas, misiones disponibles que vencerian, restock diario si cambia el dia, rumores candidatos, eventos activos que terminan y combates activos.
+- No avanza por tiempo real.
+- No crea rumores, romance, eventos grandes ni recompensas.
+- No muta `GameState` ni colecciones en dryRun.
+
+Resultado vivo tras ejecutar G12/G18/G14-base con `MONGODB_URI` y backend local apuntando a MongoDB vivo:
+
+- `npm run check`: OK.
+- `npm run seed:hoshimori-routes`: OK.
+- `npm run audit:hoshimori-routes`: OK.
+- `npm run audit:combat-advanced`: OK.
+- `npm run audit:world-tick`: OK.
+- GameState sigue Dia 10, hora 12:00, ubicacion `loc_hoshimori_grulla_azul_comedor`.
+- `moneyCopper` sigue 1470.
+- MP actual sigue 200/200.
+- `activeMissionIds` sigue vacio.
+- Combates activos finales: 0.
+- Rumores, relaciones romance, eventos y logs no cambiaron durante world tick preview.
+
 ## Tabla de cobertura
 
 Estados usados:
@@ -387,7 +454,7 @@ Estados usados:
 |---|---|---|---|---|---|---|
 | Autoridad, regla madre y no inventar | `rules_engine.md` 0-3, 25 | Docs indexados, `context/full`, `search/db`, `search/docs`, `turn/apply` | API responde health/context/search | partial | Smoke OK; docs search OK; backend no fuerza todas las reglas narrativas | Mantener como instrucciones GPT + agregar validadores solo donde haya estado vivo |
 | Formato obligatorio de respuesta | `rules_engine.md` 4 | No hay renderer/formato backend; solo docs | Indexado en docs | indexed_docs_only | No hay modelo/ruta de formato | Resolver en instrucciones GPT; no meter en MongoDB salvo logs/estado |
-| Tiempo exacto y bloques | `rules_engine.md` 5 | `GameState.time`, `block`, `turnController.getBlockFromTime` | Dia 10 12:00, Mediodia | partial | `audit:coverage` confirma tiempo; `turn/apply` no permite retroceder dentro del dia | Agregar avance de dia y reglas de cambio de dia en G14/G9 |
+| Tiempo exacto y bloques | `rules_engine.md` 5 | `GameState.time`, `block`, `turnController.getBlockFromTime`, `worldTickService` preview | Dia 10 12:00, Mediodia | partial | `audit:coverage` confirma tiempo; `audit:world-tick` preview 12:00->14:00 sin mutar estado | G14 futuro: world tick apply real, avance de dia y reglas de cambio de dia integradas |
 | Reloj biologico suavizado | `rules_engine.md` 6 | `GameState.biologicalClock`, `biologicalClockService`, endpoint preview `/api/needs/activity-cost/preview`; deltas directos siguen en `turn/apply` | `pendingAccumulation: []`; preview G9 validado sin mutar | partial | `audit:biological-clock` OK: costes por hora y labels coinciden; GameState intacto | G9 futuro: acumulador persistente por hora exacta e integracion automatica en `applyTurn` |
 | Vida, heridas y condiciones | `rules_engine.md` 7 | `GameState.lucasStatus`, heridas/condiciones, combate agrega heridas | Sin heridas activas | partial | Modelos y patches existen; validacion de causa depende del GPT | Endurecer validadores de heridas/condiciones |
 | Comidas, raciones y contrato | `rules_engine.md` 8 | `Item`, `JobContract`, `seedHoshimoriJobs.js`, `jobService`, previews de turno | Alimentos base vivos; contrato activo de La Grulla Azul vivo con comidas de contrato | seeded_mongodb | G8: contrato `job_contract_lucas_grulla_azul_d10`, comida ligera +20/+2 y principal +30/+5; preview no muta GameState | G8 futuro: completar turno real con pago/comida y validaciones de ausencia |
@@ -395,15 +462,15 @@ Estados usados:
 | Bancos, deudas, alquileres, impuestos | `rules_engine.md` 9.7, `world_bible.md` 4.6 | No hay modelos especificos `Loan/Debt/Rental/Tax/BankAccount` | No confirmado vivo | future_optional | Solo docs y algunas facciones; sin endpoints | Postergar hasta G16 |
 | Progresion de habilidades y EXP | `rules_engine.md` 10-13 | Skills embebidas en `GameState`; `skillProgressionService`; endpoint preview `/api/progression/skills/preview`; `turn/apply` aun usa logica propia | Skills de Lucas vivas; previews G10 no mutantes | partial | `audit:skill-progression` OK: level-up, cambio de fase, Aqua solo magico, energia baja reduce EXP, estado intacto | G10 futuro: usar servicio como validador obligatorio en cada `skillPatch` y agregar anti-farmeo real |
 | Magia, MP y practica | `rules_engine.md` 14; `world_bible.md` 1.4, 9.3 | MP, skills `skill_mana`/`skill_magia`, `knownSpells`, `MagicDiscipline`, `MagicTechnique`, `CharacterMagicKnowledge`, `magicService`, endpoints `/api/magic/*` | MP 200/200, `knownSpells: []`, 12 disciplinas G11, 7 tecnicas/plantillas G11, 0 hechizos avanzados aprendidos | partial | `seed:magic-basics` OK; `audit:magic-basics` OK; previews de respiracion de mana y percepcion magica no mutan estado; Aqua x5 solo magico; ofensiva bloqueada sin requisitos | G11 futuro: practica mutadora, desbloqueo real de hechizos, maestro/instructor profundo y reaccion social avanzada |
-| Entrenamiento fisico, trabajo y viaje | `rules_engine.md` 15 | `JobContract`, `jobService`, previews de turnos; deltas por `turn/apply`; no hay `Route`/`TravelService` | Trabajo actual formalizado como contrato G8; viajes siguen sin grafo | partial | `audit:hoshimori-jobs` OK: 2 turnos, pago 140/dia, Roberto/location/faction existen, preview no muta | G8 futuro para completar turnos reales; G18 para rutas/viajes |
-| Combate narrativo con numeros | `rules_engine.md` 16; `world_bible.md` 16 | `EnemyTemplate`, `CombatEncounter`, `combatService`, rutas `/api/combat/*` | 5 enemigos vivos; 0 combates activos | seeded_mongodb | `audit:coverage`: 5 enemy templates, active combats 0 | G12: acciones, armas, multiples enemigos, loot/proof |
+| Entrenamiento fisico, trabajo y viaje | `rules_engine.md` 15 | `JobContract`, `jobService`, previews de turnos; `TravelRoute`, `travelService`, travel preview; deltas por `turn/apply` | Trabajo actual formalizado como contrato G8; 23 rutas G18 vivas | partial | `audit:hoshimori-jobs` OK y `audit:hoshimori-routes` OK; previews no mutan | G8 futuro para completar turnos reales; G18 futuro para viaje real mutador |
+| Combate narrativo con numeros | `rules_engine.md` 16; `world_bible.md` 16 | `EnemyTemplate`, `CombatEncounter`, `combatService`, `combatActionService`, rutas `/api/combat/*` | 5 enemigos vivos; 0 combates activos | partial | `audit:combat-advanced` OK: 9 acciones, fixture previews attack/defend/retreat, missing encounter bloqueado, sin mutar GameState ni loot | G12 futuro: apply seguro de acciones, armas/equipo profundo, multiples enemigos, heridas por zona, loot/proof |
 | Gremio, MG y misiones | `rules_engine.md` 17; `world_bible.md` 18 | `Mission`, `missionService`, rutas board/accept/report/expire, `seedHoshimoriMissions.js`, `auditHoshimoriMissions.js` | 11 misiones iniciales disponibles Porcelana/Cobre | seeded_mongodb | `seed:hoshimori-missions` OK; `audit:hoshimori-missions` OK; 11/11 con marcador G7, `activeMissionIds` vacio, recompensas no negativas, pruebas requeridas | G7 futuro/G14-G15: cadenas, expiracion offscreen, consecuencias/reputacion y recompensas complejas |
 | NPCs, conocimiento, escena viva | `rules_engine.md` 18; `world_bible.md` 11 | `Npc`, `NpcMemory`, `RoutineOverride`, `NpcRelationship`, `getNpcFull`; seeds core/social/rumors preparados | 25 NPCs de Hoshimori vivos; 4 memorias G4 vivas; rumores G5 distribuidos por NPC/location | partial | `audit:hoshimori-core`, `audit:hoshimori-social` y `audit:hoshimori-rumors` OK | Ampliar memoria privada solo con canon verificable; no hacer NPCs omniscientes |
 | Relaciones, confianza, romance | `rules_engine.md` 19; `world_bible.md` 12 | `relationshipWithLucas` en `Npc`; `NpcRelationship` para NPC-NPC; lecturas en context/npc/search | 12 relaciones NPC-NPC base de Hoshimori vivas y marcadas | partial | `audit:hoshimori-social`: 12/12 pares, 12 con `source`/`tags`, romance relationships 0, relationshipWithLucas no reducido | Mantener romance fuera hasta que haya canon explicito; ampliar tensiones/secretos solo por eventos |
 | Rumores y propagacion | `rules_engine.md` 20.1; `world_bible.md` 17 | `Rumor` con `source`, `applyRumorPatches`, `seedHoshimoriRumors.js`, `auditHoshimoriRumors.js`; search/context consultan rumores | 8 rumores G5 activos vivos; contexto y busqueda los ven | seeded_mongodb | `seed:hoshimori-rumors` OK; `audit:hoshimori-rumors` OK; `context/full` muestra 4 rumores relevantes; `search/db?q=barro` y `search/db?q=Bosque` encuentran rumores | G5 avanzado/G14: propagacion por tick, distorsion gradual, expiracion y cambios por eventos |
 | Reputacion y facciones | `rules_engine.md` 20.2-20.3; `world_bible.md` 10, 15 | `Faction`, links de NPC, reputacion con Lucas | 3 facciones aparecen con query amplia | partial | `/api/search/db?q=a` devuelve `factions=3` | G15: ley, testigos, acceso, sospecha |
 | Inventario, propiedad y objetos | `rules_engine.md` 21 | Inventario en `GameState`, `Item`, validacion de item existente al agregar | Inventario Lucas vivo; 36 items G6 existen como catalogo base | partial | `audit:hoshimori-economy`: 36/36 items, sin objetos magicos comunes; `turn/apply` rechaza item inexistente al agregar | G17: durabilidad avanzada, crafting, recursos y reparacion profunda |
-| Viaje, exploracion y zonas seguras | `rules_engine.md` 22; `world_bible.md` 7, 13 | Docs, strings de zonas en enemigos, ubicaciones core de camino/bosque/colinas sembradas | Locations principales existen; no hay grafo de rutas ni TravelService | partial | `audit:hoshimori-core` OK reportado para locations; sin modelos Route/TravelService | G18 tras economia/misiones base |
+| Viaje, exploracion y zonas seguras | `rules_engine.md` 22; `world_bible.md` 7, 13 | `TravelRoute`, `travelService`, endpoints `/api/travel/routes` y `/api/travel/preview`; ubicaciones core de camino/bosque/colinas sembradas | 23 rutas G18 vivas; travel preview funcional | seeded_mongodb | `seed:hoshimori-routes` OK; `audit:hoshimori-routes` OK: Grulla->mercado 15, Grulla->gremio 20, Grulla->bosque 90, lluvia +25% redondeada | G18 futuro: viaje real mutador, encuentros aleatorios, clima G13, carga/heridas integradas en acciones reales |
 | Pipeline de acciones complejas | `rules_engine.md` 23-24 | `turn/apply` procesa patches; no orquestador de pipeline | Patches funcionan si GPT los manda bien | partial | Endpoint existe, pero validacion semantica es incompleta | Mantener GPT como planificador, mover reglas criticas al backend |
 | Hoshimori: ubicaciones principales | `world_bible.md` 6.3, 19 | `Location` model; seeds iniciales/world essentials; `seedHoshimoriCore.js` prepara 25 ubicaciones canonicas | 25/25 ubicaciones esperadas vivas | seeded_mongodb | `seed:hoshimori-core` OK y `audit:hoshimori-core` OK reportados; missing locations 0; GameState intacto | Mantener auditoria como regresion; G6/G7 pueden apoyarse en estas locations |
 | Hoshimori: roster base 25 NPCs | `world_bible.md` 11 | `seedInitialState` tiene 4; `seedHoshimoriRoster` prepara 21 mas; `seedHoshimoriCore.js` consolida 25 NPCs con rutinas base | 25/25 NPCs esperados vivos | seeded_mongodb | `seed:hoshimori-core` OK y `audit:hoshimori-core` OK reportados; missing NPCs 0; Narek/Pavo/Borin/Liora aparecen en `search/db` | G4: relaciones NPC-NPC, memorias base y conocimiento no omnisciente |
@@ -412,16 +479,16 @@ Estados usados:
 | Hoshimori: economia base | `rules_engine.md` 8-9, 21; `world_bible.md` 6, 19 | `Item`, `Shop`, `ShopStock`, `seedHoshimoriEconomy.js`, `auditHoshimoriEconomy.js`, endpoints read-only de shops/items | 36/36 items, 9/9 shops, 39/39 stock rows vivos | seeded_mongodb | `audit:hoshimori-economy`: stock no negativo, precios no negativos, owners/locations/factions OK, magia comun 0, GameState intacto | G7/G8 pueden consumir economia; G16 para bancos/deudas/impuestos |
 | Hoshimori: cartelera inicial del gremio | `rules_engine.md` 17; `world_bible.md` 18-19 | `Mission`, `seedHoshimoriMissions.js`, `auditHoshimoriMissions.js`, filtros read-only por `riskLevel`/`sourceFactionId` en board | 11/11 misiones G7 vivas y disponibles | seeded_mongodb | Board API devuelve 11; detalle `mission_d10_grulla_delivery_guild` OK; no high/extreme, no romance/secretos/recompensas magicas; GameState y combates intactos | G8 puede apoyarse en encargos no combativos; G14/G15 para expiracion/consecuencias offscreen |
 | Hoshimori: trabajo en La Grulla Azul | `rules_engine.md` 8, 15; `world_bible.md` 6, 11 | `JobContract`, `seedHoshimoriJobs.js`, `jobService`, `GET /api/jobs/contracts/active`, `GET /api/jobs/shifts/available`, `POST /api/jobs/shifts/:shiftId/preview` | 1 contrato activo vivo con 2 turnos | seeded_mongodb | `seed:hoshimori-jobs` OK; `audit:hoshimori-jobs` OK; GameState Dia 10 12:00, dinero 1470, activeMissionIds vacio, combates 0 | Implementar endpoint mutador de completar turno solo con validadores, checkpoint/rollback de test y EventLog |
-| Region cercana a Hoshimori | `world_bible.md` 13 | Docs indexados; algunas locations core cercanas y enemy zones textuales | Camino del Molino, molino, bosque y colinas base existen como locations core | partial | `audit:hoshimori-core` OK reportado para 25 locations; faltan rutas regionales, aldeas/granjas y rosters externos | G18 y G19 despues de Hoshimori economico/social |
+| Region cercana a Hoshimori | `world_bible.md` 13 | Docs indexados; locations core cercanas, enemy zones textuales y rutas G18 | Camino del Molino, molino, bosque y colinas base existen como locations core; rutas principales vivas | partial | `audit:hoshimori-core` OK para 25 locations; `audit:hoshimori-routes` OK para 23 rutas; faltan aldeas/granjas y rosters externos | G19 para regiones/rosters externos; G18 futuro para ruta regional larga |
 | Regiones y ciudades mayores | `world_bible.md` 14 | Docs indexados | No entidades vivas confirmadas | future_optional | `search/docs` encuentra Valdoria; DB solo faccion Corona | G19 post-Hoshimori |
-| Amenazas, fauna y monstruos | `world_bible.md` 16 | `EnemyTemplate`, `seedEnemyTemplates` | 5 enemigos vivos | seeded_mongodb | `search/db?q=lobo` devuelve 1 enemyTemplate; `/api/combat/enemies` devuelve 5 | Ampliar con zonas/loot en G12/G17 |
+| Amenazas, fauna y monstruos | `world_bible.md` 16 | `EnemyTemplate`, `seedEnemyTemplates`, previews G12 de acciones contra fixtures | 5 enemigos vivos | seeded_mongodb | `search/db?q=lobo` devuelve 1 enemyTemplate; `/api/combat/enemies` devuelve 5; `audit:combat-advanced` usa fixture lobo sin crear combate | Ampliar zonas/loot en G12 futuro/G17 sin loot automatico |
 | Clima y eventos diarios | `world_bible.md` 8; `rules_engine.md` 5.4 | `WorldEvent`; no `WeatherState` | Evento activo supply delay por barro | partial | `activeEventIds: event_d10_supply_delay_mud`; sin weather endpoint | G13 |
-| Mundo offscreen / world tick | `rules_engine.md` 2.4; G14 implicito | `/api/world/sync-routines` solo rutinas | No tick integral | partial | No endpoint `/api/world/tick`; rutinas no corridas en vivo para roster ampliado | G14 despues de G2-G7 |
+| Mundo offscreen / world tick | `rules_engine.md` 2.4; G14 implicito | `/api/world/sync-routines`; `worldTickService`; endpoint `/api/world/tick/preview` | Preview 12:00->14:00 calcula rutinas, misiones, restock, rumores, eventos y combates sin mutar | partial | `audit:world-tick` OK: 25 NPCs revisados, 0 misiones vencidas antes de 18:00, rumores/eventos/logs sin cambios, combates 0 | G14 futuro: apply real con transaccion, bloqueo por combate activo, integracion con `applyTurn` y checkpoints |
 | Busqueda DB | `rules_engine.md` 3.2 | `/api/search/db` busca modelos principales | Funciona | implemented_backend | Queries Narek/lobo/a responden | Mantener; agregar resumen admin read-only si hace falta |
 | Busqueda docs | `rules_engine.md` 3.2; ambos docs | `WorldDocumentIndex`, `seedDocuments`, `/api/search/docs` | Funciona con `romance` | seeded_mongodb | `search/docs?q=romance` devuelve 4 docs | Mantener seed docs alineado con archivos |
 | Contexto completo | `rules_engine.md` 3.2 | `/api/context/full` junta estado, location, NPCs cercanos, shops, rumors, missions, factions, combat | Funciona y es de alcance cercano | implemented_backend | `context/full` devuelve 4 nearby NPCs y 4 rumores activos relevantes en Grulla | Documentar que no es roster completo |
 | Checkpoints y rollback | `rules_engine.md` 3.4 | `Checkpoint`, rutas create/list/get/rollback | Checkpoints vivos; oficial presente | implemented_backend | `/api/checkpoints` lista `checkpoint_d10_1200_1779684235944` | Separar admin/in-game en OpenAPI; no exponer rollback al GPT normal |
-| Smoke test | README, `smokeTestRender.js` | `npm run smoke` cubre health/context/search/npc/location/economy/missions/jobs/needs/progression/magic/combat/checkpoints | Smoke OK contra backend local con DB viva para endpoints G8-G11; remoto OK para endpoints ya desplegados | implemented_backend | Ejecutado OK en G11 con `SMOKE_BASE_URL=http://localhost:4010` | Expandir a tests no mutantes y repetir remoto tras redeploy |
+| Smoke test | README, `smokeTestRender.js` | `npm run smoke` cubre health/context/search/npc/location/economy/missions/jobs/needs/progression/magic/travel/combat/world tick/checkpoints | Smoke OK contra backend local con DB viva para endpoints G8-G12/G18/G14-base; remoto OK para endpoints ya desplegados | implemented_backend | Smoke ampliado con `/api/travel/routes`, `/api/combat/actions` y `/api/world/tick/preview` | Expandir a tests no mutantes y repetir remoto tras redeploy |
 | Tests automatizados | `rules_engine.md` 26 | `npm test` sigue placeholder | No aplica | missing | `package.json`: `test` imprime "no test specified" | G21 |
 | OpenAPI / GPT Actions | `rules_engine.md` 26 | No se encontro archivo OpenAPI/swagger | No aplica | missing | `rg openapi|swagger` solo encuentra menciones pendientes | G22 |
 | Admin/debug seguro | `rules_engine.md` 26 | Checkpoints y scripts utilitarios; no resumen read-only de colecciones | No endpoint de conteo seguro | partial | Se audita con busquedas indirectas | Proponer `/api/admin/coverage-summary`, no implementar en G1 |
@@ -443,17 +510,17 @@ Estados usados:
 
 Modelos existentes:
 
-`Character`, `CharacterMagicKnowledge`, `Checkpoint`, `CombatEncounter`, `EnemyTemplate`, `EventLog`, `Faction`, `GameState`, `Item`, `JobContract`, `Location`, `MagicDiscipline`, `MagicTechnique`, `Mission`, `Npc`, `NpcMemory`, `NpcRelationship`, `RoutineOverride`, `Rumor`, `Shop`, `ShopStock`, `WorldDocumentIndex`, `WorldEvent`.
+`Character`, `CharacterMagicKnowledge`, `Checkpoint`, `CombatEncounter`, `EnemyTemplate`, `EventLog`, `Faction`, `GameState`, `Item`, `JobContract`, `Location`, `MagicDiscipline`, `MagicTechnique`, `Mission`, `Npc`, `NpcMemory`, `NpcRelationship`, `RoutineOverride`, `Rumor`, `Shop`, `ShopStock`, `TravelRoute`, `WorldDocumentIndex`, `WorldEvent`.
 
 Cambio G5: `Rumor` ahora incluye `source` para auditar seeds vivos sin depender solo de tags/texto.
 
 Seeds existentes:
 
-`seedInitialState.js`, `seedWorldEssentials.js`, `seedHoshimoriRoster.js`, `seedHoshimoriRoutines.js`, `seedHoshimoriCore.js`, `seedHoshimoriSocialGraph.js`, `seedHoshimoriRumors.js`, `seedHoshimoriEconomy.js`, `seedHoshimoriMissions.js`, `seedHoshimoriJobs.js`, `seedMagicBasics.js`, `seedEnemyTemplates.js`, `seedDocuments.js`, mas scripts de limpieza/reparacion. En G1 no se ejecuto ningun seed; G2/G3/G4/G5/G6/G7/G8/G11 usaron seeds idempotentes.
+`seedInitialState.js`, `seedWorldEssentials.js`, `seedHoshimoriRoster.js`, `seedHoshimoriRoutines.js`, `seedHoshimoriCore.js`, `seedHoshimoriSocialGraph.js`, `seedHoshimoriRumors.js`, `seedHoshimoriEconomy.js`, `seedHoshimoriMissions.js`, `seedHoshimoriJobs.js`, `seedMagicBasics.js`, `seedHoshimoriRoutes.js`, `seedEnemyTemplates.js`, `seedDocuments.js`, mas scripts de limpieza/reparacion. En G1 no se ejecuto ningun seed; G2/G3/G4/G5/G6/G7/G8/G11/G18 usaron seeds idempotentes.
 
 Rutas existentes:
 
-`/api/context/full`, `/api/turn/apply`, `/api/search/db`, `/api/search/docs`, `/api/npcs/:npcId/full`, `/api/locations/:locationId/full`, `/api/checkpoints`, `/api/world/sync-routines`, `/api/economy/shops`, `/api/economy/shops/:shopId/stock`, `/api/economy/items/:itemId`, `/api/economy/restock-daily`, `/api/missions/*`, `/api/combat/*`, `/api/jobs/*`, `/api/needs/activity-cost/preview`, `/api/progression/skills/preview`, `/api/magic/*`.
+`/api/context/full`, `/api/turn/apply`, `/api/search/db`, `/api/search/docs`, `/api/npcs/:npcId/full`, `/api/locations/:locationId/full`, `/api/checkpoints`, `/api/world/sync-routines`, `/api/world/tick/preview`, `/api/economy/shops`, `/api/economy/shops/:shopId/stock`, `/api/economy/items/:itemId`, `/api/economy/restock-daily`, `/api/missions/*`, `/api/combat/*`, `/api/jobs/*`, `/api/needs/activity-cost/preview`, `/api/progression/skills/preview`, `/api/magic/*`, `/api/travel/*`.
 
 G5 confirma que `context/full` trae rumores activos por ubicacion/NPC cercano y que `search/db` puede encontrarlos.
 
@@ -461,11 +528,11 @@ G6 confirma que shops principales e items basicos pueden consultarse por endpoin
 
 G7 confirma que `GET /api/missions/board` y `GET /api/missions/:missionId` pueden consultar una cartelera inicial viva sin aceptar misiones. La cartelera se puede filtrar por `rank`, `locationId`, `riskLevel` y `sourceFactionId`.
 
-G8-G10 confirman que jobs, needs y progression exponen endpoints read-only/dryRun. G11 confirma que magia expone catalogo y preview read-only. Todavia no hay mutador real de completar turno, practica magica real ni integracion obligatoria de EXP/biologia en `turn/apply`.
+G8-G10 confirman que jobs, needs y progression exponen endpoints read-only/dryRun. G11 confirma que magia expone catalogo y preview read-only. G12/G18/G14-base confirman acciones de combate, viaje y world tick en preview. Todavia no hay mutador real de completar turno, practica magica real, viaje real, world tick apply ni integracion obligatoria de EXP/biologia en `turn/apply`.
 
 Smoke test:
 
-`src/utils/smokeTestRender.js` existe y cubre health, context, search, npc, location, economy, missions, detalle de mision estable, jobs, preview de necesidades, preview de skills, catalogo magico, combat y checkpoints. Fue ejecutado durante G1 y ampliado en G6/G7/G8-G11.
+`src/utils/smokeTestRender.js` existe y cubre health, context, search, npc, location, economy, missions, detalle de mision estable, jobs, preview de necesidades, preview de skills, catalogo magico, rutas de viaje, acciones de combate, world tick preview, combat y checkpoints. Fue ejecutado durante G1 y ampliado en G6/G7/G8-G12/G18/G14-base.
 
 Docs indexados:
 
@@ -492,11 +559,13 @@ Justificacion: hoy G1 puede inferir huecos por busqueda y endpoints profundos, p
 
 ## Proximas acciones recomendadas
 
-1. Usar `npm run audit:hoshimori-core`, `npm run audit:hoshimori-social`, `npm run audit:hoshimori-rumors`, `npm run audit:hoshimori-economy`, `npm run audit:hoshimori-missions`, `npm run audit:hoshimori-jobs`, `npm run audit:biological-clock`, `npm run audit:skill-progression` y `npm run audit:magic-basics` como regresiones read-only.
+1. Usar `npm run audit:hoshimori-core`, `npm run audit:hoshimori-social`, `npm run audit:hoshimori-rumors`, `npm run audit:hoshimori-economy`, `npm run audit:hoshimori-missions`, `npm run audit:hoshimori-jobs`, `npm run audit:biological-clock`, `npm run audit:skill-progression`, `npm run audit:magic-basics`, `npm run audit:combat-advanced`, `npm run audit:hoshimori-routes` y `npm run audit:world-tick` como regresiones read-only.
 2. Implementar completar turnos reales solo con validadores de horario, pago, comida, ausencia, EventLog y pruebas con rollback/checkpoint.
 3. Integrar acumulador biologico persistente en `turn/apply` o world tick, procesando solo horas exactas `:00`.
 4. Usar `skillProgressionService` como validador obligatorio para `skillPatch`, y agregar anti-farmeo real con historial diario.
 5. Implementar practica magica mutadora solo con validacion de MP, requisitos, EventLog, aprendizaje explicito y pruebas con rollback/checkpoint.
-6. Implementar venta/compra transaccional y fiado profundo solo cuando se disene el flujo de acciones economicas.
-7. Implementar propagacion avanzada de rumores y expiracion/consecuencias de misiones dentro del world tick, no por tiempo real.
-8. Convertir `auditLiveCoverage.js` en chequeo recurrente y, mas adelante, respaldarlo con `/api/admin/coverage-summary`.
+6. Implementar viaje real mutador solo con validacion de rutas, reloj biologico, hora/llegada, encuentros explicitamente controlados y checkpoint/rollback de test.
+7. Implementar world tick apply real con transaccion, bloqueo por combate activo, expiracion de misiones y restock controlado.
+8. Implementar venta/compra transaccional y fiado profundo solo cuando se disene el flujo de acciones economicas.
+9. Implementar propagacion avanzada de rumores y expiracion/consecuencias de misiones dentro del world tick, no por tiempo real.
+10. Convertir `auditLiveCoverage.js` en chequeo recurrente y, mas adelante, respaldarlo con `/api/admin/coverage-summary`.

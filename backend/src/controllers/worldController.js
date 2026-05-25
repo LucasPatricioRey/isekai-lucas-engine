@@ -1,5 +1,6 @@
-﻿const GameState = require("../models/GameState");
+const GameState = require("../models/GameState");
 const { syncNpcRoutines } = require("../services/routineService");
+const { previewWorldTick } = require("../services/worldTickService");
 
 async function syncRoutines(req, res) {
   try {
@@ -36,6 +37,32 @@ async function syncRoutines(req, res) {
   }
 }
 
+async function previewWorldTickController(req, res) {
+  try {
+    const body = req.body || {};
+
+    const preview = await previewWorldTick({
+      gameId: body.gameId || "isekai_lucas_main",
+      fromDay: body.fromDay ?? null,
+      fromTime: body.fromTime || "",
+      toDay: body.toDay ?? null,
+      toTime: body.toTime || "",
+      dryRun: body.dryRun !== false,
+    });
+
+    return res.json({
+      ok: true,
+      preview,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      ok: false,
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   syncRoutines,
+  previewWorldTickController,
 };

@@ -6,6 +6,26 @@
   getEncounter,
   applyCombatRound,
 } = require("../services/combatService");
+const {
+  listCombatActions,
+  previewCombatAction,
+} = require("../services/combatActionService");
+
+async function listCombatActionsController(req, res) {
+  try {
+    const actions = await listCombatActions();
+
+    return res.json({
+      ok: true,
+      actions,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      ok: false,
+      error: error.message,
+    });
+  }
+}
 
 async function listEnemiesController(req, res) {
   try {
@@ -128,11 +148,36 @@ async function applyCombatRoundController(req, res) {
   }
 }
 
+async function previewCombatActionController(req, res) {
+  try {
+    const body = req.body || {};
+
+    const preview = await previewCombatAction({
+      encounterId: req.params.encounterId,
+      gameId: body.gameId || "isekai_lucas_main",
+      actionType: body.actionType,
+      params: body.params || {},
+    });
+
+    return res.json({
+      ok: true,
+      preview,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      ok: false,
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
+  listCombatActionsController,
   listEnemiesController,
   getEnemyController,
   startEncounterController,
   listActiveEncountersController,
   getEncounterController,
   applyCombatRoundController,
+  previewCombatActionController,
 };
