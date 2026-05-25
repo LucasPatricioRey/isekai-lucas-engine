@@ -10,6 +10,7 @@ const locationRoutes = require("./routes/locationRoutes");
 const checkpointRoutes = require("./routes/checkpointRoutes");
 const worldRoutes = require("./routes/worldRoutes");
 const economyRoutes = require("./routes/economyRoutes");
+const missionRoutes = require("./routes/missionRoutes");
 
 const app = express();
 
@@ -32,6 +33,7 @@ app.use("/api/locations", locationRoutes);
 app.use("/api/checkpoints", checkpointRoutes);
 app.use("/api/world", worldRoutes);
 app.use("/api/economy", economyRoutes);
+app.use("/api/missions", missionRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
