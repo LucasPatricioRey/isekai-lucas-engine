@@ -65,6 +65,11 @@ async function runSmokeTests() {
   if (!Array.isArray(missions.missions)) throw new Error("missions board no devolvio missions");
   console.log("OK /api/missions/board");
 
+  const combatEnemies = await request("/api/combat/enemies");
+  if (!combatEnemies.ok) throw new Error("combat enemies fallo");
+  if (!Array.isArray(combatEnemies.enemies)) throw new Error("combat enemies no devolvio enemies");
+  console.log("OK /api/combat/enemies");
+
   const checkpoints = await request("/api/checkpoints");
   if (!checkpoints.ok) throw new Error("checkpoints fallo");
   console.log("OK /api/checkpoints");
