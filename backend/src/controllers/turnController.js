@@ -11,7 +11,7 @@ const ShopStock = require("../models/ShopStock");
 const Item = require("../models/Item");
 const Mission = require("../models/Mission");
 const { syncNpcRoutines } = require("../services/routineService");
-const { calculateActivityCost } = require("../services/biologicalClockService");
+const { calculateActivityCost, normalizeCategory } = require("../services/biologicalClockService");
 
 const VALID_EVENT_LOG_SOURCES = new Set([
   "player_action",
@@ -73,6 +73,26 @@ function timeToMinutes(time) {
 
 function diffTimeMinutes(from, to) {
   return timeToMinutes(to) - timeToMinutes(from);
+}
+
+function minutesToTime(totalMinutes) {
+  const normalized = ((totalMinutes % 1440) + 1440) % 1440;
+  const hours = Math.floor(normalized / 60);
+  const minutes = normalized % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function getHourBlockStart(time) {
+  return minutesToTime(Math.floor(timeToMinutes(time) / 60) * 60);
+}
+
+function getHourBlockEnd(blockStart) {
+  return minutesToTime(timeToMinutes(blockStart) + 60);
+}
+
+function getHourBlockForTime(time) {
+  const blockStart = getHourBlockStart(time);
+  return `${blockStart}-${getHourBlockEnd(blockStart)}`;
 }
 
 function createId(prefix) {
@@ -806,7 +826,7 @@ function validateHourBoundaryCost({ timeAdvance, currentTime, body }) {
 
   const minutes = diffTimeMinutes(from, to);
 
-  if (minutes > 0 && to.endsWith(":00")) {
+  if (minutes > 0 && getClosedHourBlocks({ from, to }).length > 0) {
     const hasActivityCost = Boolean(body.activityCost);
     const hasLucasPatch = Boolean(body.lucasPatch);
     const hasExemption = Boolean(String(body.biologicalCostExemptReason || "").trim());
@@ -866,6 +886,299 @@ function applyActivityCost(gameState, activityCost) {
     energy: applyStatDelta(gameState.lucasStatus.energy, cost.delta.energy, "energy"),
     perHour: cost.perHour,
     fatigueMultiplier: cost.fatigueMultiplier,
+  };
+}
+
+function ensureBiologicalClock(gameState) {
+  if (!gameState.biologicalClock) {
+    gameState.biologicalClock = {};
+  }
+
+  if (!Array.isArray(gameState.biologicalClock.pendingAccumulations)) {
+    gameState.biologicalClock.pendingAccumulations = [];
+  }
+
+  if (!Array.isArray(gameState.biologicalClock.pendingAccumulation)) {
+    gameState.biologicalClock.pendingAccumulation = [];
+  }
+
+  if (!gameState.biologicalClock.lastProcessedTime) {
+    gameState.biologicalClock.lastProcessedTime = gameState.time;
+  }
+
+  gameState.biologicalClock.currentHourBlock = getHourBlockForTime(gameState.time);
+
+  return gameState.biologicalClock;
+}
+
+function splitActivitySegments({ from, to, activityCost }) {
+  if (!activityCost) return [];
+
+  const fromMinutes = timeToMinutes(from);
+  const toMinutes = timeToMinutes(to);
+  const segments = [];
+  let cursor = fromMinutes;
+
+  while (cursor < toMinutes) {
+    const blockStartMinutes = Math.floor(cursor / 60) * 60;
+    const blockEndMinutes = blockStartMinutes + 60;
+    const segmentEnd = Math.min(toMinutes, blockEndMinutes);
+    const blockStart = minutesToTime(blockStartMinutes);
+    const blockEnd = minutesToTime(blockEndMinutes);
+
+    segments.push({
+      category: normalizeCategory(activityCost.category),
+      minutes: segmentEnd - cursor,
+      reason: activityCost.reason || "",
+      start: minutesToTime(cursor),
+      end: minutesToTime(segmentEnd),
+      blockStart,
+      blockEnd,
+      closesBlock: segmentEnd === blockEndMinutes,
+    });
+
+    cursor = segmentEnd;
+  }
+
+  return segments;
+}
+
+function getClosedHourBlocks({ from, to }) {
+  const fromMinutes = timeToMinutes(from);
+  const toMinutes = timeToMinutes(to);
+  const blocks = [];
+
+  for (
+    let boundary = Math.floor(fromMinutes / 60) * 60 + 60;
+    boundary <= toMinutes;
+    boundary += 60
+  ) {
+    if (boundary <= fromMinutes) continue;
+    const blockStart = minutesToTime(boundary - 60);
+    const blockEnd = minutesToTime(boundary);
+    blocks.push({ blockStart, blockEnd });
+  }
+
+  return blocks;
+}
+
+function isUnprocessedAccumulation(entry) {
+  return entry && entry.status !== "processed" && !entry.processedAt;
+}
+
+function getPendingAccumulationsForBlock(gameState, { blockStart, blockEnd }) {
+  const clock = ensureBiologicalClock(gameState);
+
+  return clock.pendingAccumulations.filter(
+    (entry) =>
+      isUnprocessedAccumulation(entry) &&
+      entry.day === gameState.currentDay &&
+      entry.blockStart === blockStart &&
+      entry.blockEnd === blockEnd
+  );
+}
+
+function createPendingAccumulation(gameState, segment, body) {
+  return {
+    accumulationId: createId("bioacc"),
+    gameId: gameState.gameId,
+    characterId: gameState.characterId || "char_lucas",
+    day: gameState.currentDay,
+    blockStart: segment.blockStart,
+    blockEnd: segment.blockEnd,
+    category: segment.category,
+    minutes: segment.minutes,
+    reason: segment.reason,
+    sourceActionSummary: body.actionSummary || "",
+    sourceEventLogId: body.activityCost?.sourceEventLogId || "",
+    status: "pending",
+    createdAt: new Date(),
+    processedAt: null,
+    processedDay: null,
+    processedTime: "",
+  };
+}
+
+function groupBiologicalActivities(activities) {
+  const grouped = new Map();
+
+  for (const activity of activities) {
+    if (!activity || activity.minutes <= 0) continue;
+    const category = normalizeCategory(activity.category);
+    const existing = grouped.get(category) || {
+      category,
+      minutes: 0,
+      reasons: [],
+      sourceAccumulationIds: [],
+      sourceEventLogIds: [],
+    };
+
+    existing.minutes += activity.minutes;
+    if (activity.reason) existing.reasons.push(activity.reason);
+    if (activity.accumulationId) existing.sourceAccumulationIds.push(activity.accumulationId);
+    if (activity.sourceEventLogId) existing.sourceEventLogIds.push(activity.sourceEventLogId);
+    grouped.set(category, existing);
+  }
+
+  return Array.from(grouped.values());
+}
+
+function processBiologicalBlock(gameState, block, activities) {
+  const groupedActivities = groupBiologicalActivities(activities);
+
+  if (groupedActivities.length === 0) {
+    return null;
+  }
+
+  const before = {
+    satiety: gameState.lucasStatus.satiety.current,
+    energy: gameState.lucasStatus.energy.current,
+  };
+
+  const details = [];
+
+  for (const activity of groupedActivities) {
+    const cost = calculateActivityCost({
+      category: activity.category,
+      minutes: activity.minutes,
+      currentEnergy: gameState.lucasStatus.energy.current,
+      currentSatiety: gameState.lucasStatus.satiety.current,
+    });
+
+    details.push({
+      category: cost.categoryId,
+      label: cost.label,
+      minutes: cost.minutes,
+      reasons: activity.reasons,
+      sourceAccumulationIds: activity.sourceAccumulationIds,
+      sourceEventLogIds: activity.sourceEventLogIds,
+      delta: cost.delta,
+      perHour: cost.perHour,
+      fatigueMultiplier: cost.fatigueMultiplier,
+    });
+
+    applyStatDelta(gameState.lucasStatus.satiety, cost.delta.satiety, "satiety");
+    applyStatDelta(gameState.lucasStatus.energy, cost.delta.energy, "energy");
+  }
+
+  const after = {
+    satiety: gameState.lucasStatus.satiety.current,
+    energy: gameState.lucasStatus.energy.current,
+  };
+
+  for (const activity of activities) {
+    if (activity.accumulationRef) {
+      activity.accumulationRef.status = "processed";
+      activity.accumulationRef.processedAt = new Date();
+      activity.accumulationRef.processedDay = gameState.currentDay;
+      activity.accumulationRef.processedTime = block.blockEnd;
+    }
+  }
+
+  gameState.biologicalClock.lastProcessedTime = block.blockEnd;
+
+  return {
+    blockStart: block.blockStart,
+    blockEnd: block.blockEnd,
+    activities: details,
+    satiety: {
+      before: before.satiety,
+      delta: after.satiety - before.satiety,
+      after: after.satiety,
+      labelAfter: gameState.lucasStatus.satiety.label || "",
+    },
+    energy: {
+      before: before.energy,
+      delta: after.energy - before.energy,
+      after: after.energy,
+      labelAfter: gameState.lucasStatus.energy.label || "",
+    },
+  };
+}
+
+function applyBiologicalClockForTurn(gameState, body, turnTimeAdvance) {
+  const clock = ensureBiologicalClock(gameState);
+
+  if (!body.activityCost && !turnTimeAdvance) {
+    return null;
+  }
+
+  if (!turnTimeAdvance && body.activityCost) {
+    const immediate = applyActivityCost(gameState, body.activityCost);
+    clock.currentHourBlock = getHourBlockForTime(gameState.time);
+
+    return {
+      mode: "legacy_immediate",
+      pendingCreated: [],
+      processedBlocks: [
+        {
+          blockStart: getHourBlockStart(gameState.time),
+          blockEnd: getHourBlockEnd(getHourBlockStart(gameState.time)),
+          activities: [
+            {
+              category: immediate.category,
+              label: immediate.label,
+              minutes: immediate.minutes,
+              reasons: [immediate.reason].filter(Boolean),
+              delta: {
+                satiety: immediate.satiety.delta,
+                energy: immediate.energy.delta,
+              },
+              perHour: immediate.perHour,
+              fatigueMultiplier: immediate.fatigueMultiplier,
+            },
+          ],
+          satiety: immediate.satiety,
+          energy: immediate.energy,
+        },
+      ],
+      pendingCount: clock.pendingAccumulations.filter(isUnprocessedAccumulation).length,
+    };
+  }
+
+  const from = turnTimeAdvance.from;
+  const to = turnTimeAdvance.to;
+  const segments = splitActivitySegments({ from, to, activityCost: body.activityCost });
+  const closedBlocks = getClosedHourBlocks({ from, to });
+  const pendingCreated = [];
+  const processedBlocks = [];
+
+  for (const block of closedBlocks) {
+    const pending = getPendingAccumulationsForBlock(gameState, block);
+    const currentSegments = segments.filter(
+      (segment) => segment.blockStart === block.blockStart && segment.blockEnd === block.blockEnd && segment.closesBlock
+    );
+
+    const activities = [
+      ...pending.map((entry) => ({
+        accumulationRef: entry,
+        accumulationId: entry.accumulationId,
+        sourceEventLogId: entry.sourceEventLogId,
+        category: entry.category,
+        minutes: entry.minutes,
+        reason: entry.reason,
+      })),
+      ...currentSegments,
+    ];
+
+    const processed = processBiologicalBlock(gameState, block, activities);
+    if (processed) processedBlocks.push(processed);
+  }
+
+  for (const segment of segments) {
+    if (segment.closesBlock) continue;
+    const pending = createPendingAccumulation(gameState, segment, body);
+    clock.pendingAccumulations.push(pending);
+    pendingCreated.push(pending);
+  }
+
+  clock.currentHourBlock = getHourBlockForTime(gameState.time);
+
+  return {
+    mode: processedBlocks.length > 0 ? "processed_hour_boundary" : "pending_accumulation",
+    pendingCreated,
+    processedBlocks,
+    pendingCount: clock.pendingAccumulations.filter(isUnprocessedAccumulation).length,
   };
 }
 
@@ -1032,15 +1345,55 @@ async function applyTurn(req, res) {
         }
       }
 
-      if (body.activityCost) {
-        changes.activityCost = applyActivityCost(gameState, body.activityCost);
-        changes.lucasStatus = {
-          ...(changes.lucasStatus || {}),
-          activityCost: {
-            satiety: changes.activityCost.satiety,
-            energy: changes.activityCost.energy,
-          },
-        };
+      if (body.activityCost || changes.time) {
+        const biologicalClockChange = applyBiologicalClockForTurn(
+          gameState,
+          body,
+          changes.time
+            ? {
+                from: changes.time.before,
+                to: changes.time.after,
+              }
+            : null
+        );
+
+        if (biologicalClockChange) {
+          changes.biologicalClock = biologicalClockChange;
+
+          if (biologicalClockChange.processedBlocks.length > 0) {
+            const satietyBefore = biologicalClockChange.processedBlocks[0].satiety.before;
+            const energyBefore = biologicalClockChange.processedBlocks[0].energy.before;
+            const satietyAfter =
+              biologicalClockChange.processedBlocks[biologicalClockChange.processedBlocks.length - 1].satiety.after;
+            const energyAfter =
+              biologicalClockChange.processedBlocks[biologicalClockChange.processedBlocks.length - 1].energy.after;
+
+            changes.activityCost = {
+              mode: biologicalClockChange.mode,
+              satiety: {
+                before: satietyBefore,
+                delta: satietyAfter - satietyBefore,
+                after: satietyAfter,
+                labelAfter: gameState.lucasStatus.satiety.label || "",
+              },
+              energy: {
+                before: energyBefore,
+                delta: energyAfter - energyBefore,
+                after: energyAfter,
+                labelAfter: gameState.lucasStatus.energy.label || "",
+              },
+              processedBlocks: biologicalClockChange.processedBlocks,
+            };
+
+            changes.lucasStatus = {
+              ...(changes.lucasStatus || {}),
+              activityCost: {
+                satiety: changes.activityCost.satiety,
+                energy: changes.activityCost.energy,
+              },
+            };
+          }
+        }
       }
 
       if (Array.isArray(body.inventoryPatch)) {

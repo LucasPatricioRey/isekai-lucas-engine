@@ -1,6 +1,8 @@
 const { after, before, describe, it } = require("node:test");
 
-const Checkpoint = require("../models/Checkpoint");
+const EventLog = require("../models/EventLog");
+const GameState = require("../models/GameState");
+const Mission = require("../models/Mission");
 const {
   assert,
   assertCanonState,
@@ -11,31 +13,88 @@ const {
   stopApi,
 } = require("./apiTestClient");
 
-const OFFICIAL_CHECKPOINT_ID = "checkpoint_d10_1200_1779723391623";
+let tempGameId = "";
+let tempMissionId = "";
 
-describe("turn hardening and rollback coverage", () => {
-  before(startApi);
+async function createIsolatedGameState() {
+  tempGameId = `test_turn_hardening_${Date.now()}`;
+  tempMissionId = `mission_test_turn_hardening_${Date.now()}`;
+
+  const base = await GameState.findOne({ gameId: "isekai_lucas_main" }).lean();
+  assert.ok(base, "Base GameState is required for isolated API tests.");
+
+  const payload = {
+    ...base,
+    _id: undefined,
+    gameId: tempGameId,
+    currentDay: 10,
+    time: "12:00",
+    block: "Mediodía",
+    locationId: "loc_hoshimori_grulla_azul_comedor",
+    activeMissionIds: [],
+    biologicalClock: {
+      lastProcessedTime: "12:00",
+      currentHourBlock: "12:00-13:00",
+      pendingAccumulation: [],
+      pendingAccumulations: [],
+    },
+  };
+
+  payload.lucasStatus.satiety.current = 30;
+  payload.lucasStatus.satiety.label = "hambre fuerte";
+  payload.lucasStatus.energy.current = 59;
+  payload.lucasStatus.energy.label = "cansancio leve/energia media";
+  payload.lucasStatus.mp.current = 200;
+
+  delete payload.createdAt;
+  delete payload.updatedAt;
+  await GameState.create(payload);
+
+  await Mission.create({
+    missionId: tempMissionId,
+    templateId: "test_turn_hardening",
+    title: "Test controlado de mision",
+    description: "Mision temporal para probar missionPatch sin tocar canon vivo.",
+    sourceFactionId: "faction_hoshimori_guild",
+    clientNpcId: "npc_garrick_thorne",
+    locationId: "loc_hoshimori_guild",
+    rank: "Porcelana",
+    requirements: [],
+    reward: { moneyCopper: 1, items: [], other: "" },
+    mgReward: 0,
+    riskLevel: "none",
+    status: "available",
+    postedDay: 10,
+    postedTime: "12:00",
+    proofRequired: "Reporte de prueba.",
+    proofStatus: "pending",
+    flags: { testSuite: true },
+  });
+}
+
+async function cleanupIsolatedState() {
+  if (tempGameId) await GameState.deleteOne({ gameId: tempGameId });
+  if (tempMissionId) await Mission.deleteOne({ missionId: tempMissionId });
+  await EventLog.deleteMany({ tags: "test_turn_hardening" });
+}
+
+describe("turn hardening coverage", () => {
+  before(async () => {
+    await startApi();
+    await createIsolatedGameState();
+  });
 
   after(async () => {
-    await post(`/api/checkpoints/${OFFICIAL_CHECKPOINT_ID}/rollback`, {});
-    await Checkpoint.deleteMany({ checkpointId: /^checkpoint_test_turn_hardening_/ });
+    await cleanupIsolatedState();
     await stopApi();
   });
 
-  it("previews travel biology and applies activity cost/location atomically", async () => {
-    const beforeState = await getCanonicalState();
+  it("previews travel biology and applies validated turn mutations atomically", async () => {
+    const beforeState = await getCanonicalState(tempGameId);
     assertCanonState(beforeState);
 
-    const tempCheckpointId = `checkpoint_test_turn_hardening_${Date.now()}`;
-    const checkpoint = await post("/api/checkpoints", {
-      checkpointId: tempCheckpointId,
-      title: "Test turn hardening checkpoint",
-      reason: "Temporary checkpoint for API mutation safety test.",
-    });
-    assert.equal(checkpoint.status, 200);
-    assert.equal(checkpoint.data.ok, true);
-
     const travelPreview = await post("/api/travel/preview", {
+      gameId: tempGameId,
       fromLocationId: "loc_hoshimori_grulla_azul",
       toLocationId: "loc_hoshimori_guild",
       conditions: {
@@ -51,6 +110,7 @@ describe("turn hardening and rollback coverage", () => {
     assert.equal(travelPreview.data.preview.biologicalCostPreview.processesAtHourBoundary, true);
 
     const missingCost = await post("/api/turn/apply", {
+      gameId: tempGameId,
       actionSummary: "Intento invalido de test: hora exacta sin coste biologico.",
       timeAdvance: {
         from: "12:00",
@@ -59,9 +119,10 @@ describe("turn hardening and rollback coverage", () => {
     });
     assert.equal(missingCost.status, 400);
     assert.match(missingCost.data.error, /hour boundary/);
-    assertSameState(beforeState, await getCanonicalState());
+    assertSameState(beforeState, await getCanonicalState(tempGameId));
 
     const invalidSource = await post("/api/turn/apply", {
+      gameId: tempGameId,
       actionSummary: "Intento invalido de test: fuente de EventLog invalida.",
       timeAdvance: {
         from: "12:00",
@@ -79,14 +140,16 @@ describe("turn hardening and rollback coverage", () => {
         {
           source: "technical_invalid_source",
           summary: "Este log debe ser rechazado antes de mutar GameState.",
+          tags: ["test_turn_hardening"],
         },
       ],
     });
     assert.equal(invalidSource.status, 400);
     assert.equal(invalidSource.data.ok, false);
-    assertSameState(beforeState, await getCanonicalState());
+    assertSameState(beforeState, await getCanonicalState(tempGameId));
 
     const mismatchedActivityCost = await post("/api/turn/apply", {
+      gameId: tempGameId,
       actionSummary: "Intento invalido de test: activityCost no coincide con tiempo real.",
       timeAdvance: {
         from: "12:00",
@@ -100,19 +163,21 @@ describe("turn hardening and rollback coverage", () => {
     });
     assert.equal(mismatchedActivityCost.status, 400);
     assert.match(mismatchedActivityCost.data.error, /activityCost\.minutes/);
-    assertSameState(beforeState, await getCanonicalState());
+    assertSameState(beforeState, await getCanonicalState(tempGameId));
 
     const acceptedMission = await post("/api/turn/apply", {
+      gameId: tempGameId,
       actionSummary: "Test controlado: Lucas acepta una mision simple.",
       missionPatch: {
         op: "accept",
-        missionId: "mission_d10_grulla_delivery_guild",
+        missionId: tempMissionId,
       },
       eventLogs: [
         {
           source: "system_correction",
           summary: "Test controlado de missionPatch accept.",
           visibility: "hidden",
+          tags: ["test_turn_hardening"],
         },
       ],
     });
@@ -120,15 +185,14 @@ describe("turn hardening and rollback coverage", () => {
     assert.equal(acceptedMission.data.ok, true);
     assert.equal(acceptedMission.data.changes.missions[0].op, "accept");
     assert.equal(acceptedMission.data.changes.missions[0].after.status, "accepted");
-    assert.ok(
-      acceptedMission.data.gameState.activeMissionIds.includes("mission_d10_grulla_delivery_guild")
-    );
+    assert.ok(acceptedMission.data.gameState.activeMissionIds.includes(tempMissionId));
 
     const reportedMission = await post("/api/turn/apply", {
+      gameId: tempGameId,
       actionSummary: "Test controlado: Lucas presenta reporte de mision.",
       missionPatch: {
         op: "report",
-        missionId: "mission_d10_grulla_delivery_guild",
+        missionId: tempMissionId,
         reportSummary: "Reporte de prueba controlada.",
       },
       eventLogs: [
@@ -136,6 +200,7 @@ describe("turn hardening and rollback coverage", () => {
           source: "system_correction",
           summary: "Test controlado de missionPatch report.",
           visibility: "hidden",
+          tags: ["test_turn_hardening"],
         },
       ],
     });
@@ -144,20 +209,16 @@ describe("turn hardening and rollback coverage", () => {
     assert.equal(reportedMission.data.changes.missions[0].op, "report");
     assert.equal(reportedMission.data.changes.missions[0].after.proofStatus, "submitted");
 
-    const missionRollback = await post(`/api/checkpoints/${tempCheckpointId}/rollback`, {});
-    assert.equal(missionRollback.status, 200);
-    assert.equal(missionRollback.data.ok, true);
-    assertSameState(beforeState, await getCanonicalState());
-
     const applied = await post("/api/turn/apply", {
+      gameId: tempGameId,
       actionSummary: "Test controlado: viaje interno La Grulla Azul al Gremio.",
       timeAdvance: {
         from: "12:00",
-        to: "12:20",
+        to: "13:00",
       },
       activityCost: {
         category: "viaje_caminata_suave",
-        minutes: 20,
+        minutes: 60,
         reason: "Viaje interno La Grulla Azul al Gremio",
       },
       gameStatePatch: {
@@ -168,28 +229,20 @@ describe("turn hardening and rollback coverage", () => {
           source: "system_correction",
           summary: "Test controlado de source tecnico aceptado.",
           visibility: "hidden",
+          tags: ["test_turn_hardening"],
         },
       ],
     });
     assert.equal(applied.status, 200);
     assert.equal(applied.data.ok, true);
-    assert.equal(applied.data.changes.activityCost.satiety.delta, -1);
-    assert.equal(applied.data.changes.activityCost.energy.delta, -2);
+    assert.equal(applied.data.changes.activityCost.satiety.delta, -3);
+    assert.equal(applied.data.changes.activityCost.energy.delta, -5);
     assert.equal(applied.data.changes.location.after, "loc_hoshimori_guild");
     assert.equal(applied.data.gameState.locationId, "loc_hoshimori_guild");
-    assert.equal(applied.data.gameState.lucasStatus.satiety.current, 29);
-    assert.equal(applied.data.gameState.lucasStatus.energy.current, 57);
+    assert.equal(applied.data.gameState.lucasStatus.satiety.current, 27);
+    assert.equal(applied.data.gameState.lucasStatus.energy.current, 54);
 
-    const tempRollback = await post(`/api/checkpoints/${tempCheckpointId}/rollback`, {});
-    assert.equal(tempRollback.status, 200);
-    assert.equal(tempRollback.data.ok, true);
-    assertSameState(beforeState, await getCanonicalState());
-
-    const officialRollback = await post(`/api/checkpoints/${OFFICIAL_CHECKPOINT_ID}/rollback`, {});
-    assert.equal(officialRollback.status, 200);
-    assert.equal(officialRollback.data.ok, true);
-    assertCanonState(await getCanonicalState());
-
-    await Checkpoint.deleteOne({ checkpointId: tempCheckpointId });
+    const mainState = await getCanonicalState();
+    assertCanonState(mainState);
   });
 });

@@ -165,7 +165,7 @@
       },
       "ActivityCostInput": {
         "type": "object",
-        "description": "Costo biologico declarativo calculado por backend. activityCost.minutes debe coincidir con timeAdvance salvo exemption u override validado.",
+        "description": "Costo biologico declarativo. Entre horas se acumula; al llegar a :00 se procesa.",
         "properties": {
           "category": {
             "type": "string",
@@ -181,6 +181,17 @@
           },
           "reason": {
             "type": "string"
+          },
+          "processingMode": {
+            "type": "string",
+            "enum": [
+              "auto"
+            ],
+            "description": "auto: backend acumula o procesa segun la hora."
+          },
+          "sourceEventLogId": {
+            "type": "string",
+            "description": "Log origen si se migra un pendiente viejo."
           },
           "allowMinutesMismatch": {
             "type": "boolean",
@@ -673,7 +684,7 @@
           }
         ],
         "x-openai-isConsequential": false,
-        "description": "Usar solo cuando la accion cambia estado y despues de getFullContext. Para aceptar/reportar misiones usar missionPatch. Si timeAdvance cruza una hora exacta (:00), incluir activityCost, lucasPatch o biologicalCostExemptReason. activityCost.minutes debe coincidir con timeAdvance salvo override/exemption. Para cambiar ubicacion tecnica usar gameStatePatch.locationId."
+        "description": "Usar solo si cambia estado. activityCost se acumula entre horas y se procesa en :00. Misiones por missionPatch. Ubicacion por gameStatePatch.locationId."
       }
     },
     "/api/economy/shops/{shopId}/stock": {

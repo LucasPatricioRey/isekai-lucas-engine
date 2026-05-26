@@ -21,6 +21,40 @@ function unique(values) {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
+function timeToMinutes(time) {
+  const [hours, minutes] = String(time || "00:00").split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+function minutesToTime(totalMinutes) {
+  const normalized = ((totalMinutes % 1440) + 1440) % 1440;
+  const hours = Math.floor(normalized / 60);
+  const minutes = normalized % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function getHourBlockForTime(time) {
+  const blockStartMinutes = Math.floor(timeToMinutes(time) / 60) * 60;
+  const blockStart = minutesToTime(blockStartMinutes);
+  const blockEnd = minutesToTime(blockStartMinutes + 60);
+  return { blockStart, blockEnd };
+}
+
+function getRelevantPendingAccumulations(gameState) {
+  const pending = gameState.biologicalClock?.pendingAccumulations || [];
+  const currentBlock = getHourBlockForTime(gameState.time);
+
+  return pending.filter(
+    (entry) =>
+      entry &&
+      entry.status !== "processed" &&
+      !entry.processedAt &&
+      entry.day === gameState.currentDay &&
+      entry.blockStart === currentBlock.blockStart &&
+      entry.blockEnd === currentBlock.blockEnd
+  );
+}
+
 async function getFullContext(req, res) {
   try {
     if (mongoose.connection.readyState !== 1) {
@@ -44,6 +78,7 @@ async function getFullContext(req, res) {
     const currentLocationId = gameState.locationId;
     const activeEventIds = gameState.activeEventIds || [];
     const activeMissionIds = gameState.activeMissionIds || [];
+    const pendingBiologicalAccumulations = getRelevantPendingAccumulations(gameState);
 
     const [lucas, currentLocation] = await Promise.all([
       Character.findOne({ characterId: gameState.characterId }).lean(),
@@ -220,6 +255,7 @@ async function getFullContext(req, res) {
         socialRelationships,
         routineOverrides,
         activeCombatEncounters,
+        pendingBiologicalAccumulations,
         recentEventLogs,
         coherenceWarnings: [],
       },

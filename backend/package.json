@@ -39,7 +39,8 @@
     "audit:openapi-compact": "node src/utils/auditOpenApiCompact.js",
     "audit:gpt-readiness": "node src/utils/auditGptReadiness.js",
     "audit:gpt-readiness-compact": "node src/utils/auditGptReadinessCompact.js",
-    "audit:checkpoint-rollback": "node src/utils/auditCheckpointRollback.js"
+    "audit:checkpoint-rollback": "node src/utils/auditCheckpointRollback.js",
+    "audit:biological-accumulator": "node src/utils/auditBiologicalAccumulator.js"
   },
   "keywords": [],
   "author": "",

@@ -44,4 +44,5 @@ Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.j
 Notas:
 - El compact mantiene 30 operaciones para respetar el limite practico de GPT Builder.
 - Mutadores directos de misiones, combate, restock y rollback quedan fuera; misiones se gestionan por `applyTurn.missionPatch`.
+- `applyTurn.activityCost` no suma operaciones: acumula automaticamente actividades entre horas y procesa pendientes al llegar a `:00`.
 - El schema admin es solo lectura y no debe usarse para juego normal.

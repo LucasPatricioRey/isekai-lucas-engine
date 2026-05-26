@@ -21,12 +21,9 @@ const ADMIN_OPENAPI_PATH = path.join(DOCS_DIR, "openapi-gpt-action-admin.json");
 const MATRIX_PATH = path.join(DOCS_DIR, "gpt-actions-operation-matrix.md");
 
 const EXPECTED_STATE = {
-  day: 10,
-  time: "12:00",
-  locationId: "loc_hoshimori_grulla_azul_comedor",
+  minDay: 10,
   moneyCopper: 1470,
   mpCurrent: 200,
-  activeMissionCount: 0,
   activeCombatCount: 0,
 };
 
@@ -168,12 +165,12 @@ async function checkCompactEndpoints(issues) {
     )
   );
 
-  assertEqual(issues, "day", gameState.currentDay, EXPECTED_STATE.day);
-  assertEqual(issues, "time", gameState.time, EXPECTED_STATE.time);
-  assertEqual(issues, "locationId", gameState.locationId, EXPECTED_STATE.locationId);
+  assertCondition(issues, "day is playable canon", gameState.currentDay >= EXPECTED_STATE.minDay, String(gameState.currentDay));
+  assertCondition(issues, "time has HH:MM format", /^([01]\d|2[0-3]):[0-5]\d$/.test(gameState.time || ""), gameState.time);
+  assertCondition(issues, "locationId exists", Boolean(gameState.locationId), gameState.locationId);
   assertEqual(issues, "moneyCopper", gameState.moneyCopper, EXPECTED_STATE.moneyCopper);
   assertEqual(issues, "MP current", gameState.mpCurrent, EXPECTED_STATE.mpCurrent);
-  assertEqual(issues, "activeMissionIds count", gameState.activeMissionIds.length, EXPECTED_STATE.activeMissionCount);
+  assertCondition(issues, "activeMissionIds is array", Array.isArray(gameState.activeMissionIds), String(gameState.activeMissionIds?.length || 0));
   assertEqual(issues, "active combat count", activeCombatList.length, EXPECTED_STATE.activeCombatCount);
 }
 

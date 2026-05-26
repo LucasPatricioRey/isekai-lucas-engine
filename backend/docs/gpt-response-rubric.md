@@ -29,10 +29,11 @@ Usar esta rubrica durante pruebas manuales en GPT Builder Preview. Marcar cada i
 | Consultas puras | No usa `applyTurn` ni mutadores para preguntas de informacion. |
 | Previews | Usa preview/dryRun para evaluar viajes, magia, trabajo, reloj biologico, progreso, combate o world tick. |
 | Coste biologico | Si aplica una accion con avance de tiempo hasta una hora exacta, incluye `activityCost`, `lucasPatch` o `biologicalCostExemptReason`. |
+| Acumulador entre horas | Si una actividad termina antes de `:00`, usa `activityCost` para que backend guarde `biologicalClock.pendingAccumulations`; no lo deja solo como EventLog. |
 | Minutos biologicos | `activityCost.minutes` coincide con `timeAdvance.from -> timeAdvance.to`, salvo exencion/override explicito. |
 | Ubicacion tecnica | Si la narracion mueve a Lucas, actualiza tambien `gameStatePatch.locationId` con una location existente. |
 | Misiones | Acepta o reporta misiones con `applyTurn.missionPatch`; no inventa aceptacion solo narrativa. |
-| Canon intacto | Mantiene Dia 10 12:00, dinero 1470, MP 200/200, misiones activas vacias y combates 0 si no hay mutacion. |
+| Canon intacto | Mantiene el estado vivo devuelto por `getFullContext` si no hay mutacion; no restaura ni reinterpreta checkpoints viejos por su cuenta. |
 | Irreversibles ambiguos | Pregunta antes de mutar si la accion es ambigua, irreversible o tiene costo relevante. |
 | Checkpoint | Para pruebas mutadoras controladas, crea o exige checkpoint previo. |
 

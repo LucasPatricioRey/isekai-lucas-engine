@@ -157,6 +157,83 @@ const biologicalAccumulationSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const biologicalPendingAccumulationSchema = new mongoose.Schema(
+  {
+    accumulationId: {
+      type: String,
+      required: true,
+    },
+    gameId: {
+      type: String,
+      required: true,
+      index: true,
+    },
+    characterId: {
+      type: String,
+      required: true,
+      default: "char_lucas",
+    },
+    day: {
+      type: Number,
+      required: true,
+      min: 1,
+    },
+    blockStart: {
+      type: String,
+      required: true,
+    },
+    blockEnd: {
+      type: String,
+      required: true,
+    },
+    category: {
+      type: String,
+      required: true,
+    },
+    minutes: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    reason: {
+      type: String,
+      default: "",
+    },
+    sourceActionSummary: {
+      type: String,
+      default: "",
+    },
+    sourceEventLogId: {
+      type: String,
+      default: "",
+      index: true,
+    },
+    status: {
+      type: String,
+      enum: ["pending", "processed"],
+      default: "pending",
+      index: true,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+    processedAt: {
+      type: Date,
+      default: null,
+    },
+    processedDay: {
+      type: Number,
+      default: null,
+    },
+    processedTime: {
+      type: String,
+      default: "",
+    },
+  },
+  { _id: false }
+);
+
 const gameStateSchema = new mongoose.Schema(
   {
     gameId: {
@@ -281,6 +358,10 @@ const gameStateSchema = new mongoose.Schema(
       },
       pendingAccumulation: {
         type: [biologicalAccumulationSchema],
+        default: [],
+      },
+      pendingAccumulations: {
+        type: [biologicalPendingAccumulationSchema],
         default: [],
       },
     },

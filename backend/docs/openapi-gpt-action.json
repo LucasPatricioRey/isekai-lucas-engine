@@ -165,7 +165,7 @@
       },
       "ActivityCostInput": {
         "type": "object",
-        "description": "Costo biologico declarativo calculado por backend. activityCost.minutes debe coincidir con timeAdvance salvo exemption u override validado.",
+        "description": "Costo biologico declarativo. Entre horas se acumula; al llegar a :00 se procesa.",
         "properties": {
           "category": {
             "type": "string",
@@ -181,6 +181,17 @@
           },
           "reason": {
             "type": "string"
+          },
+          "processingMode": {
+            "type": "string",
+            "enum": [
+              "auto"
+            ],
+            "description": "auto: backend acumula o procesa segun la hora."
+          },
+          "sourceEventLogId": {
+            "type": "string",
+            "description": "Log origen si se migra un pendiente viejo."
           },
           "allowMinutesMismatch": {
             "type": "boolean",

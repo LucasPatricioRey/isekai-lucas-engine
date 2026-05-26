@@ -156,6 +156,16 @@ function main() {
     "compact activityCost supports minutes mismatch override",
     Boolean(compact.components?.schemas?.ActivityCostInput?.properties?.allowMinutesMismatch)
   );
+  assertCondition(
+    issues,
+    "compact activityCost documents auto accumulation",
+    Boolean(compact.components?.schemas?.ActivityCostInput?.properties?.processingMode)
+  );
+  assertCondition(
+    issues,
+    "compact activityCost documents sourceEventLogId",
+    Boolean(compact.components?.schemas?.ActivityCostInput?.properties?.sourceEventLogId)
+  );
 
   section("Admin Read-Only Schema");
   const adminMutators = Array.from(adminOps.keys()).filter((operationKey) => operationKey.startsWith("POST "));
