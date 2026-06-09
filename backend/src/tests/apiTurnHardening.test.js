@@ -17,10 +17,12 @@ const {
 
 let tempGameId = "";
 let tempMissionId = "";
+let tempNpcId = "";
 
 async function createIsolatedGameState() {
   tempGameId = `test_turn_hardening_${Date.now()}`;
   tempMissionId = `mission_test_turn_hardening_${Date.now()}`;
+  tempNpcId = `npc_test_relationship_${Date.now()}`;
 
   const base = await GameState.findOne({ gameId: "isekai_lucas_main" }).lean();
   assert.ok(base, "Base GameState is required for isolated API tests.");
@@ -72,12 +74,28 @@ async function createIsolatedGameState() {
     proofStatus: "pending",
     flags: { testSuite: true },
   });
+
+  await Npc.create({
+    npcId: tempNpcId,
+    name: "NPC Test Relacion",
+    role: "fixture social",
+    relationshipWithLucas: {
+      trust: 10,
+      affection: 0,
+      suspicion: 0,
+      respect: 5,
+      fear: 0,
+      jealousy: 0,
+      notes: "Fixture temporal de pruebas.",
+    },
+  });
 }
 
 async function cleanupIsolatedState() {
   if (tempGameId) await GameState.deleteOne({ gameId: tempGameId });
   if (tempGameId) await WorldEvent.deleteMany({ gameId: tempGameId });
   if (tempMissionId) await Mission.deleteOne({ missionId: tempMissionId });
+  if (tempNpcId) await Npc.deleteOne({ npcId: tempNpcId });
   await EventLog.deleteMany({
     $or: [
       { tags: "test_turn_hardening" },
@@ -95,6 +113,66 @@ describe("turn hardening coverage", () => {
   after(async () => {
     await cleanupIsolatedState();
     await stopApi();
+  });
+
+  it("applies npc relationship patches through applyTurn", async () => {
+    const oversizedDelta = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Intento invalido de test: delta social excesivo.",
+      npcRelationshipPatches: [
+        {
+          npcId: tempNpcId,
+          trustDelta: 4,
+          reason: "Delta fuera de rango.",
+        },
+      ],
+    });
+    assert.equal(oversizedDelta.status, 400);
+    assert.match(oversizedDelta.data.error, /entre -3 y 3/);
+
+    const missingReason = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Intento invalido de test: relacion sin motivo.",
+      npcRelationshipPatches: [
+        {
+          npcId: tempNpcId,
+          trustDelta: 1,
+        },
+      ],
+    });
+    assert.equal(missingReason.status, 400);
+    assert.match(missingReason.data.error, /reason es obligatorio/);
+
+    const beforeNpc = await Npc.findOne({ npcId: tempNpcId }).lean();
+    assert.equal(beforeNpc.relationshipWithLucas.trust, 10);
+
+    const relationship = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: cambio social validado.",
+      npcRelationshipPatches: [
+        {
+          npcId: tempNpcId,
+          trustDelta: 2,
+          respectDelta: 1,
+          reason: "Accion social relevante validada por test.",
+          notes: "Fixture temporal actualizado por applyTurn.",
+        },
+      ],
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de npcRelationshipPatches.",
+          visibility: "hidden",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+    });
+
+    assert.equal(relationship.status, 200);
+    assert.equal(relationship.data.ok, true);
+    assert.equal(relationship.data.changes.npcRelationships[0].npcId, tempNpcId);
+    assert.equal(relationship.data.changes.npcRelationships[0].after.trust, 12);
+    assert.equal(relationship.data.changes.npcRelationships[0].after.respect, 6);
   });
 
   it("previews travel biology and applies validated turn mutations atomically", async () => {

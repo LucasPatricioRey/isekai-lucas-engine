@@ -113,6 +113,7 @@ async function checkCompactEndpoints(issues) {
     magicTechniques,
     weather,
     activeCombats,
+    socialImpact,
   ] = await Promise.all([
     request("/api/context/compact"),
     request("/api/characters/char_lucas/state"),
@@ -142,6 +143,23 @@ async function checkCompactEndpoints(issues) {
     request("/api/magic/techniques"),
     request("/api/weather/current?regionId=region_hoshimori"),
     request("/api/combat/encounters/active"),
+    request("/api/npcs/social/impact/preview", {
+      method: "POST",
+      body: JSON.stringify({
+        npcId: "npc_yara_mils",
+        actionSummary: "Lucas ayuda a Yara respetando su espacio durante el turno.",
+        factors: {
+          witnessedByNpc: true,
+          mattersToNpc: true,
+          fitsPersonality: true,
+          helpedNpc: true,
+          respectsBoundaries: true,
+          practicalConsequence: true,
+          withinExpectedDuty: true,
+          importance: "meaningful",
+        },
+      }),
+    }),
   ]);
 
   section("Compact Critical Endpoints");
@@ -161,6 +179,8 @@ async function checkCompactEndpoints(issues) {
   assertEqual(issues, "activity preview energy delta", activityPreview.preview?.totalDelta?.energy, -2);
   assertCondition(issues, "magic techniques has entries", (magicTechniques.techniques || []).length >= 6);
   assertCondition(issues, "weather current exists", Boolean(weather.weather?.weatherId));
+  assertCondition(issues, "social impact preview suggests patch", Boolean(socialImpact.preview?.suggestedPatch?.npcId));
+  assertCondition(issues, "social impact preview is dryRun", socialImpact.dryRun === true);
 
   const gameState = summarizeGameState(context);
   const activeCombatList = activeCombats.encounters || [];
@@ -224,6 +244,8 @@ async function main() {
   assertCondition(issues, "compact has missionPatch", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.missionPatch));
   assertCondition(issues, "compact has shopStockPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.shopStockPatches));
   assertCondition(issues, "compact has npcMemoryPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.npcMemoryPatches));
+  assertCondition(issues, "compact has npcRelationshipPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.npcRelationshipPatches));
+  assertCondition(issues, "compact includes social impact preview", compactOps.includes("POST /api/npcs/social/impact/preview"));
   assertCondition(issues, "compact applyTurn is consequential", compact.paths?.["/api/turn/apply"]?.post?.["x-openai-isConsequential"] === true);
   assertCondition(issues, "compact excludes checkpoint list", !compact.paths?.["/api/checkpoints"]?.get);
   assertCondition(issues, "compact excludes checkpoint create", !compact.paths?.["/api/checkpoints"]?.post);

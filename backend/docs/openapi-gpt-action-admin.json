@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Admin Read-Only",
-    "version": "0.1.0",
-    "description": "Schema opcional para una segunda Action tecnica segura. Solo incluye endpoints existentes read-only. No incluye rollback, reset, delete ni mutadores peligrosos. El backend genera eventos diarios con scheduler de manana y los expira con consecuencias pendientes."
+    "version": "0.1.1",
+    "description": "Schema opcional para una segunda Action tecnica segura. Solo incluye endpoints existentes read-only. Sus componentes documentan parches sociales, pero las rutas expuestas no incluyen applyTurn, rollback, reset, delete ni mutadores peligrosos. El backend genera eventos diarios con scheduler de manana y los expira con consecuencias pendientes."
   },
   "servers": [
     {
@@ -102,6 +102,13 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/NpcMemoryPatchItem"
+            }
+          },
+          "npcRelationshipPatches": {
+            "type": "array",
+            "description": "Cambios numericos controlados de vinculo con Lucas. Usar solo tras evaluar reglas sociales; memoria NPC no reemplaza relacion.",
+            "items": {
+              "$ref": "#/components/schemas/NpcRelationshipPatchItem"
             }
           },
           "missionPatch": {
@@ -365,6 +372,56 @@
           "fact"
         ],
         "additionalProperties": true
+      },
+      "NpcRelationshipPatchItem": {
+        "type": "object",
+        "description": "Delta de relacion Lucas-NPC. No usar para smalltalk ni farmeo social; justificar cada cambio.",
+        "properties": {
+          "npcId": {
+            "type": "string"
+          },
+          "trustDelta": {
+            "type": "integer",
+            "minimum": -3,
+            "maximum": 3
+          },
+          "affectionDelta": {
+            "type": "integer",
+            "minimum": -3,
+            "maximum": 3
+          },
+          "suspicionDelta": {
+            "type": "integer",
+            "minimum": -3,
+            "maximum": 3
+          },
+          "respectDelta": {
+            "type": "integer",
+            "minimum": -3,
+            "maximum": 3
+          },
+          "fearDelta": {
+            "type": "integer",
+            "minimum": -3,
+            "maximum": 3
+          },
+          "jealousyDelta": {
+            "type": "integer",
+            "minimum": -3,
+            "maximum": 3
+          },
+          "reason": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "npcId",
+          "reason"
+        ],
+        "additionalProperties": false
       },
       "MissionPatchInput": {
         "oneOf": [

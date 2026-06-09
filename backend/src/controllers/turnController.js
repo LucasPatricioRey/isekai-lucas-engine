@@ -333,6 +333,10 @@ async function applyNpcRelationshipPatches(patches, session = null) {
       throw validationError("npcRelationshipPatch.npcId es obligatorio.");
     }
 
+    if (typeof patch.reason !== "string" || !patch.reason.trim()) {
+      throw validationError("npcRelationshipPatch.reason es obligatorio.");
+    }
+
     const npc = await Npc.findOne({ npcId: patch.npcId }).session(session);
 
     if (!npc) {
@@ -350,6 +354,10 @@ async function applyNpcRelationshipPatches(patches, session = null) {
       if (patch[deltaKey] !== undefined) {
         if (!Number.isInteger(patch[deltaKey])) {
           throw validationError(`${deltaKey} debe ser un número entero.`);
+        }
+
+        if (patch[deltaKey] < -3 || patch[deltaKey] > 3) {
+          throw validationError(`${deltaKey} debe estar entre -3 y 3.`);
         }
 
         relationship[key] = clamp((relationship[key] || 0) + patch[deltaKey], 0, 100);

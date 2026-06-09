@@ -10,7 +10,7 @@ Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.j
 | listCombatActions | `GET /api/combat/actions` | si | si | lectura | gameplay |
 | listActiveCombatEncounters | `GET /api/combat/encounters/active` | si | si | lectura | gameplay |
 | getCombatEncounter | `GET /api/combat/encounters/{encounterId}` | si | si | lectura | gameplay |
-| listCombatEnemies | `GET /api/combat/enemies` | si | si | lectura | gameplay |
+| listCombatEnemies | `GET /api/combat/enemies` | si | no | lectura | gameplay/debug |
 | getCombatEnemy | `GET /api/combat/enemies/{enemyId}` | si | no | lectura | gameplay |
 | getCompactContext | `GET /api/context/compact` | si | si | lectura | gameplay |
 | getFullContext | `GET /api/context/full` | si | si | lectura | gameplay |
@@ -27,6 +27,7 @@ Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.j
 | getMissionBoard | `GET /api/missions/board` | si | si | lectura | gameplay |
 | getMissionDetail | `GET /api/missions/{missionId}` | si | si | lectura | gameplay |
 | getNpcFull | `GET /api/npcs/{npcId}/full` | si | si | lectura | gameplay |
+| previewSocialImpact | `POST /api/npcs/social/impact/preview` | si | si | preview | gameplay |
 | searchDatabase | `GET /api/search/db` | si | si | lectura | gameplay |
 | searchDocs | `GET /api/search/docs` | si | si | lectura | gameplay |
 | listTravelRoutes | `GET /api/travel/routes` | si | si | lectura | gameplay |
@@ -47,6 +48,7 @@ Notas:
 - El compact mantiene 30 operaciones para respetar el limite practico de GPT Builder.
 - `getCompactContext` es la lectura principal por turno; `getFullContext` queda como apoyo/debug con parametros de limite.
 - `getCharacterState` evita reconstruir HP/MP/inventario/skills desde logs.
+- `previewSocialImpact` sugiere deltas de confianza/respeto/etc.; el guardado real se hace con `applyTurn.npcRelationshipPatches`.
 - Mutadores directos de misiones, combate, restock y rollback quedan fuera; misiones se gestionan por `applyTurn.missionPatch` y eventos por `applyTurn.worldEventPatches`.
 - `applyTurn` esta marcado como consequential para forzar confirmacion antes de mutar estado real.
 - `applyTurn.activityCost` no suma operaciones: acumula automaticamente actividades entre horas y procesa pendientes al llegar a `:00`.

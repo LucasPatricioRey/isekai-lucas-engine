@@ -39,6 +39,27 @@ describe("preview and rejection API coverage", () => {
     assert.equal(skill.status, 200);
     assert.equal(skill.data.preview.validation.effectiveExpDelta, 20);
 
+    const social = await post("/api/npcs/social/impact/preview", {
+      npcId: "npc_yara_mils",
+      actionSummary: "Lucas ayuda a Yara durante el turno respetando su espacio.",
+      factors: {
+        witnessedByNpc: true,
+        mattersToNpc: true,
+        fitsPersonality: true,
+        helpedNpc: true,
+        reliableWork: true,
+        respectsBoundaries: true,
+        practicalConsequence: true,
+        withinExpectedDuty: true,
+        importance: "meaningful",
+      },
+    });
+    assert.equal(social.status, 200);
+    assert.equal(social.data.dryRun, true);
+    assert.equal(social.data.preview.mutation.willMutateGameState, false);
+    assert.equal(social.data.preview.suggestedPatch.npcId, "npc_yara_mils");
+    assert.ok((social.data.preview.suggestedPatch.trustDelta || 0) >= 1);
+
     const afterState = await getCanonicalState();
     assertSameState(beforeState, afterState);
   });

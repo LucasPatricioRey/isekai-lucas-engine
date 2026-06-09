@@ -1310,7 +1310,7 @@ No guardar smalltalk/color mínimo sin consecuencia. Si hay duda, guardar memori
 
 ### 19.1 Confianza
 
-No subir confianza automáticamente.
+No subir confianza por color, smalltalk o halagos repetidos. Esto no significa que la confianza nunca suba: si una acción tiene peso social real, debe evaluarse y guardarse como relación viva.
 
 Subir solo si:
 
@@ -1319,6 +1319,46 @@ Subir solo si:
 - encaja con personalidad;
 - no es farmeo social repetitivo;
 - tuvo consecuencia emocional o práctica.
+
+Para acciones sociales con posible impacto usar `previewSocialImpact` si está disponible. Si la acción realmente cambia el vínculo, guardar con `applyTurn.npcRelationshipPatches`. `NpcMemory` registra qué recuerda el NPC; no reemplaza el número de confianza/respeto/afecto.
+
+Escala base:
+
+- `+0`: color, smalltalk, gesto amable sin consecuencia, repetición sin contexto nuevo.
+- `+1`: ayuda menor relevante, cumplimiento fiable, respeto de límites, detalle útil que el NPC valora.
+- `+2`: ayuda clara con consecuencia emocional/práctica, apoyo importante, promesa cumplida, conducta consistente que cambia cómo el NPC ve a Lucas.
+- `+3`: favor fuerte, riesgo/coste real para Lucas, defensa de un NPC, reparación importante de daño o evento mayor.
+- Valores negativos equivalentes para mentira, presión, humillación, promesa rota, daño, abandono o trabajo negligente.
+
+Topes normales:
+
+- máximo habitual por NPC y escena: `+2`;
+- máximo habitual por NPC y día: `+3`;
+- eventos mayores, peligro real o escena emocional crítica pueden romper el tope con justificación explícita;
+- repetir la misma acción el mismo día guarda memoria si importa, pero no suma confianza otra vez salvo que haya nueva consecuencia.
+
+Diferenciar métricas:
+
+- `trust`: seguridad, honestidad, respeto de límites, constancia, apoyo emocional/práctico.
+- `respect`: competencia, responsabilidad, trabajo fiable, valentía, criterio.
+- `affection`: calidez personal y apego; es lento, no equivale a romance y no debe subir sin escena personal clara.
+- `suspicion`: dudas por contradicción, secretos, presión, mentiras o conducta rara.
+- `fear`: amenaza o daño.
+- `jealousy`: solo si el contexto social lo justifica; no usar como romance automático.
+
+Umbrales de confianza:
+
+- `0-9`: desconocido/cautela.
+- `10-24`: trato básico.
+- `25-39`: confianza laboral o comodidad inicial.
+- `40-59`: fiable para favores menores y conversaciones más naturales.
+- `60-74`: confianza personal y temas privados.
+- `75-89`: vínculo profundo.
+- `90-100`: confianza excepcional.
+
+Consolidación por memorias:
+
+Si hay varias memorias recientes positivas (`trust_building`, `respect_space`, `helpful`, `reliable_work`, promesas cumplidas) y una nueva escena confirma el patrón, puede sumarse `+1` adicional dentro del tope. Esto representa confianza lenta acumulada, no farmeo.
 
 Registrar memoria dinámica si:
 
@@ -1630,7 +1670,7 @@ Resolver:
 - si el NPC tiene fuente/conocimiento;
 - si hay riesgo social.
 
-No subir confianza automáticamente.
+No subir confianza por preguntar o charlar solamente. Si la escena genera ayuda, respeto de límites, confianza práctica o daño social real, aplicar la escala de 19.1.
 
 ---
 

@@ -32,6 +32,8 @@ Usar esta rubrica durante pruebas manuales en GPT Builder Preview. Marcar cada i
 | Acumulador entre horas | Si una actividad termina antes de `:00`, usa `activityCost` para que backend guarde `biologicalClock.pendingAccumulations`; no lo deja solo como EventLog. |
 | Minutos biologicos | `activityCost.minutes` coincide con `timeAdvance.from -> timeAdvance.to`, salvo exencion/override explicito. |
 | Ubicacion tecnica | Si la narracion mueve a Lucas, actualiza tambien `gameStatePatch.locationId` con una location existente. |
+| Vinculos sociales | Si una accion tiene peso social, usa `previewSocialImpact` y guarda cambios reales con `applyTurn.npcRelationshipPatches`; no deja solo memoria si hubo cambio de confianza/respeto. |
+| Memoria NPC | Guarda `npcMemoryPatches` para hechos que el NPC recordara, pero no usa memoria como sustituto de confianza numerica. |
 | Misiones | Acepta o reporta misiones con `applyTurn.missionPatch`; no inventa aceptacion solo narrativa. |
 | Canon intacto | Mantiene el estado vivo devuelto por `getFullContext` si no hay mutacion; no restaura ni reinterpreta checkpoints viejos por su cuenta. |
 | Irreversibles ambiguos | Pregunta antes de mutar si la accion es ambigua, irreversible o tiene costo relevante. |

@@ -20,8 +20,8 @@ const EXPECTED_COMPACT = [
   ["GET", "/api/economy/items/{itemId}"],
   ["GET", "/api/missions/board"],
   ["GET", "/api/missions/{missionId}"],
+  ["POST", "/api/npcs/social/impact/preview"],
   ["GET", "/api/combat/actions"],
-  ["GET", "/api/combat/enemies"],
   ["GET", "/api/combat/encounters/active"],
   ["GET", "/api/combat/encounters/{encounterId}"],
   ["POST", "/api/combat/encounters/{encounterId}/actions/preview"],
@@ -139,9 +139,10 @@ function main() {
   assertCondition(
     issues,
     "compact previews are non-consequential",
-    compactOps.get("POST /api/travel/preview")?.["x-openai-isConsequential"] === false &&
+      compactOps.get("POST /api/travel/preview")?.["x-openai-isConsequential"] === false &&
       compactOps.get("POST /api/world/tick/preview")?.["x-openai-isConsequential"] === false &&
-      compactOps.get("POST /api/magic/practice/preview")?.["x-openai-isConsequential"] === false
+      compactOps.get("POST /api/magic/practice/preview")?.["x-openai-isConsequential"] === false &&
+      compactOps.get("POST /api/npcs/social/impact/preview")?.["x-openai-isConsequential"] === false
   );
 
   section("ApplyTurn Schema");
@@ -150,6 +151,7 @@ function main() {
     "inventoryPatch",
     "shopStockPatches",
     "npcMemoryPatches",
+    "npcRelationshipPatches",
     "gameStatePatch",
     "activityCost",
     "biologicalCostExemptReason",

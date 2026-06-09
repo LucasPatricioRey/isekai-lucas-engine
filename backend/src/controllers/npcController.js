@@ -4,6 +4,7 @@ const Rumor = require("../models/Rumor");
 const EventLog = require("../models/EventLog");
 const RoutineOverride = require("../models/RoutineOverride");
 const NpcRelationship = require("../models/NpcRelationship");
+const { previewSocialImpact } = require("../services/socialImpactService");
 const responseShaping = require("../utils/responseShaping");
 
 async function getNpcFull(req, res) {
@@ -72,6 +73,24 @@ async function getNpcFull(req, res) {
   });
 }
 
+async function previewSocialImpactController(req, res) {
+  try {
+    const preview = await previewSocialImpact(req.body || {});
+
+    return res.json({
+      ok: true,
+      dryRun: true,
+      preview,
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      ok: false,
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   getNpcFull,
+  previewSocialImpactController,
 };

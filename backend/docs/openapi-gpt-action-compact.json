@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Compact",
-    "version": "2.1.3",
-    "description": "Schema compacto con 30 operaciones para GPT Builder. Incluye ApplyTurn con missionPatch, activityCost, gameStatePatch y parches de economia/memoria. Excluye rollback y mutadores peligrosos directos. El backend genera eventos diarios con scheduler de manana y los expira con consecuencias pendientes."
+    "version": "2.2.0",
+    "description": "Schema compacto con 30 operaciones para GPT Builder. Incluye ApplyTurn con missionPatch, activityCost, gameStatePatch y parches de economia/memoria/relacion social. Incluye previewSocialImpact y excluye rollback y mutadores peligrosos directos. El backend genera eventos diarios con scheduler de manana y los expira con consecuencias pendientes."
   },
   "servers": [
     {
@@ -37,6 +37,142 @@
           "preview": {
             "type": "object",
             "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "SocialImpactPreviewRequest": {
+        "type": "object",
+        "properties": {
+          "gameId": {
+            "type": "string",
+            "default": "isekai_lucas_main"
+          },
+          "npcId": {
+            "type": "string"
+          },
+          "actionSummary": {
+            "type": "string"
+          },
+          "importance": {
+            "type": "string",
+            "enum": [
+              "color",
+              "minor",
+              "meaningful",
+              "important",
+              "major",
+              "critical"
+            ]
+          },
+          "polarity": {
+            "type": "string",
+            "enum": [
+              "positive",
+              "negative",
+              "mixed"
+            ]
+          },
+          "factors": {
+            "$ref": "#/components/schemas/SocialImpactFactors"
+          },
+          "allowMemoryConsolidation": {
+            "type": "boolean",
+            "default": true
+          },
+          "allowAffectionDelta": {
+            "type": "boolean",
+            "default": false
+          },
+          "sceneCap": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3,
+            "default": 2
+          },
+          "recentMemoryDays": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 3
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "npcId"
+        ],
+        "additionalProperties": true
+      },
+      "SocialImpactFactors": {
+        "type": "object",
+        "properties": {
+          "witnessedByNpc": {
+            "type": "boolean"
+          },
+          "mattersToNpc": {
+            "type": "boolean"
+          },
+          "fitsPersonality": {
+            "type": "boolean"
+          },
+          "repetitiveSocialFarming": {
+            "type": "boolean"
+          },
+          "helpedNpc": {
+            "type": "boolean"
+          },
+          "reliableWork": {
+            "type": "boolean"
+          },
+          "respectsBoundaries": {
+            "type": "boolean"
+          },
+          "promiseFulfilled": {
+            "type": "boolean"
+          },
+          "emotionalConsequence": {
+            "type": "boolean"
+          },
+          "practicalConsequence": {
+            "type": "boolean"
+          },
+          "withinExpectedDuty": {
+            "type": "boolean"
+          },
+          "riskOrCostToLucas": {
+            "type": "boolean"
+          },
+          "personalWarmth": {
+            "type": "boolean"
+          },
+          "personalScene": {
+            "type": "boolean"
+          },
+          "liedOrBrokePromise": {
+            "type": "boolean"
+          },
+          "embarrassedNpc": {
+            "type": "boolean"
+          },
+          "pressuredNpc": {
+            "type": "boolean"
+          },
+          "harmedNpc": {
+            "type": "boolean"
+          },
+          "unreliableWork": {
+            "type": "boolean"
+          },
+          "provokedJealousy": {
+            "type": "boolean"
+          },
+          "importance": {
+            "type": "string"
           }
         },
         "additionalProperties": true
@@ -114,6 +250,13 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/NpcMemoryPatchItem"
+            }
+          },
+          "npcRelationshipPatches": {
+            "type": "array",
+            "description": "Cambios numericos controlados de vinculo con Lucas. Usar solo tras evaluar reglas sociales; memoria NPC no reemplaza relacion.",
+            "items": {
+              "$ref": "#/components/schemas/NpcRelationshipPatchItem"
             }
           },
           "missionPatch": {
@@ -388,6 +531,56 @@
           "fact"
         ],
         "additionalProperties": true
+      },
+      "NpcRelationshipPatchItem": {
+        "type": "object",
+        "description": "Delta de relacion Lucas-NPC. No usar para smalltalk ni farmeo social; justificar cada cambio.",
+        "properties": {
+          "npcId": {
+            "type": "string"
+          },
+          "trustDelta": {
+            "type": "integer",
+            "minimum": -3,
+            "maximum": 3
+          },
+          "affectionDelta": {
+            "type": "integer",
+            "minimum": -3,
+            "maximum": 3
+          },
+          "suspicionDelta": {
+            "type": "integer",
+            "minimum": -3,
+            "maximum": 3
+          },
+          "respectDelta": {
+            "type": "integer",
+            "minimum": -3,
+            "maximum": 3
+          },
+          "fearDelta": {
+            "type": "integer",
+            "minimum": -3,
+            "maximum": 3
+          },
+          "jealousyDelta": {
+            "type": "integer",
+            "minimum": -3,
+            "maximum": 3
+          },
+          "reason": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "npcId",
+          "reason"
+        ],
+        "additionalProperties": false
       },
       "MissionPatchInput": {
         "oneOf": [
@@ -808,6 +1001,41 @@
         "x-openai-isConsequential": false
       }
     },
+    "/api/npcs/social/impact/preview": {
+      "post": {
+        "operationId": "previewSocialImpact",
+        "summary": "Previsualiza impacto social sobre confianza, respeto, afecto u otros vinculos sin mutar MongoDB.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SocialImpactPreviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Preview de impacto social.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-openai-isConsequential": false,
+        "description": "Usar antes de applyTurn.npcRelationshipPatches cuando una accion pueda afectar vinculos. No guarda cambios."
+      }
+    },
     "/api/locations/{locationId}/full": {
       "get": {
         "operationId": "getLocationFull",
@@ -1036,30 +1264,6 @@
         "responses": {
           "200": {
             "description": "Acciones de combate.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GenericResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "ApiKeyAuth": []
-          }
-        ],
-        "x-openai-isConsequential": false
-      }
-    },
-    "/api/combat/enemies": {
-      "get": {
-        "operationId": "listCombatEnemies",
-        "summary": "Lista templates de enemigos.",
-        "responses": {
-          "200": {
-            "description": "Enemigos.",
             "content": {
               "application/json": {
                 "schema": {

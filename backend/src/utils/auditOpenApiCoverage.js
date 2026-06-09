@@ -18,6 +18,7 @@ const EXPECTED_INCLUDED = [
   ["GET", "/api/economy/items/{itemId}"],
   ["GET", "/api/missions/board"],
   ["GET", "/api/missions/{missionId}"],
+  ["POST", "/api/npcs/social/impact/preview"],
   ["GET", "/api/combat/actions"],
   ["GET", "/api/combat/enemies"],
   ["GET", "/api/combat/enemies/{enemyId}"],
