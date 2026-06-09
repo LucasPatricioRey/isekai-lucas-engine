@@ -12,6 +12,7 @@ const Item = require("../models/Item");
 const Mission = require("../models/Mission");
 const { syncNpcRoutines } = require("../services/routineService");
 const { calculateActivityCost, normalizeCategory } = require("../services/biologicalClockService");
+const { reconcileDailyEventsForGameState } = require("../services/dailyEventSchedulerService");
 
 const VALID_EVENT_LOG_SOURCES = new Set([
   "player_action",
@@ -464,37 +465,48 @@ async function applyWorldEventPatches(gameState, patches, session = null) {
   const results = [];
 
   for (const patch of patches) {
-    if (!patch.title) {
-      throw validationError("worldEventPatch.title es obligatorio.");
+    let existingEvent = null;
+    if (patch.eventId) {
+      existingEvent = await WorldEvent.findOne({
+        eventId: patch.eventId,
+        gameId: patch.gameId || gameState.gameId || "isekai_lucas_main",
+      })
+        .session(session)
+        .lean();
+    }
+
+    if (!patch.title && !existingEvent) {
+      throw validationError("worldEventPatch.title es obligatorio al crear un evento nuevo.");
     }
 
     const eventId = patch.eventId || createId("event");
 
     const eventPayload = {
       eventId,
-      title: patch.title,
-      type: patch.type || "general",
-      scope: patch.scope || "local",
-      status: patch.status || "active",
-      startDay: patch.startDay || gameState.currentDay,
-      startTime: patch.startTime || gameState.time,
-      endDay: patch.endDay ?? null,
-      endTime: patch.endTime || "",
-      affectedLocationIds: patch.affectedLocationIds || [gameState.locationId],
-      affectedNpcIds: patch.affectedNpcIds || [],
-      affectedFactionIds: patch.affectedFactionIds || [],
-      effects: patch.effects || [],
-      visibility: patch.visibility || "local",
-      cause: patch.cause || "",
-      severity: patch.severity || "minor",
-      createdBy: patch.createdBy || "system",
-      tags: patch.tags || [],
+      gameId: patch.gameId || existingEvent?.gameId || gameState.gameId || "isekai_lucas_main",
+      title: patch.title || existingEvent.title,
+      type: patch.type || existingEvent?.type || "general",
+      scope: patch.scope || existingEvent?.scope || "local",
+      status: patch.status || existingEvent?.status || "active",
+      startDay: patch.startDay || existingEvent?.startDay || gameState.currentDay,
+      startTime: patch.startTime || existingEvent?.startTime || gameState.time,
+      endDay: patch.endDay ?? existingEvent?.endDay ?? null,
+      endTime: patch.endTime || existingEvent?.endTime || "",
+      affectedLocationIds: patch.affectedLocationIds || existingEvent?.affectedLocationIds || [gameState.locationId],
+      affectedNpcIds: patch.affectedNpcIds || existingEvent?.affectedNpcIds || [],
+      affectedFactionIds: patch.affectedFactionIds || existingEvent?.affectedFactionIds || [],
+      effects: patch.effects || existingEvent?.effects || [],
+      visibility: patch.visibility || existingEvent?.visibility || "local",
+      cause: patch.cause || existingEvent?.cause || "",
+      severity: patch.severity || existingEvent?.severity || "minor",
+      createdBy: patch.createdBy || existingEvent?.createdBy || "system",
+      tags: unique([...(existingEvent?.tags || []), ...(patch.tags || [])]),
     };
 
     const worldEvent = await WorldEvent.findOneAndUpdate(
       { eventId },
       { $set: eventPayload },
-      { upsert: true, new: true, runValidators: true, session }
+      { upsert: true, returnDocument: "after", runValidators: true, session }
     ).lean();
 
     results.push(worldEvent);
@@ -1553,6 +1565,11 @@ async function applyTurn(req, res) {
       if (body.missionPatch) {
         const missionChanges = await applyMissionPatches(gameState, body.missionPatch, session);
         if (missionChanges.length > 0) changes.missions = missionChanges;
+      }
+
+      const dailyEventChanges = await reconcileDailyEventsForGameState(gameState, { session });
+      if (dailyEventChanges.changed) {
+        changes.dailyEvents = dailyEventChanges;
       }
 
       const logsToCreate = [];

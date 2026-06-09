@@ -4,6 +4,7 @@ const ShopStock = require("../models/ShopStock");
 const Item = require("../models/Item");
 const Location = require("../models/Location");
 const WorldEvent = require("../models/WorldEvent");
+const { eventGameFilter } = require("./dailyEventSchedulerService");
 
 function isSupplyBlocked(stock, activeEvents) {
   const scarcityFlags = stock.scarcityFlags || [];
@@ -91,6 +92,7 @@ async function restockDaily({ gameId = "isekai_lucas_main", dryRun = true, force
   }
 
   const activeEvents = await WorldEvent.find({
+    ...eventGameFilter(gameId),
     status: "active",
   }).lean();
 

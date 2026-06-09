@@ -47,7 +47,7 @@ Notas:
 - El compact mantiene 30 operaciones para respetar el limite practico de GPT Builder.
 - `getCompactContext` es la lectura principal por turno; `getFullContext` queda como apoyo/debug con parametros de limite.
 - `getCharacterState` evita reconstruir HP/MP/inventario/skills desde logs.
-- Mutadores directos de misiones, combate, restock y rollback quedan fuera; misiones se gestionan por `applyTurn.missionPatch`.
+- Mutadores directos de misiones, combate, restock y rollback quedan fuera; misiones se gestionan por `applyTurn.missionPatch` y eventos por `applyTurn.worldEventPatches`.
 - `applyTurn` esta marcado como consequential para forzar confirmacion antes de mutar estado real.
 - `applyTurn.activityCost` no suma operaciones: acumula automaticamente actividades entre horas y procesa pendientes al llegar a `:00`.
 - El schema admin es solo lectura y no debe usarse para juego normal.

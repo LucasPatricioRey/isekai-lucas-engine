@@ -7,6 +7,7 @@ const EventLog = require("../models/EventLog");
 const Shop = require("../models/Shop");
 const ShopStock = require("../models/ShopStock");
 const responseShaping = require("../utils/responseShaping");
+const { eventGameFilter } = require("../services/dailyEventSchedulerService");
 
 async function getLocationFull(req, res) {
   const { locationId } = req.params;
@@ -48,6 +49,7 @@ async function getLocationFull(req, res) {
       .lean(),
 
     WorldEvent.find({
+      ...eventGameFilter(gameId),
       status: { $in: ["scheduled", "active"] },
       affectedLocationIds: locationId,
     })

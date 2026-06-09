@@ -331,9 +331,39 @@ El estado final siempre muestra el bloque según la hora exacta.
 
 ### 5.4 Eventos diarios
 
-Eventos random suaves pueden usarse como semillas menores.
+Al comenzar la Mañana de cada día de partida, el backend debe asegurar **un evento diario generado** para ese día. El evento se guarda en MongoDB como `WorldEvent` y puede empezar en ese mismo bloque o más tarde.
 
-Eventos importantes requieren causa lógica:
+El evento diario usa tres tiradas:
+
+1. **Bloque de inicio**:
+   - 1 = Mañana, empieza 06:00;
+   - 2 = Mediodía, empieza 12:00;
+   - 3 = Tarde, empieza 14:00;
+   - 4 = Noche, empieza 18:00.
+2. **Importancia**:
+   - 1–7 = evento menor/opcional;
+   - 8–10 = evento importante, debe atenderse o resolver consecuencias.
+3. **Duración**:
+   - 1–15 días.
+
+El fin del evento se calcula por bloque. Si un evento empieza Día 11 a la primera hora de Tarde y dura 2 días, termina Día 13 al terminar el bloque de Tarde, es decir a las 18:00. Si empieza en Noche, termina al cierre del bloque de Noche correspondiente.
+
+Estados:
+
+- `scheduled`: el evento ya fue generado, pero todavía no llegó su bloque de inicio;
+- `active`: el bloque de inicio ya llegó;
+- `resolved`: Lucas/NPCs/backend lo resolvieron;
+- `expired`: el tiempo terminó sin resolución;
+- `consequences_applied`: las consecuencias ya fueron aplicadas;
+- `cancelled`: anulado por corrección/admin.
+
+Eventos menores pueden ignorarse, pero dejan consecuencias leves: oportunidad perdida, rumor deformado, malestar menor, demora chica o pérdida pequeña de confianza práctica.
+
+Eventos importantes deben atenderse. Si vencen sin resolución, dejan consecuencias mayores proporcionales: pérdida real de confianza, peligro de ruta, faltantes, escalada de amenaza, bloqueo temporal o daño offscreen lógico.
+
+La IA puede adaptar el color narrativo del evento según contexto, NPCs, clima, rumores y ubicación, pero el backend decide y guarda el evento. No inventar recompensas, enemigos, objetos mágicos ni cambios mecánicos fuera del evento vivo.
+
+Eventos random suaves pueden usarse como semillas menores. Eventos importantes requieren causa lógica:
 
 - clima;
 - facción;

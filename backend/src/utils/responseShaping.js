@@ -258,8 +258,15 @@ function summarizeRumor(rumor) {
 
 function summarizeWorldEvent(event) {
   if (!event) return null;
+  const relevantEffects = (event.effects || [])
+    .filter((effect) =>
+      ["daily_event_rolls", "consequence_if_ignored", "consequence_applied"].includes(effect.type)
+    )
+    .slice(0, 5);
+
   return {
     eventId: event.eventId,
+    gameId: event.gameId || "isekai_lucas_main",
     title: event.title,
     type: event.type,
     scope: event.scope,
@@ -272,6 +279,8 @@ function summarizeWorldEvent(event) {
     affectedNpcIds: event.affectedNpcIds || [],
     severity: event.severity,
     visibility: event.visibility,
+    cause: truncateText(event.cause || "", 500),
+    effects: relevantEffects,
     tags: event.tags || [],
   };
 }

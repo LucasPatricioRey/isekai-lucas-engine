@@ -154,6 +154,7 @@ function main() {
     "activityCost",
     "biologicalCostExemptReason",
     "missionPatch",
+    "worldEventPatches",
     "eventLogs",
   ]) {
     assertCondition(
@@ -201,6 +202,11 @@ function main() {
     issues,
     "compact activityCost documents sourceEventLogId",
     Boolean(compact.components?.schemas?.ActivityCostInput?.properties?.sourceEventLogId)
+  );
+  assertCondition(
+    issues,
+    "compact WorldEventPatchItem supports expired status",
+    compact.components?.schemas?.WorldEventPatchItem?.properties?.status?.enum?.includes("expired")
   );
 
   section("Admin Read-Only Schema");

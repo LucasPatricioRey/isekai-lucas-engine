@@ -6,6 +6,7 @@ const RoutineOverride = require("../models/RoutineOverride");
 const Rumor = require("../models/Rumor");
 const ShopStock = require("../models/ShopStock");
 const WorldEvent = require("../models/WorldEvent");
+const { eventGameFilter, shouldEnsureDailyEvent } = require("./dailyEventSchedulerService");
 
 function timeToMinutes(time) {
   const [hours, minutes] = String(time || "00:00").split(":").map(Number);
@@ -241,7 +242,7 @@ async function previewWorldTick({
     previewMissionExpiry({ fromAbs, toAbs }),
     previewRestock({ currentDay: gameState.currentDay, toDay: normalizedToDay }),
     Rumor.find({ status: "active" }).select("rumorId certainty locationIds knownByNpcIds tags").lean(),
-    WorldEvent.find({ status: "active" }).lean(),
+    WorldEvent.find({ ...eventGameFilter(gameId), status: "active" }).lean(),
     CombatEncounter.find({ gameId, status: "active" }).select("encounterId enemyId enemyName").lean(),
   ]);
 
@@ -318,6 +319,7 @@ async function previewWorldTick({
     generatedContent: {
       willCreateRumors: false,
       willCreateRomance: false,
+      willCreateDailyEvent: shouldEnsureDailyEvent({ currentDay: normalizedToDay, time: normalizedToTime }),
       willCreateMajorEvents: false,
       willGrantRewards: false,
     },

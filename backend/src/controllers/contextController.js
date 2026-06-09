@@ -19,6 +19,11 @@ const NpcRelationship = require("../models/NpcRelationship");
 const WeatherState = require("../models/WeatherState");
 const JobContract = require("../models/JobContract");
 const responseShaping = require("../utils/responseShaping");
+const {
+  DAILY_EVENT_TAG,
+  eventGameFilter,
+  shouldEnsureDailyEvent,
+} = require("../services/dailyEventSchedulerService");
 
 function unique(values) {
   return Array.from(new Set(values.filter(Boolean)));
@@ -153,10 +158,15 @@ async function getFullContext(req, res) {
         .lean(),
 
       WorldEvent.find({
-        $or: [
-          { eventId: { $in: activeEventIds } },
-          { status: { $in: ["active", "scheduled"] }, affectedLocationIds: { $in: locationIds } },
-          { status: { $in: ["active", "scheduled"] }, affectedNpcIds: { $in: nearbyNpcIds } },
+        $and: [
+          eventGameFilter(gameId),
+          {
+            $or: [
+              { eventId: { $in: activeEventIds } },
+              { status: { $in: ["active", "scheduled"] }, affectedLocationIds: { $in: locationIds } },
+              { status: { $in: ["active", "scheduled"] }, affectedNpcIds: { $in: nearbyNpcIds } },
+            ],
+          },
         ],
       })
         .sort({ startDay: 1, startTime: 1 })
@@ -382,6 +392,7 @@ async function getCompactContext(req, res) {
       inventoryItems,
       relevantNpcMemories,
       activeEvents,
+      dailyEvents,
       activeRumors,
       activeMissions,
       availableMissions,
@@ -406,9 +417,25 @@ async function getCompactContext(req, res) {
         : Promise.resolve([]),
 
       eventClauses.length && limits.eventLimit > 0
-        ? WorldEvent.find({ $or: eventClauses })
+        ? WorldEvent.find({
+            $and: [
+              eventGameFilter(gameId),
+              { $or: eventClauses },
+            ],
+          })
             .sort({ startDay: 1, startTime: 1 })
             .limit(limits.eventLimit)
+            .lean()
+        : Promise.resolve([]),
+
+      limits.eventLimit > 0
+        ? WorldEvent.find({
+            ...eventGameFilter(gameId),
+            tags: DAILY_EVENT_TAG,
+            status: { $in: ["scheduled", "active"] },
+          })
+            .sort({ startDay: -1, startTime: 1 })
+            .limit(Math.min(limits.eventLimit, 6))
             .lean()
         : Promise.resolve([]),
 
@@ -493,6 +520,19 @@ async function getCompactContext(req, res) {
     const npcById = new Map(nearbyNpcs.map((npc) => [npc.npcId, npc]));
     const alerts = [];
 
+    const currentDayDailyEvent = dailyEvents.find((event) =>
+      (event.tags || []).includes(`daily_event_day_${gameState.currentDay}`)
+    );
+    if (shouldEnsureDailyEvent(gameState) && !currentDayDailyEvent) {
+      alerts.push({
+        type: "daily_event_missing",
+        severity: "warning",
+        message: "Ya comenzo el bloque de manana o posterior y falta generar el evento diario de este dia.",
+        day: gameState.currentDay,
+        time: gameState.time,
+      });
+    }
+
     const weatherSummary = responseShaping.summarizeWeather(weather, gameState.currentDay, gameState.time);
     if (weatherSummary?.staleByCurrentTime) {
       alerts.push({
@@ -540,6 +580,13 @@ async function getCompactContext(req, res) {
       });
     }
 
+    const activeEventSummaries = activeEvents
+      .filter((event) => event.status === "active")
+      .map(responseShaping.summarizeWorldEvent);
+    const scheduledEventSummaries = activeEvents
+      .filter((event) => event.status === "scheduled")
+      .map(responseShaping.summarizeWorldEvent);
+
     if (pendingBiologicalAccumulations.length > 0) {
       alerts.push({
         type: "pending_biology",
@@ -584,7 +631,9 @@ async function getCompactContext(req, res) {
           recentEventSummaries: recentEventLogs.map((log) => responseShaping.summarizeEventLog(log)),
         },
         relevantNpcMemories: relevantNpcMemories.map(responseShaping.summarizeNpcMemory),
-        activeEvents: activeEvents.map(responseShaping.summarizeWorldEvent),
+        activeEvents: activeEventSummaries,
+        scheduledEvents: scheduledEventSummaries,
+        dailyEvents: dailyEvents.map(responseShaping.summarizeWorldEvent),
         activeRumors: activeRumors.map(responseShaping.summarizeRumor),
         activeMissions: activeMissionSummaries,
         availableMissionPreview,

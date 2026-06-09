@@ -2,6 +2,7 @@ const { after, before, describe, it } = require("node:test");
 
 const EventLog = require("../models/EventLog");
 const GameState = require("../models/GameState");
+const WorldEvent = require("../models/WorldEvent");
 const {
   assert,
   get,
@@ -67,6 +68,7 @@ describe("persistent biological accumulators", () => {
   after(async () => {
     if (tempGameIds.length > 0) {
       await GameState.deleteMany({ gameId: { $in: tempGameIds } });
+      await WorldEvent.deleteMany({ gameId: { $in: tempGameIds } });
     }
     await EventLog.deleteMany({
       $or: [

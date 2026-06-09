@@ -308,6 +308,7 @@ async function seedInitialState() {
     {
       $set: {
         eventId: "event_d10_supply_delay_mud",
+        gameId: "isekai_lucas_main",
         title: "Retraso de suministros por barro residual",
         type: "supply_delay",
         scope: "local",

@@ -31,6 +31,13 @@ const worldEventSchema = new mongoose.Schema(
       index: true,
     },
 
+    gameId: {
+      type: String,
+      required: true,
+      default: "isekai_lucas_main",
+      index: true,
+    },
+
     title: {
       type: String,
       required: true,
@@ -50,7 +57,7 @@ const worldEventSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["scheduled", "active", "resolved", "cancelled"],
+      enum: ["scheduled", "active", "resolved", "expired", "consequences_applied", "cancelled"],
       default: "scheduled",
       index: true,
     },

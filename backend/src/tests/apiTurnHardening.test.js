@@ -4,6 +4,7 @@ const EventLog = require("../models/EventLog");
 const GameState = require("../models/GameState");
 const Mission = require("../models/Mission");
 const Npc = require("../models/Npc");
+const WorldEvent = require("../models/WorldEvent");
 const {
   assert,
   assertCanonState,
@@ -75,6 +76,7 @@ async function createIsolatedGameState() {
 
 async function cleanupIsolatedState() {
   if (tempGameId) await GameState.deleteOne({ gameId: tempGameId });
+  if (tempGameId) await WorldEvent.deleteMany({ gameId: tempGameId });
   if (tempMissionId) await Mission.deleteOne({ missionId: tempMissionId });
   await EventLog.deleteMany({
     $or: [

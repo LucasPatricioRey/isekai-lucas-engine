@@ -12,6 +12,7 @@ const EnemyTemplate = require("../models/EnemyTemplate");
 const CombatEncounter = require("../models/CombatEncounter");
 const NpcRelationship = require("../models/NpcRelationship");
 const WorldDocumentIndex = require("../models/WorldDocumentIndex");
+const { eventGameFilter } = require("../services/dailyEventSchedulerService");
 
 function escapeRegex(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -89,12 +90,17 @@ async function searchDb(req, res) {
     }).limit(10).lean(),
 
     WorldEvent.find({
-      $or: [
-        { eventId: regex },
-        { title: regex },
-        { type: regex },
-        { cause: regex },
-        { tags: regex },
+      $and: [
+        eventGameFilter(gameId),
+        {
+          $or: [
+            { eventId: regex },
+            { title: regex },
+            { type: regex },
+            { cause: regex },
+            { tags: regex },
+          ],
+        },
       ],
     }).limit(10).lean(),
 
