@@ -22,6 +22,8 @@ const YARA_ID = "npc_yara_mils";
 const KITCHEN_ID = "loc_hoshimori_grulla_azul_cocina";
 const INN_ID = "loc_hoshimori_grulla_azul";
 const NIGHT_WEATHER_ID = "weather_hoshimori_d10_night_clearing";
+const TARGET_DAY = 10;
+const TARGET_TIME = "21:50";
 
 function timeToMinutes(time) {
   const [hours, minutes] = String(time || "00:00").split(":").map(Number);
@@ -51,6 +53,15 @@ function docSummary(doc, fields) {
 async function buildRepairPlan() {
   const gameState = await GameState.findOne({ gameId: GAME_ID }).lean();
   if (!gameState) throw new Error(`No existe GameState para gameId: ${GAME_ID}`);
+
+  if (gameState.currentDay !== TARGET_DAY || gameState.time !== TARGET_TIME) {
+    return {
+      gameState: docSummary(gameState, ["gameId", "currentDay", "time", "locationId", "activeMissionIds"]),
+      evidenceLogIds: [],
+      changes: [],
+      skippedReason: `Repair fase 3 es historico y solo aplica en Dia ${TARGET_DAY} ${TARGET_TIME}. Estado actual: Dia ${gameState.currentDay} ${gameState.time}.`,
+    };
+  }
 
   const [
     deliveryMission,
@@ -340,6 +351,7 @@ async function main() {
     mode: WRITE ? "write" : "dry-run",
     gameId: GAME_ID,
     gameState: plan.gameState,
+    skippedReason: plan.skippedReason || "",
     changeCount: plan.changes.length,
     changes: plan.changes,
   }, null, 2));
