@@ -75,6 +75,18 @@ function diffTimeMinutes(from, to) {
   return timeToMinutes(to) - timeToMinutes(from);
 }
 
+function toAbsoluteMinutes(day, time) {
+  return (Number(day) - 1) * 1440 + timeToMinutes(time);
+}
+
+function dayFromAbsoluteMinutes(totalMinutes) {
+  return Math.floor(totalMinutes / 1440) + 1;
+}
+
+function diffAdvanceMinutes({ fromDay, from, toDay, to }) {
+  return toAbsoluteMinutes(toDay, to) - toAbsoluteMinutes(fromDay, from);
+}
+
 function minutesToTime(totalMinutes) {
   const normalized = ((totalMinutes % 1440) + 1440) % 1440;
   const hours = Math.floor(normalized / 60);
@@ -93,6 +105,13 @@ function getHourBlockEnd(blockStart) {
 function getHourBlockForTime(time) {
   const blockStart = getHourBlockStart(time);
   return `${blockStart}-${getHourBlockEnd(blockStart)}`;
+}
+
+function advanceDiegeticDate(diegeticDate, dayDelta) {
+  if (!diegeticDate || dayDelta <= 0) return diegeticDate;
+
+  diegeticDate.day = Number(diegeticDate.day || 0) + dayDelta;
+  return diegeticDate;
 }
 
 function createId(prefix) {
@@ -821,12 +840,14 @@ function validateHourBoundaryCost({ timeAdvance, currentTime, body }) {
 
   const from = timeAdvance.from || currentTime;
   const to = timeAdvance.to;
+  const fromDay = timeAdvance.fromDay || 1;
+  const toDay = timeAdvance.toDay || fromDay;
 
   if (!isValidTime(from) || !isValidTime(to)) return;
 
-  const minutes = diffTimeMinutes(from, to);
+  const minutes = diffAdvanceMinutes({ fromDay, from, toDay, to });
 
-  if (minutes > 0 && getClosedHourBlocks({ from, to }).length > 0) {
+  if (minutes > 0 && getClosedHourBlocks({ fromDay, from, toDay, to }).length > 0) {
     const hasActivityCost = Boolean(body.activityCost);
     const hasLucasPatch = Boolean(body.lucasPatch);
     const hasExemption = Boolean(String(body.biologicalCostExemptReason || "").trim());
@@ -845,10 +866,12 @@ function validateActivityCostMinutes({ timeAdvance, currentTime, body }) {
 
   const from = timeAdvance.from || currentTime;
   const to = timeAdvance.to;
+  const fromDay = timeAdvance.fromDay || 1;
+  const toDay = timeAdvance.toDay || fromDay;
 
   if (!isValidTime(from) || !isValidTime(to)) return;
 
-  const expectedMinutes = diffTimeMinutes(from, to);
+  const expectedMinutes = diffAdvanceMinutes({ fromDay, from, toDay, to });
   if (expectedMinutes <= 0) return;
 
   const actualMinutes = body.activityCost.minutes;
@@ -911,11 +934,11 @@ function ensureBiologicalClock(gameState) {
   return gameState.biologicalClock;
 }
 
-function splitActivitySegments({ from, to, activityCost }) {
+function splitActivitySegments({ fromDay = 1, from, toDay = fromDay, to, activityCost }) {
   if (!activityCost) return [];
 
-  const fromMinutes = timeToMinutes(from);
-  const toMinutes = timeToMinutes(to);
+  const fromMinutes = toAbsoluteMinutes(fromDay, from);
+  const toMinutes = toAbsoluteMinutes(toDay, to);
   const segments = [];
   let cursor = fromMinutes;
 
@@ -925,8 +948,10 @@ function splitActivitySegments({ from, to, activityCost }) {
     const segmentEnd = Math.min(toMinutes, blockEndMinutes);
     const blockStart = minutesToTime(blockStartMinutes);
     const blockEnd = minutesToTime(blockEndMinutes);
+    const blockDay = dayFromAbsoluteMinutes(blockStartMinutes);
 
     segments.push({
+      day: blockDay,
       category: normalizeCategory(activityCost.category),
       minutes: segmentEnd - cursor,
       reason: activityCost.reason || "",
@@ -943,9 +968,9 @@ function splitActivitySegments({ from, to, activityCost }) {
   return segments;
 }
 
-function getClosedHourBlocks({ from, to }) {
-  const fromMinutes = timeToMinutes(from);
-  const toMinutes = timeToMinutes(to);
+function getClosedHourBlocks({ fromDay = 1, from, toDay = fromDay, to }) {
+  const fromMinutes = toAbsoluteMinutes(fromDay, from);
+  const toMinutes = toAbsoluteMinutes(toDay, to);
   const blocks = [];
 
   for (
@@ -956,7 +981,11 @@ function getClosedHourBlocks({ from, to }) {
     if (boundary <= fromMinutes) continue;
     const blockStart = minutesToTime(boundary - 60);
     const blockEnd = minutesToTime(boundary);
-    blocks.push({ blockStart, blockEnd });
+    blocks.push({
+      day: dayFromAbsoluteMinutes(boundary - 60),
+      blockStart,
+      blockEnd,
+    });
   }
 
   return blocks;
@@ -966,13 +995,13 @@ function isUnprocessedAccumulation(entry) {
   return entry && entry.status !== "processed" && !entry.processedAt;
 }
 
-function getPendingAccumulationsForBlock(gameState, { blockStart, blockEnd }) {
+function getPendingAccumulationsForBlock(gameState, { day, blockStart, blockEnd }) {
   const clock = ensureBiologicalClock(gameState);
 
   return clock.pendingAccumulations.filter(
     (entry) =>
       isUnprocessedAccumulation(entry) &&
-      entry.day === gameState.currentDay &&
+      entry.day === (day || gameState.currentDay) &&
       entry.blockStart === blockStart &&
       entry.blockEnd === blockEnd
   );
@@ -983,7 +1012,7 @@ function createPendingAccumulation(gameState, segment, body) {
     accumulationId: createId("bioacc"),
     gameId: gameState.gameId,
     characterId: gameState.characterId || "char_lucas",
-    day: gameState.currentDay,
+    day: segment.day || gameState.currentDay,
     blockStart: segment.blockStart,
     blockEnd: segment.blockEnd,
     category: segment.category,
@@ -1070,7 +1099,7 @@ function processBiologicalBlock(gameState, block, activities) {
     if (activity.accumulationRef) {
       activity.accumulationRef.status = "processed";
       activity.accumulationRef.processedAt = new Date();
-      activity.accumulationRef.processedDay = gameState.currentDay;
+      activity.accumulationRef.processedDay = block.day || gameState.currentDay;
       activity.accumulationRef.processedTime = block.blockEnd;
     }
   }
@@ -1136,17 +1165,23 @@ function applyBiologicalClockForTurn(gameState, body, turnTimeAdvance) {
     };
   }
 
+  const fromDay = turnTimeAdvance.fromDay || gameState.currentDay;
   const from = turnTimeAdvance.from;
+  const toDay = turnTimeAdvance.toDay || fromDay;
   const to = turnTimeAdvance.to;
-  const segments = splitActivitySegments({ from, to, activityCost: body.activityCost });
-  const closedBlocks = getClosedHourBlocks({ from, to });
+  const segments = splitActivitySegments({ fromDay, from, toDay, to, activityCost: body.activityCost });
+  const closedBlocks = getClosedHourBlocks({ fromDay, from, toDay, to });
   const pendingCreated = [];
   const processedBlocks = [];
 
   for (const block of closedBlocks) {
     const pending = getPendingAccumulationsForBlock(gameState, block);
     const currentSegments = segments.filter(
-      (segment) => segment.blockStart === block.blockStart && segment.blockEnd === block.blockEnd && segment.closesBlock
+      (segment) =>
+        segment.day === block.day &&
+        segment.blockStart === block.blockStart &&
+        segment.blockEnd === block.blockEnd &&
+        segment.closesBlock
     );
 
     const activities = [
@@ -1214,6 +1249,9 @@ async function applyTurn(req, res) {
       if (body.timeAdvance) {
         const { from, to } = body.timeAdvance;
         const effectiveFrom = from || gameState.time;
+        const dayBefore = gameState.currentDay;
+        const fromDay = body.timeAdvance.fromDay ?? dayBefore;
+        const toDay = body.timeAdvance.toDay ?? fromDay;
 
         if (from && from !== gameState.time) {
           throw validationError("timeAdvance.from no coincide con la hora actual del GameState.", {
@@ -1222,34 +1260,81 @@ async function applyTurn(req, res) {
           });
         }
 
+        if (!Number.isInteger(fromDay) || fromDay < 1) {
+          throw validationError("timeAdvance.fromDay debe ser un entero positivo.", {
+            receivedFromDay: fromDay,
+          });
+        }
+
+        if (!Number.isInteger(toDay) || toDay < 1) {
+          throw validationError("timeAdvance.toDay debe ser un entero positivo.", {
+            receivedToDay: toDay,
+          });
+        }
+
+        if (fromDay !== dayBefore) {
+          throw validationError("timeAdvance.fromDay no coincide con currentDay del GameState.", {
+            currentDay: dayBefore,
+            receivedFromDay: fromDay,
+          });
+        }
+
         if (!isValidTime(to)) {
           throw validationError("timeAdvance.to debe tener formato HH:MM exacto.");
         }
 
-        if (timeToMinutes(to) < timeToMinutes(effectiveFrom)) {
-          throw validationError("timeAdvance.to no puede ser anterior a timeAdvance.from dentro del mismo dia.", {
+        const elapsedMinutes = diffAdvanceMinutes({
+          fromDay,
+          from: effectiveFrom,
+          toDay,
+          to,
+        });
+
+        if (elapsedMinutes < 0) {
+          throw validationError("timeAdvance.to no puede ser anterior a timeAdvance.from. Si cruza medianoche, envia toDay.", {
             from: effectiveFrom,
+            fromDay,
             to,
+            toDay,
+          });
+        }
+
+        if (elapsedMinutes > 24 * 60) {
+          throw validationError("timeAdvance no puede avanzar mas de 24 horas en una sola llamada.", {
+            from: effectiveFrom,
+            fromDay,
+            to,
+            toDay,
+            elapsedMinutes,
           });
         }
 
         validateHourBoundaryCost({
-          timeAdvance: { from: effectiveFrom, to },
+          timeAdvance: { fromDay, from: effectiveFrom, toDay, to },
           currentTime: gameState.time,
           body,
         });
         validateActivityCostMinutes({
-          timeAdvance: { from: effectiveFrom, to },
+          timeAdvance: { fromDay, from: effectiveFrom, toDay, to },
           currentTime: gameState.time,
           body,
         });
 
         changes.time = {
+          dayBefore,
           before: gameState.time,
+          dayAfter: toDay,
           after: to,
           blockAfter: getBlockFromTime(to),
+          elapsedMinutes,
+          crossesMidnight: toDay > fromDay,
         };
 
+        if (toDay > dayBefore) {
+          advanceDiegeticDate(gameState.diegeticDate, toDay - dayBefore);
+        }
+
+        gameState.currentDay = toDay;
         gameState.time = to;
         gameState.block = getBlockFromTime(to);
       }
@@ -1351,7 +1436,9 @@ async function applyTurn(req, res) {
           body,
           changes.time
             ? {
+                fromDay: changes.time.dayBefore,
                 from: changes.time.before,
+                toDay: changes.time.dayAfter,
                 to: changes.time.after,
               }
             : null
@@ -1475,7 +1562,7 @@ async function applyTurn(req, res) {
           logsToCreate.push({
             logId: log.logId || createLogId(),
             gameId,
-            day: updatedGameState.currentDay,
+            day: changes.time?.dayBefore || updatedGameState.currentDay,
             timeStart: body.timeAdvance?.from || changes.time?.before || updatedGameState.time,
             timeEnd: body.timeAdvance?.to || updatedGameState.time,
             locationId: updatedGameState.locationId,
@@ -1494,7 +1581,7 @@ async function applyTurn(req, res) {
         logsToCreate.push({
           logId: createLogId(),
           gameId,
-          day: updatedGameState.currentDay,
+          day: changes.time?.dayBefore || updatedGameState.currentDay,
           timeStart: changes.time?.before || updatedGameState.time,
           timeEnd: updatedGameState.time,
           locationId: updatedGameState.locationId,

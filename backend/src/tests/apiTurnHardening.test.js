@@ -249,6 +249,65 @@ describe("turn hardening coverage", () => {
     assert.equal(applied.data.gameState.lucasStatus.satiety.current, 27);
     assert.equal(applied.data.gameState.lucasStatus.energy.current, 54);
 
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: 10,
+          "diegeticDate.day": 10,
+          block: "Noche",
+          time: "23:00",
+          "lucasStatus.satiety.current": 76,
+          "lucasStatus.satiety.label": "satisfecho",
+          "lucasStatus.energy.current": 28,
+          "lucasStatus.energy.label": "cansancio serio",
+          biologicalClock: {
+            lastProcessedTime: "23:00",
+            currentHourBlock: "23:00-00:00",
+            pendingAccumulation: [],
+            pendingAccumulations: [],
+          },
+        },
+      }
+    );
+
+    const overnightSleep = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: Lucas duerme cruzando medianoche.",
+      timeAdvance: {
+        fromDay: 10,
+        from: "23:00",
+        toDay: 11,
+        to: "06:00",
+      },
+      activityCost: {
+        category: "sueno_profundo",
+        minutes: 420,
+        reason: "Sueño profundo nocturno cruzando medianoche.",
+      },
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de sueño nocturno cruzando medianoche.",
+          visibility: "hidden",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+    });
+    assert.equal(overnightSleep.status, 200);
+    assert.equal(overnightSleep.data.ok, true);
+    assert.equal(overnightSleep.data.changes.time.dayBefore, 10);
+    assert.equal(overnightSleep.data.changes.time.dayAfter, 11);
+    assert.equal(overnightSleep.data.changes.time.elapsedMinutes, 420);
+    assert.equal(overnightSleep.data.changes.time.crossesMidnight, true);
+    assert.equal(overnightSleep.data.changes.biologicalClock.processedBlocks.length, 7);
+    assert.equal(overnightSleep.data.gameState.currentDay, 11);
+    assert.equal(overnightSleep.data.gameState.diegeticDate.day, 11);
+    assert.equal(overnightSleep.data.gameState.time, "06:00");
+    assert.equal(overnightSleep.data.gameState.block, "Mañana");
+    assert.equal(overnightSleep.data.gameState.lucasStatus.satiety.current, 69);
+    assert.equal(overnightSleep.data.gameState.lucasStatus.energy.current, 100);
+
     const mainState = await getCanonicalState();
     assertCanonState(mainState);
     const yaraAfter = await Npc.findOne({ npcId: "npc_yara_mils" }).lean();

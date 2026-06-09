@@ -169,6 +169,26 @@ function main() {
   }
   assertCondition(
     issues,
+    "full timeAdvance supports fromDay",
+    Boolean(full.components?.schemas?.ApplyTurnRequest?.properties?.timeAdvance?.properties?.fromDay)
+  );
+  assertCondition(
+    issues,
+    "full timeAdvance supports toDay",
+    Boolean(full.components?.schemas?.ApplyTurnRequest?.properties?.timeAdvance?.properties?.toDay)
+  );
+  assertCondition(
+    issues,
+    "compact timeAdvance supports fromDay",
+    Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.timeAdvance?.properties?.fromDay)
+  );
+  assertCondition(
+    issues,
+    "compact timeAdvance supports toDay",
+    Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.timeAdvance?.properties?.toDay)
+  );
+  assertCondition(
+    issues,
     "compact activityCost supports minutes mismatch override",
     Boolean(compact.components?.schemas?.ActivityCostInput?.properties?.allowMinutesMismatch)
   );
