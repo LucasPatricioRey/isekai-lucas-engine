@@ -9,6 +9,13 @@ const eventLogSchema = new mongoose.Schema(
       index: true,
     },
 
+    gameId: {
+      type: String,
+      required: true,
+      default: "isekai_lucas_main",
+      index: true,
+    },
+
     day: {
       type: Number,
       required: true,
@@ -94,5 +101,9 @@ const eventLogSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+eventLogSchema.index({ gameId: 1, day: -1, timeStart: -1 });
+eventLogSchema.index({ gameId: 1, locationId: 1, day: -1, timeStart: -1 });
+eventLogSchema.index({ gameId: 1, involvedNpcIds: 1, day: -1, timeStart: -1 });
 
 module.exports = mongoose.model("EventLog", eventLogSchema);

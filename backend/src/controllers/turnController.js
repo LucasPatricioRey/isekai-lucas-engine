@@ -1474,6 +1474,7 @@ async function applyTurn(req, res) {
         for (const log of body.eventLogs) {
           logsToCreate.push({
             logId: log.logId || createLogId(),
+            gameId,
             day: updatedGameState.currentDay,
             timeStart: body.timeAdvance?.from || changes.time?.before || updatedGameState.time,
             timeEnd: body.timeAdvance?.to || updatedGameState.time,
@@ -1492,6 +1493,7 @@ async function applyTurn(req, res) {
       } else if (body.actionSummary || Object.keys(changes).length > 0) {
         logsToCreate.push({
           logId: createLogId(),
+          gameId,
           day: updatedGameState.currentDay,
           timeStart: changes.time?.before || updatedGameState.time,
           timeEnd: updatedGameState.time,
@@ -1508,7 +1510,7 @@ async function applyTurn(req, res) {
       await validateEventLogsForInsert(logsToCreate, session);
       await gameState.save({ session });
 
-      if (changes.time) {
+      if (changes.time && gameId === "isekai_lucas_main") {
         const routineSync = await syncNpcRoutines({
           day: gameState.currentDay,
           time: gameState.time,
@@ -1518,6 +1520,12 @@ async function applyTurn(req, res) {
         if (routineSync.updatedCount > 0) {
           changes.routineSync = routineSync;
         }
+      } else if (changes.time) {
+        changes.routineSync = {
+          skipped: true,
+          reason: "Rutinas NPC globales omitidas para gameId no canonico.",
+          gameId,
+        };
       }
 
       if (logsToCreate.length > 0) {

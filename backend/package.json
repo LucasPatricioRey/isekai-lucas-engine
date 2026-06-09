@@ -40,7 +40,9 @@
     "audit:gpt-readiness": "node src/utils/auditGptReadiness.js",
     "audit:gpt-readiness-compact": "node src/utils/auditGptReadinessCompact.js",
     "audit:checkpoint-rollback": "node src/utils/auditCheckpointRollback.js",
-    "audit:biological-accumulator": "node src/utils/auditBiologicalAccumulator.js"
+    "audit:biological-accumulator": "node src/utils/auditBiologicalAccumulator.js",
+    "migrate:eventlog-gameid": "node src/utils/migrateEventLogGameId.js",
+    "repair:canon-phase3": "node src/utils/repairCanonStatePhase3.js"
   },
   "keywords": [],
   "author": "",

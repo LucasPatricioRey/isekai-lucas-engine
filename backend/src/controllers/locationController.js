@@ -6,9 +6,16 @@ const Mission = require("../models/Mission");
 const EventLog = require("../models/EventLog");
 const Shop = require("../models/Shop");
 const ShopStock = require("../models/ShopStock");
+const responseShaping = require("../utils/responseShaping");
 
 async function getLocationFull(req, res) {
   const { locationId } = req.params;
+  const gameId = req.query.gameId || "isekai_lucas_main";
+  const rumorLimit = responseShaping.toIntQuery(req.query.rumorLimit, 20, 0, 30);
+  const eventLimit = responseShaping.toIntQuery(req.query.eventLimit, 20, 0, 30);
+  const missionLimit = responseShaping.toIntQuery(req.query.missionLimit, 20, 0, 30);
+  const logLimit = responseShaping.toIntQuery(req.query.logLimit, 10, 0, 30);
+  const includeMechanicalChanges = responseShaping.queryBoolean(req.query.includeMechanicalChanges, false);
 
   const location = await Location.findOne({ locationId }).lean();
 
@@ -37,7 +44,7 @@ async function getLocationFull(req, res) {
       locationIds: locationId,
     })
       .sort({ createdDay: -1, createdTime: -1 })
-      .limit(30)
+      .limit(rumorLimit)
       .lean(),
 
     WorldEvent.find({
@@ -45,7 +52,7 @@ async function getLocationFull(req, res) {
       affectedLocationIds: locationId,
     })
       .sort({ startDay: 1, startTime: 1 })
-      .limit(30)
+      .limit(eventLimit)
       .lean(),
 
     Mission.find({
@@ -53,12 +60,12 @@ async function getLocationFull(req, res) {
       status: { $in: ["available", "accepted", "blocked"] },
     })
       .sort({ postedDay: -1, postedTime: -1 })
-      .limit(30)
+      .limit(missionLimit)
       .lean(),
 
-    EventLog.find({ locationId })
+    EventLog.find({ gameId, locationId })
       .sort({ day: -1, timeStart: -1 })
-      .limit(30)
+      .limit(logLimit)
       .lean(),
 
     ShopStock.find({ shopId: { $in: shopIds } }).lean(),
@@ -73,7 +80,9 @@ async function getLocationFull(req, res) {
     missions,
     shops,
     shopStocks,
-    recentEventLogs,
+    recentEventLogs: recentEventLogs.map((log) =>
+      responseShaping.summarizeEventLog(log, { includeMechanicalChanges })
+    ),
   });
 }
 

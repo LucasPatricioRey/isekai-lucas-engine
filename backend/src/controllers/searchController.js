@@ -23,6 +23,7 @@ function buildRegex(query) {
 
 async function searchDb(req, res) {
   const q = String(req.query.q || "").trim();
+  const gameId = req.query.gameId || "isekai_lucas_main";
 
   if (!q) {
     return res.status(400).json({
@@ -107,6 +108,7 @@ async function searchDb(req, res) {
     }).limit(10).lean(),
 
     EventLog.find({
+      gameId,
       $or: [
         { logId: regex },
         { type: regex },

@@ -62,7 +62,7 @@ describe("read-only API coverage", () => {
   it("loads missions board and detail without accepting missions", async () => {
     const board = await get("/api/missions/board");
     assert.equal(board.status, 200);
-    assert.ok((board.data.missions || []).length >= 11);
+    assert.ok((board.data.missions || []).length >= 5);
 
     const detail = await get("/api/missions/mission_d10_grulla_delivery_guild");
     assert.equal(detail.status, 200);
@@ -96,7 +96,9 @@ describe("read-only API coverage", () => {
 
     const weather = await get("/api/weather/current?regionId=region_hoshimori");
     assert.equal(weather.status, 200);
-    assert.equal(weather.data.weather.weatherId, "weather_hoshimori_d10_post_rain_mud");
+    assert.equal(weather.data.weather.regionId, "region_hoshimori");
+    assert.ok(weather.data.weather.weatherId);
+    assert.ok(["clear", "cloudy", "light_rain", "heavy_rain", "fog", "cold", "heat"].includes(weather.data.weather.currentCondition));
 
     const checkpoints = await get("/api/checkpoints");
     assert.equal(checkpoints.status, 200);

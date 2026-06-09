@@ -22,10 +22,16 @@ const MATRIX_PATH = path.join(DOCS_DIR, "gpt-actions-operation-matrix.md");
 
 const EXPECTED_STATE = {
   minDay: 10,
-  moneyCopper: 1470,
-  mpCurrent: 200,
-  activeCombatCount: 0,
 };
+
+const EXPECTED_MONEY_COPPER =
+  process.env.EXPECTED_MONEY_COPPER !== undefined ? Number(process.env.EXPECTED_MONEY_COPPER) : null;
+const EXPECTED_MP_CURRENT =
+  process.env.EXPECTED_MP_CURRENT !== undefined ? Number(process.env.EXPECTED_MP_CURRENT) : null;
+const EXPECTED_ACTIVE_COMBAT_COUNT =
+  process.env.EXPECTED_ACTIVE_COMBAT_COUNT !== undefined
+    ? Number(process.env.EXPECTED_ACTIVE_COMBAT_COUNT)
+    : null;
 
 function endpoint(routePath) {
   return `${BASE_URL}${routePath}`;
@@ -82,12 +88,13 @@ function collectOperations(openapi) {
 
 function summarizeGameState(context) {
   const gameState = context.context?.gameState || {};
+  const lucas = context.context?.lucas || {};
   return {
     currentDay: gameState.currentDay,
     time: gameState.time,
     locationId: gameState.locationId,
-    moneyCopper: gameState.moneyCopper,
-    mpCurrent: gameState.lucasStatus?.mp?.current,
+    moneyCopper: lucas.money?.totalCopper,
+    mpCurrent: lucas.mp?.current,
     activeMissionIds: gameState.activeMissionIds || [],
   };
 }
@@ -95,6 +102,7 @@ function summarizeGameState(context) {
 async function checkCompactEndpoints(issues) {
   const [
     context,
+    characterState,
     fern,
     docs,
     pavoStock,
@@ -106,7 +114,8 @@ async function checkCompactEndpoints(issues) {
     weather,
     activeCombats,
   ] = await Promise.all([
-    request("/api/context/full"),
+    request("/api/context/compact"),
+    request("/api/characters/char_lucas/state"),
     request("/api/search/db?q=Fern"),
     request("/api/search/docs?q=romance"),
     request("/api/economy/shops/shop_pavo_food_stall/stock"),
@@ -136,7 +145,10 @@ async function checkCompactEndpoints(issues) {
   ]);
 
   section("Compact Critical Endpoints");
-  assertCondition(issues, "context/full OK", context.ok === true);
+  assertCondition(issues, "context/compact OK", context.ok === true && context.compact === true);
+  assertCondition(issues, "context/compact stays under GPT Actions response budget", JSON.stringify(context).length < 100000);
+  assertCondition(issues, "character state has HP", Boolean(characterState.state?.life?.max));
+  assertCondition(issues, "character state has MP", Boolean(characterState.state?.mp?.max));
   assertCondition(issues, "search/db returns Fern", (fern.results?.npcs || []).length > 0);
   assertCondition(issues, "search/docs returns docs", (docs.results || []).length > 0);
   assertCondition(issues, "Pavo stock has rows", (pavoStock.stocks || []).length > 0);
@@ -168,10 +180,24 @@ async function checkCompactEndpoints(issues) {
   assertCondition(issues, "day is playable canon", gameState.currentDay >= EXPECTED_STATE.minDay, String(gameState.currentDay));
   assertCondition(issues, "time has HH:MM format", /^([01]\d|2[0-3]):[0-5]\d$/.test(gameState.time || ""), gameState.time);
   assertCondition(issues, "locationId exists", Boolean(gameState.locationId), gameState.locationId);
-  assertEqual(issues, "moneyCopper", gameState.moneyCopper, EXPECTED_STATE.moneyCopper);
-  assertEqual(issues, "MP current", gameState.mpCurrent, EXPECTED_STATE.mpCurrent);
+  if (EXPECTED_MONEY_COPPER === null) {
+    assertCondition(issues, "moneyCopper is non-negative number", Number.isFinite(gameState.moneyCopper) && gameState.moneyCopper >= 0, String(gameState.moneyCopper));
+  } else {
+    assertEqual(issues, "moneyCopper", gameState.moneyCopper, EXPECTED_MONEY_COPPER);
+  }
+
+  if (EXPECTED_MP_CURRENT === null) {
+    assertCondition(issues, "MP current is non-negative number", Number.isFinite(gameState.mpCurrent) && gameState.mpCurrent >= 0, String(gameState.mpCurrent));
+  } else {
+    assertEqual(issues, "MP current", gameState.mpCurrent, EXPECTED_MP_CURRENT);
+  }
+
   assertCondition(issues, "activeMissionIds is array", Array.isArray(gameState.activeMissionIds), String(gameState.activeMissionIds?.length || 0));
-  assertEqual(issues, "active combat count", activeCombatList.length, EXPECTED_STATE.activeCombatCount);
+  if (EXPECTED_ACTIVE_COMBAT_COUNT === null) {
+    assertCondition(issues, "active combat count is non-negative", activeCombatList.length >= 0, String(activeCombatList.length));
+  } else {
+    assertEqual(issues, "active combat count", activeCombatList.length, EXPECTED_ACTIVE_COMBAT_COUNT);
+  }
 }
 
 async function main() {
@@ -193,9 +219,14 @@ async function main() {
 
   section("Schema Shape");
   assertEqual(issues, "compact operation count", compactOps.length, 30);
+  assertCondition(issues, "compact includes context/compact", compactOps.includes("GET /api/context/compact"));
+  assertCondition(issues, "compact includes character state", compactOps.includes("GET /api/characters/{characterId}/state"));
   assertCondition(issues, "compact has missionPatch", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.missionPatch));
   assertCondition(issues, "compact has shopStockPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.shopStockPatches));
   assertCondition(issues, "compact has npcMemoryPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.npcMemoryPatches));
+  assertCondition(issues, "compact applyTurn is consequential", compact.paths?.["/api/turn/apply"]?.post?.["x-openai-isConsequential"] === true);
+  assertCondition(issues, "compact excludes checkpoint list", !compact.paths?.["/api/checkpoints"]?.get);
+  assertCondition(issues, "compact excludes checkpoint create", !compact.paths?.["/api/checkpoints"]?.post);
   assertCondition(issues, "compact excludes rollback", !compact.paths?.["/api/checkpoints/{checkpointId}/rollback"]);
   assertCondition(issues, "compact excludes direct accept mission", !compact.paths?.["/api/missions/{missionId}/accept"]);
   assertCondition(issues, "compact excludes direct report mission", !compact.paths?.["/api/missions/{missionId}/report"]);

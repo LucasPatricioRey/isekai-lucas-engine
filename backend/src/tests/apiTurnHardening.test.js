@@ -3,6 +3,7 @@ const { after, before, describe, it } = require("node:test");
 const EventLog = require("../models/EventLog");
 const GameState = require("../models/GameState");
 const Mission = require("../models/Mission");
+const Npc = require("../models/Npc");
 const {
   assert,
   assertCanonState,
@@ -75,7 +76,12 @@ async function createIsolatedGameState() {
 async function cleanupIsolatedState() {
   if (tempGameId) await GameState.deleteOne({ gameId: tempGameId });
   if (tempMissionId) await Mission.deleteOne({ missionId: tempMissionId });
-  await EventLog.deleteMany({ tags: "test_turn_hardening" });
+  await EventLog.deleteMany({
+    $or: [
+      { tags: "test_turn_hardening" },
+      { gameId: tempGameId },
+    ],
+  });
 }
 
 describe("turn hardening coverage", () => {
@@ -91,6 +97,7 @@ describe("turn hardening coverage", () => {
 
   it("previews travel biology and applies validated turn mutations atomically", async () => {
     const beforeState = await getCanonicalState(tempGameId);
+    const yaraBefore = await Npc.findOne({ npcId: "npc_yara_mils" }).lean();
     assertCanonState(beforeState);
 
     const travelPreview = await post("/api/travel/preview", {
@@ -244,5 +251,18 @@ describe("turn hardening coverage", () => {
 
     const mainState = await getCanonicalState();
     assertCanonState(mainState);
+    const yaraAfter = await Npc.findOne({ npcId: "npc_yara_mils" }).lean();
+    assert.deepEqual(
+      {
+        currentLocationId: yaraAfter.currentLocationId,
+        currentTask: yaraAfter.currentTask,
+        availability: yaraAfter.availability,
+      },
+      {
+        currentLocationId: yaraBefore.currentLocationId,
+        currentTask: yaraBefore.currentTask,
+        availability: yaraBefore.availability,
+      }
+    );
   });
 });

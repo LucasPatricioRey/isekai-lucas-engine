@@ -43,6 +43,7 @@ Para el GPT Builder normal, pegar el contenido completo de:
 - `docs/openapi-gpt-action-compact.json`
 
 Este schema mantiene 30 operaciones y usa `applyTurn.missionPatch` para aceptar/reportar misiones sin exponer mutadores directos de misiones.
+La lectura normal por turno debe empezar por `GET /api/context/compact`. Si hace falta estado mecanico directo de Lucas, usar `GET /api/characters/char_lucas/state`.
 
 El schema full de referencia tecnica queda en:
 
@@ -73,6 +74,7 @@ No pegar la API key en Knowledge, Instructions, conversation starters ni archivo
 
 No incluir en el schema normal de GPT Builder:
 
+- `POST /api/checkpoints`
 - `POST /api/checkpoints/{checkpointId}/rollback`
 - endpoints admin peligrosos
 - mutadores destructivos no necesarios
@@ -91,21 +93,21 @@ Ejecutar en backend:
 
 ```bash
 npm run check
-npm test
-npm run smoke
 npm run audit:openapi
 npm run audit:openapi-compact
-npm run audit:gpt-readiness
 npm run audit:gpt-readiness-compact
 ```
 
+`npm test`, `npm run smoke` y auditorias contra Render pueden tocar o depender de datos vivos. Usarlos solo cuando el entorno de prueba este claro o despues de desplegar cambios compatibles.
+
 Condicion minima para abrir Preview:
 
-- GameState Dia 10, hora 12:00.
-- Ubicacion `loc_hoshimori_grulla_azul_comedor`.
-- Dinero 1470 cobre.
-- MP 200/200.
-- `activeMissionIds` vacio.
-- Combates activos 0.
+- `GET /api/context/compact` responde `ok: true`.
+- La respuesta compacta queda por debajo de 100000 caracteres.
+- `GET /api/characters/char_lucas/state` devuelve HP, MP, dinero, inventario y skills directos.
+- El dia/hora/ubicacion existen y tienen formato valido.
+- Dinero y MP son numeros no negativos.
+- `activeMissionIds` es array.
+- Combates activos responde como array.
 - OpenAPI validado.
 - `.env` no aparece en `git status --short`.

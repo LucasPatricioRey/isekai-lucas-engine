@@ -77,8 +77,17 @@ describe("preview and rejection API coverage", () => {
       terrain: ["mud_road"],
     });
     assert.equal(weather.status, 200);
-    assert.equal(weather.data.preview.travelTimeMultiplier, 1.25);
+    assert.equal(weather.data.preview.travelTimeMultiplier, 1);
     assert.equal(weather.data.preview.willMutateGameState, false);
+
+    const forcedRainWeather = await post("/api/weather/effects/preview", {
+      routeType: "road",
+      terrain: ["mud_road"],
+      condition: "light_rain",
+    });
+    assert.equal(forcedRainWeather.status, 200);
+    assert.equal(forcedRainWeather.data.preview.travelTimeMultiplier, 1.25);
+    assert.equal(forcedRainWeather.data.preview.willMutateGameState, false);
 
     const tick = await post("/api/world/tick/preview", {
       fromDay: 10,

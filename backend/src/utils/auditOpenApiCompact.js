@@ -8,7 +8,9 @@ const ADMIN_PATH = path.join(DOCS_DIR, "openapi-gpt-action-admin.json");
 const MATRIX_PATH = path.join(DOCS_DIR, "gpt-actions-operation-matrix.md");
 
 const EXPECTED_COMPACT = [
+  ["GET", "/api/context/compact"],
   ["GET", "/api/context/full"],
+  ["GET", "/api/characters/{characterId}/state"],
   ["GET", "/api/search/db"],
   ["GET", "/api/search/docs"],
   ["GET", "/api/npcs/{npcId}/full"],
@@ -36,11 +38,11 @@ const EXPECTED_COMPACT = [
   ["POST", "/api/magic/practice/preview"],
   ["GET", "/api/weather/current"],
   ["POST", "/api/weather/effects/preview"],
-  ["GET", "/api/checkpoints"],
-  ["POST", "/api/checkpoints"],
 ];
 
-const DANGEROUS_EXCLUDED = [
+const COMPACT_EXCLUDED = [
+  "GET /api/checkpoints",
+  "POST /api/checkpoints",
   "POST /api/checkpoints/{checkpointId}/rollback",
   "POST /api/combat/encounters/start",
   "POST /api/combat/encounters/{encounterId}/round",
@@ -119,14 +121,28 @@ function main() {
   }
   assertCondition(issues, "missing compact operation count", missingCompact.length === 0, String(missingCompact.length));
 
-  section("Excluded Dangerous Operations");
-  const dangerousIncluded = [];
-  for (const operationKey of DANGEROUS_EXCLUDED) {
+  section("Excluded From Compact");
+  const excludedIncluded = [];
+  for (const operationKey of COMPACT_EXCLUDED) {
     const included = compactOps.has(operationKey);
     console.log(`${included ? "FAIL" : "PASS"} ${operationKey}`);
-    if (included) dangerousIncluded.push(operationKey);
+    if (included) excludedIncluded.push(operationKey);
   }
-  assertCondition(issues, "dangerous operations included count", dangerousIncluded.length === 0, String(dangerousIncluded.length));
+  assertCondition(issues, "excluded compact operation count", excludedIncluded.length === 0, String(excludedIncluded.length));
+
+  section("Consequential Flags");
+  assertCondition(
+    issues,
+    "compact applyTurn requires confirmation",
+    compactOps.get("POST /api/turn/apply")?.["x-openai-isConsequential"] === true
+  );
+  assertCondition(
+    issues,
+    "compact previews are non-consequential",
+    compactOps.get("POST /api/travel/preview")?.["x-openai-isConsequential"] === false &&
+      compactOps.get("POST /api/world/tick/preview")?.["x-openai-isConsequential"] === false &&
+      compactOps.get("POST /api/magic/practice/preview")?.["x-openai-isConsequential"] === false
+  );
 
   section("ApplyTurn Schema");
   for (const propertyName of [

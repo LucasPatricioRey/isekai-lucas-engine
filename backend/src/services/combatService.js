@@ -116,6 +116,7 @@ async function startEncounter({
 
   await EventLog.create({
     logId: createLogId(),
+    gameId,
     day: gameState.currentDay,
     timeStart: gameState.time,
     timeEnd: gameState.time,
@@ -322,6 +323,7 @@ async function applyCombatRound({
 
   await EventLog.create({
     logId: createLogId(),
+    gameId,
     day: gameState.currentDay,
     timeStart: gameState.time,
     timeEnd: gameState.time,

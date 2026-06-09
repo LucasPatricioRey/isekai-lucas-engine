@@ -4,13 +4,15 @@ Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.j
 
 | Operacion | Endpoint | Full | Compact | Tipo | Dominio |
 |---|---|---:|---:|---|---|
-| listCheckpoints | `GET /api/checkpoints` | si | si | lectura | admin/debug |
+| listCheckpoints | `GET /api/checkpoints` | si | no | lectura | admin/debug |
 | getCheckpoint | `GET /api/checkpoints/{checkpointId}` | si | no | lectura | admin/debug |
+| getCharacterState | `GET /api/characters/{characterId}/state` | si | si | lectura | gameplay |
 | listCombatActions | `GET /api/combat/actions` | si | si | lectura | gameplay |
 | listActiveCombatEncounters | `GET /api/combat/encounters/active` | si | si | lectura | gameplay |
 | getCombatEncounter | `GET /api/combat/encounters/{encounterId}` | si | si | lectura | gameplay |
 | listCombatEnemies | `GET /api/combat/enemies` | si | si | lectura | gameplay |
 | getCombatEnemy | `GET /api/combat/enemies/{enemyId}` | si | no | lectura | gameplay |
+| getCompactContext | `GET /api/context/compact` | si | si | lectura | gameplay |
 | getFullContext | `GET /api/context/full` | si | si | lectura | gameplay |
 | getItem | `GET /api/economy/items/{itemId}` | si | si | lectura | gameplay |
 | listShops | `GET /api/economy/shops` | si | no | lectura | gameplay |
@@ -30,7 +32,7 @@ Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.j
 | listTravelRoutes | `GET /api/travel/routes` | si | si | lectura | gameplay |
 | getTravelRoute | `GET /api/travel/routes/{routeId}` | si | no | lectura | gameplay |
 | getCurrentWeather | `GET /api/weather/current` | si | si | lectura | gameplay |
-| createCheckpoint | `POST /api/checkpoints` | si | si | mutacion | admin/debug |
+| createCheckpoint | `POST /api/checkpoints` | si | no | mutacion | admin/debug |
 | previewCombatAction | `POST /api/combat/encounters/{encounterId}/actions/preview` | si | si | preview | gameplay |
 | previewJobShift | `POST /api/jobs/shifts/{shiftId}/preview` | si | si | preview | gameplay |
 | previewMagicPractice | `POST /api/magic/practice/preview` | si | si | preview | gameplay |
@@ -43,6 +45,9 @@ Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.j
 
 Notas:
 - El compact mantiene 30 operaciones para respetar el limite practico de GPT Builder.
+- `getCompactContext` es la lectura principal por turno; `getFullContext` queda como apoyo/debug con parametros de limite.
+- `getCharacterState` evita reconstruir HP/MP/inventario/skills desde logs.
 - Mutadores directos de misiones, combate, restock y rollback quedan fuera; misiones se gestionan por `applyTurn.missionPatch`.
+- `applyTurn` esta marcado como consequential para forzar confirmacion antes de mutar estado real.
 - `applyTurn.activityCost` no suma operaciones: acumula automaticamente actividades entre horas y procesa pendientes al llegar a `:00`.
 - El schema admin es solo lectura y no debe usarse para juego normal.

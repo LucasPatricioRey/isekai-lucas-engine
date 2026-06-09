@@ -100,6 +100,7 @@ async function acceptMission({ missionId, gameId = "isekai_lucas_main", characte
 
   await EventLog.create({
     logId: createLogId(),
+    gameId,
     day: gameState.currentDay,
     timeStart: gameState.time,
     timeEnd: gameState.time,
@@ -163,6 +164,7 @@ async function submitMissionReport({
 
   await EventLog.create({
     logId: createLogId(),
+    gameId,
     day: gameState.currentDay,
     timeStart: gameState.time,
     timeEnd: gameState.time,

@@ -5,7 +5,9 @@ const OPENAPI_PATH = path.resolve(__dirname, "../../docs/openapi-gpt-action.json
 
 const EXPECTED_INCLUDED = [
   ["GET", "/api/health"],
+  ["GET", "/api/context/compact"],
   ["GET", "/api/context/full"],
+  ["GET", "/api/characters/{characterId}/state"],
   ["GET", "/api/search/db"],
   ["GET", "/api/search/docs"],
   ["GET", "/api/npcs/{npcId}/full"],

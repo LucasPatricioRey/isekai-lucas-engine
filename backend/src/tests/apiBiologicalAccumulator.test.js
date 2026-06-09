@@ -68,7 +68,12 @@ describe("persistent biological accumulators", () => {
     if (tempGameIds.length > 0) {
       await GameState.deleteMany({ gameId: { $in: tempGameIds } });
     }
-    await EventLog.deleteMany({ tags: "test_bio_accumulator" });
+    await EventLog.deleteMany({
+      $or: [
+        { tags: "test_bio_accumulator" },
+        { gameId: { $in: tempGameIds } },
+      ],
+    });
     await stopApi();
   });
 

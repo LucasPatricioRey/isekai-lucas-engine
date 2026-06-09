@@ -18,6 +18,7 @@ Cada prompt debe resolverse con Actions read-only o Knowledge, sin `applyTurn`.
 Resultado esperado:
 
 - No cambia dia/hora/dinero/MP/inventario/misiones/combates.
+- El GPT usa `getCompactContext` o `getCharacterState` antes de narrar estado vivo.
 - El GPT no inventa NPCs presentes.
 - El GPT distingue hechos vivos de rumores.
 - El GPT no revela texto de `world_bible.md` como documento interno.
@@ -47,19 +48,18 @@ Estas pruebas no son para el GPT normal sin supervision. Hacerlas solo si se ace
 
 Preparacion:
 
-1. Crear checkpoint test con titulo claro.
+1. Crear checkpoint test con una herramienta externa/admin, no desde el GPT normal.
 2. Anotar checkpointId.
 3. Ejecutar una sola mutacion.
 4. Verificar resultado.
 5. Hacer rollback manual externo al checkpoint test.
-6. Confirmar que el estado canon vuelve a Dia 10 12:00, dinero 1470, MP 200/200, `activeMissionIds` vacio y combates 0.
+6. Confirmar que el estado canon vuelve exactamente al snapshot anotado antes de la prueba.
 
 Pruebas controladas:
 
-1. `Crea un checkpoint de prueba antes de tocar estado.`
-2. `Acepta una mision simple de Porcelana.`
-3. `Compra una racion normal a Pavo.`
-4. `Almuerza una comida de contrato en La Grulla Azul.`
+1. `Acepta una mision simple de Porcelana.`
+2. `Compra una racion normal a Pavo.`
+3. `Almuerza una comida de contrato en La Grulla Azul.`
 
 Resultado esperado:
 

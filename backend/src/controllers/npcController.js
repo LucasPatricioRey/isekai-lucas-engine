@@ -4,9 +4,17 @@ const Rumor = require("../models/Rumor");
 const EventLog = require("../models/EventLog");
 const RoutineOverride = require("../models/RoutineOverride");
 const NpcRelationship = require("../models/NpcRelationship");
+const responseShaping = require("../utils/responseShaping");
 
 async function getNpcFull(req, res) {
   const { npcId } = req.params;
+  const gameId = req.query.gameId || "isekai_lucas_main";
+  const memoryLimit = responseShaping.toIntQuery(req.query.memoryLimit, 20, 0, 50);
+  const rumorLimit = responseShaping.toIntQuery(req.query.rumorLimit, 10, 0, 20);
+  const logLimit = responseShaping.toIntQuery(req.query.logLimit, 10, 0, 30);
+  const routineLimit = responseShaping.toIntQuery(req.query.routineLimit, 10, 0, 20);
+  const relationshipLimit = responseShaping.toIntQuery(req.query.relationshipLimit, 20, 0, 50);
+  const includeMechanicalChanges = responseShaping.queryBoolean(req.query.includeMechanicalChanges, false);
 
   const npc = await Npc.findOne({ npcId }).lean();
 
@@ -20,7 +28,7 @@ async function getNpcFull(req, res) {
   const [memories, rumors, recentEventLogs, routineOverrides, socialRelationships] = await Promise.all([
     NpcMemory.find({ npcId })
       .sort({ importance: -1, createdDay: -1, createdTime: -1 })
-      .limit(50)
+      .limit(memoryLimit)
       .lean(),
 
     Rumor.find({
@@ -30,24 +38,24 @@ async function getNpcFull(req, res) {
       ],
     })
       .sort({ createdDay: -1, createdTime: -1 })
-      .limit(20)
+      .limit(rumorLimit)
       .lean(),
 
-    EventLog.find({ involvedNpcIds: npcId })
+    EventLog.find({ gameId, involvedNpcIds: npcId })
       .sort({ day: -1, timeStart: -1 })
-      .limit(30)
+      .limit(logLimit)
       .lean(),
 
     RoutineOverride.find({ npcId })
       .sort({ day: -1, timeStart: -1 })
-      .limit(20)
+      .limit(routineLimit)
       .lean(),
 
     NpcRelationship.find({
       $or: [{ npcAId: npcId }, { npcBId: npcId }],
     })
       .sort({ familiarity: -1, trust: -1 })
-      .limit(50)
+      .limit(relationshipLimit)
       .lean(),
   ]);
 
@@ -56,7 +64,9 @@ async function getNpcFull(req, res) {
     npc,
     memories,
     rumors,
-    recentEventLogs,
+    recentEventLogs: recentEventLogs.map((log) =>
+      responseShaping.summarizeEventLog(log, { includeMechanicalChanges })
+    ),
     routineOverrides,
     socialRelationships,
   });

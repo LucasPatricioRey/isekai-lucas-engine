@@ -511,7 +511,7 @@
     "/api/context/full": {
       "get": {
         "operationId": "getFullContext",
-        "summary": "Obtiene estado vivo cercano: GameState, ubicacion, NPCs cercanos, rumores, tiendas, misiones y combate.",
+        "summary": "Obtiene contexto vivo amplio con logs resumidos por defecto.",
         "responses": {
           "200": {
             "description": "Contexto vivo cercano.",
@@ -523,7 +523,41 @@
               }
             }
           }
-        }
+        },
+        "description": "Lectura amplia para debug. Por defecto limita recentEventLogs a 10 y no incluye mechanicalChanges para evitar ResponseTooLargeError. Para debug pesado usar includeMechanicalChanges=true&logLimit=30.",
+        "parameters": [
+          {
+            "name": "gameId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "isekai_lucas_main"
+            }
+          },
+          {
+            "name": "logLimit",
+            "in": "query",
+            "required": false,
+            "description": "Cantidad de logs recientes. Default 10, maximo 30.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 30,
+              "default": 10
+            }
+          },
+          {
+            "name": "includeMechanicalChanges",
+            "in": "query",
+            "required": false,
+            "description": "Incluir mechanicalChanges completos en recentEventLogs. Default false para evitar respuestas demasiado grandes.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ]
       }
     },
     "/api/search/db": {
@@ -666,7 +700,8 @@
           "400": {
             "description": "Mutacion rechazada por validacion."
           }
-        }
+        },
+        "x-openai-isConsequential": true
       }
     },
     "/api/economy/shops": {
@@ -1406,7 +1441,8 @@
               }
             }
           }
-        }
+        },
+        "x-openai-isConsequential": true
       }
     },
     "/api/checkpoints/{checkpointId}": {
@@ -1426,6 +1462,140 @@
         "responses": {
           "200": {
             "description": "Checkpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/context/compact": {
+      "get": {
+        "operationId": "getCompactContext",
+        "summary": "Obtiene contexto compacto para narrar el turno sin exceder limites de GPT Actions.",
+        "description": "Lectura principal del narrador: estado vivo, ubicacion, Lucas, NPCs cercanos, misiones, clima, trabajo, combate activo y alertas de coherencia.",
+        "parameters": [
+          {
+            "name": "gameId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "isekai_lucas_main"
+            }
+          },
+          {
+            "name": "npcLimit",
+            "in": "query",
+            "required": false,
+            "description": "Maximo de NPCs cercanos.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 30
+            }
+          },
+          {
+            "name": "memoryLimit",
+            "in": "query",
+            "required": false,
+            "description": "Maximo de memorias relevantes.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 12
+            }
+          },
+          {
+            "name": "rumorLimit",
+            "in": "query",
+            "required": false,
+            "description": "Maximo de rumores activos.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10
+            }
+          },
+          {
+            "name": "missionLimit",
+            "in": "query",
+            "required": false,
+            "description": "Maximo de misiones activas/disponibles.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 15
+            }
+          },
+          {
+            "name": "eventLimit",
+            "in": "query",
+            "required": false,
+            "description": "Maximo de eventos vivos.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 12
+            }
+          },
+          {
+            "name": "logLimit",
+            "in": "query",
+            "required": false,
+            "description": "Maximo de logs resumidos.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Contexto compacto listo para GPT.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/characters/{characterId}/state": {
+      "get": {
+        "operationId": "getCharacterState",
+        "summary": "Obtiene estado mecanico directo de un personaje.",
+        "description": "Devuelve HP, MP, hambre, energia, dinero, inventario, equipo, skills, condiciones y acumuladores biologicos sin reconstruir desde logs.",
+        "parameters": [
+          {
+            "name": "characterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "gameId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "isekai_lucas_main"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado directo del personaje.",
             "content": {
               "application/json": {
                 "schema": {
