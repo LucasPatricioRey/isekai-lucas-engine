@@ -32,7 +32,7 @@ function isExpiredAt(entity, currentDay, currentTime) {
   if (entity.expiresDay < currentDay) return true;
   if (entity.expiresDay > currentDay) return false;
   if (!entity.expiresTime) return false;
-  return timeToMinutes(currentTime) > timeToMinutes(entity.expiresTime);
+  return timeToMinutes(currentTime) >= timeToMinutes(entity.expiresTime);
 }
 
 function isWeatherStale(weather, currentDay, currentTime) {

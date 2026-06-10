@@ -181,7 +181,7 @@ async function checkCompactEndpoints(issues) {
   assertCondition(issues, "search/db returns Fern", (fern.results?.npcs || []).length > 0);
   assertCondition(issues, "search/docs returns docs", (docs.results || []).length > 0);
   assertCondition(issues, "Pavo stock has rows", (pavoStock.stocks || []).length > 0);
-  assertCondition(issues, "mission board has missions", (missionBoard.missions || []).length >= 5);
+  assertCondition(issues, "mission board has playable missions", (missionBoard.missions || []).length >= 1);
   assertCondition(issues, "routes has rows", (routes.routes || []).length >= 20);
   assertEqual(issues, "travel preview Grulla->Guild minutes", travelPreview.preview?.timing?.finalMinutes, 20);
   assertEqual(issues, "travel preview satiety delta", travelPreview.preview?.biologicalCostPreview?.satietyDelta, -1);

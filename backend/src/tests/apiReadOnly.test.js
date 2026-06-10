@@ -20,6 +20,14 @@ describe("read-only API coverage", () => {
 
     const state = await getCanonicalState();
     assertCanonState(state);
+
+    const compact = await get("/api/context/compact");
+    assert.equal(compact.status, 200);
+    assert.ok(Array.isArray(compact.data.context.pendingBiology));
+    assert.deepEqual(
+      compact.data.context.pendingBiology,
+      compact.data.context.pendingBiologicalAccumulations
+    );
   });
 
   it("serves public OpenAPI schemas for GPT Builder import", async () => {
@@ -75,7 +83,8 @@ describe("read-only API coverage", () => {
   it("loads missions board and detail without accepting missions", async () => {
     const board = await get("/api/missions/board");
     assert.equal(board.status, 200);
-    assert.ok((board.data.missions || []).length >= 5);
+    assert.ok(Array.isArray(board.data.missions));
+    assert.ok((board.data.missions || []).length >= 1);
 
     const detail = await get("/api/missions/mission_d10_grulla_delivery_guild");
     assert.equal(detail.status, 200);

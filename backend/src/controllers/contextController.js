@@ -271,6 +271,7 @@ async function getFullContext(req, res) {
         socialRelationships,
         routineOverrides,
         activeCombatEncounters,
+        pendingBiology: pendingBiologicalAccumulations,
         pendingBiologicalAccumulations,
         recentEventLogs: includeMechanicalChanges
           ? recentEventLogs
@@ -637,6 +638,7 @@ async function getCompactContext(req, res) {
         activeRumors: activeRumors.map(responseShaping.summarizeRumor),
         activeMissions: activeMissionSummaries,
         availableMissionPreview,
+        pendingBiology: pendingBiologicalAccumulations,
         pendingBiologicalAccumulations,
         weather: weatherSummary,
         jobContract: responseShaping.summarizeJobContract(jobContract),

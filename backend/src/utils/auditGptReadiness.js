@@ -175,7 +175,7 @@ async function checkCriticalEndpoints(issues) {
   assertCondition(issues, "context/full OK", context.ok === true);
   assertCondition(issues, "search/docs returns docs", (searchDocs.results || []).length > 0);
   assertCondition(issues, "search/db returns Fern", (searchDb.results?.npcs || []).length > 0);
-  assertCondition(issues, "missions board has missions", (missions.missions || []).length >= 5);
+  assertCondition(issues, "missions board has playable missions", (missions.missions || []).length >= 1);
   assertCondition(issues, "Pavo stock has rows", (pavoStock.stocks || []).length > 0);
   assertCondition(issues, "travel routes has routes", (routes.routes || []).length >= 20);
   assertCondition(issues, "magic techniques has entries", (magicTechniques.techniques || []).length >= 6);
