@@ -166,6 +166,7 @@ const biologicalPendingAccumulationSchema = new mongoose.Schema(
     gameId: {
       type: String,
       required: true,
+      default: "isekai_lucas_main",
       index: true,
     },
     characterId: {
@@ -227,6 +228,14 @@ const biologicalPendingAccumulationSchema = new mongoose.Schema(
       default: null,
     },
     processedTime: {
+      type: String,
+      default: "",
+    },
+    processedMode: {
+      type: String,
+      default: "",
+    },
+    processedReason: {
       type: String,
       default: "",
     },

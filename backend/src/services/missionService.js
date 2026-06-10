@@ -204,29 +204,40 @@ async function submitMissionReport({
   return mission.toObject();
 }
 
-async function expireAvailableMissions({ gameId = "isekai_lucas_main" }) {
-  const gameState = await GameState.findOne({ gameId }).lean();
+async function expireAvailableMissionsForGameState(
+  gameState,
+  {
+    session = null,
+    reason = "expired_by_current_time",
+  } = {}
+) {
+  const query = { status: "available" };
 
-  if (!gameState) {
-    const error = new Error(`No existe GameState para gameId: ${gameId}`);
-    error.statusCode = 404;
-    throw error;
+  if (gameState.gameId && gameState.gameId !== "isekai_lucas_main") {
+    query["flags.testSuite"] = true;
   }
 
-  const available = await Mission.find({ status: "available" }).exec();
+  const available = await Mission.find(query).session(session).exec();
   const expired = [];
 
   for (const mission of available) {
     if (!isMissionExpired(mission, gameState)) continue;
 
     mission.status = "expired";
-    await mission.save();
+    mission.flags = {
+      ...(mission.flags || {}),
+      expiredAtDay: gameState.currentDay,
+      expiredAtTime: gameState.time,
+      expireReason: reason,
+    };
+    await mission.save({ session });
 
     expired.push({
       missionId: mission.missionId,
       title: mission.title,
       expiresDay: mission.expiresDay,
       expiresTime: mission.expiresTime,
+      status: mission.status,
     });
   }
 
@@ -238,10 +249,24 @@ async function expireAvailableMissions({ gameId = "isekai_lucas_main" }) {
   };
 }
 
+async function expireAvailableMissions({ gameId = "isekai_lucas_main" }) {
+  const gameState = await GameState.findOne({ gameId }).lean();
+
+  if (!gameState) {
+    const error = new Error(`No existe GameState para gameId: ${gameId}`);
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return expireAvailableMissionsForGameState(gameState);
+}
+
 module.exports = {
   getMissionBoard,
   getMissionDetail,
   acceptMission,
   submitMissionReport,
   expireAvailableMissions,
+  expireAvailableMissionsForGameState,
+  isMissionExpired,
 };

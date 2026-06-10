@@ -296,7 +296,14 @@ describe("daily event scheduler", () => {
       affectedLocationIds: ["loc_hoshimori_grulla_azul"],
       affectedNpcIds: [tempSocialNpcId],
       affectedFactionIds: [],
-      effects: [],
+      effects: [
+        {
+          type: "daily_event_rolls",
+          target: "scheduler",
+          value: { blockRoll: 1, importanceRoll: 3, durationRoll: 1 },
+          reason: "Fixture previo que debe conservarse al resolver el evento.",
+        },
+      ],
       visibility: "hidden",
       cause: "Fixture de test.",
       severity: "minor",
@@ -343,6 +350,8 @@ describe("daily event scheduler", () => {
     assert.ok(resolved.tags.includes("event_resolved"));
     assert.ok(resolved.tags.includes("test_resolution"));
     assert.ok(resolved.tags.includes("social_consequence_resolved"));
+    assert.ok(resolved.effects.some((effect) => effect.type === "daily_event_rolls"));
+    assert.ok(resolved.effects.some((effect) => effect.type === "social_consequence_applied"));
 
     const gameState = await GameState.findOne({ gameId: tempGameId }).lean();
     assert.equal((gameState.activeEventIds || []).includes(eventId), false);

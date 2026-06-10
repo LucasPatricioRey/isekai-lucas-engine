@@ -46,7 +46,8 @@
     "ensure:daily-event": "node src/utils/ensureDailyEvent.js",
     "repair:canon-phase3": "node src/utils/repairCanonStatePhase3.js",
     "repair:daily-events": "node src/utils/repairDailyEventIntegrity.js",
-    "repair:live-start-readiness": "node src/utils/repairLiveStartReadiness.js"
+    "repair:live-start-readiness": "node src/utils/repairLiveStartReadiness.js",
+    "repair:live-continuity-bugs": "node src/utils/repairLiveContinuityBugs.js"
   },
   "keywords": [],
   "author": "",

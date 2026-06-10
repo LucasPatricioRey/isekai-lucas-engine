@@ -9,6 +9,7 @@ const {
   getSatietyLabel,
   previewBiologicalClockBlock,
 } = require("./biologicalClockService");
+const { expireAvailableMissionsForGameState } = require("./missionService");
 
 function timeToMinutes(time) {
   const [hours, minutes] = String(time || "00:00").split(":").map(Number);
@@ -35,6 +36,10 @@ function getBlockFromTime(time) {
 function getHourBlockForTime(time) {
   const blockStart = Math.floor(timeToMinutes(time) / 60) * 60;
   return `${minutesToTime(blockStart)}-${minutesToTime(blockStart + 60)}`;
+}
+
+function toAbsoluteMinutes(day, time) {
+  return (Number(day || 1) - 1) * 1440 + timeToMinutes(time);
 }
 
 function clamp(value, min, max) {
@@ -442,6 +447,76 @@ function applyShiftActivityCost(gameState, shift) {
   };
 }
 
+function isPendingAccumulation(entry) {
+  return entry && entry.status !== "processed" && !entry.processedAt;
+}
+
+function normalizePendingAccumulationIdentities(gameState) {
+  const pending = gameState.biologicalClock?.pendingAccumulations || [];
+  let changed = false;
+
+  for (const entry of pending) {
+    if (!entry) continue;
+    if (!entry.gameId) {
+      entry.gameId = gameState.gameId || "isekai_lucas_main";
+      changed = true;
+    }
+    if (!entry.characterId) {
+      entry.characterId = gameState.characterId || "char_lucas";
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
+function markPendingAccumulationsCoveredByShift(gameState, shift) {
+  if (!gameState.biologicalClock) gameState.biologicalClock = {};
+  if (!Array.isArray(gameState.biologicalClock.pendingAccumulations)) {
+    gameState.biologicalClock.pendingAccumulations = [];
+  }
+  const normalizedLegacyIdentities = normalizePendingAccumulationIdentities(gameState);
+
+  const currentDay = gameState.currentDay;
+  const shiftStartAbs = toAbsoluteMinutes(currentDay, shift.startTime);
+  const shiftEndAbs = toAbsoluteMinutes(currentDay, shift.endTime);
+  const covered = [];
+
+  for (const entry of gameState.biologicalClock.pendingAccumulations) {
+    if (!isPendingAccumulation(entry)) continue;
+    if (entry.day !== currentDay) continue;
+
+    const blockStartAbs = toAbsoluteMinutes(entry.day, entry.blockStart);
+    const blockEndAbs = toAbsoluteMinutes(entry.day, entry.blockEnd);
+    const overlapsShift = blockStartAbs < shiftEndAbs && blockEndAbs > shiftStartAbs;
+
+    if (!overlapsShift) continue;
+
+    entry.status = "processed";
+    entry.processedAt = new Date();
+    entry.processedDay = currentDay;
+    entry.processedTime = shift.endTime;
+    entry.processedMode = "covered_by_complete_job_shift";
+    entry.processedReason = `Cubierto por completeJobShift ${shift.shiftId}; el coste del turno ya fue aplicado de forma agregada.`;
+
+    covered.push({
+      accumulationId: entry.accumulationId,
+      day: entry.day,
+      blockStart: entry.blockStart,
+      blockEnd: entry.blockEnd,
+      category: entry.category,
+      minutes: entry.minutes,
+      processedMode: entry.processedMode,
+    });
+  }
+
+  if (normalizedLegacyIdentities && covered.length === 0) {
+    gameState.markModified("biologicalClock");
+  }
+
+  return covered;
+}
+
 async function completeShift({
   shiftId,
   gameId = "isekai_lucas_main",
@@ -607,11 +682,16 @@ async function completeShift({
       }
 
       const activityCost = applyShiftActivityCost(gameState, shift);
+      const coveredPendingAccumulations = markPendingAccumulationsCoveredByShift(gameState, shift);
       const beforeMoney = gameState.moneyCopper;
       const payCopper = shift.payCopper || 0;
       gameState.moneyCopper += payCopper;
       gameState.time = shift.endTime;
       gameState.block = getBlockFromTime(shift.endTime);
+      const missionExpiry = await expireAvailableMissionsForGameState(gameState, {
+        session,
+        reason: "expired_during_complete_job_shift",
+      });
 
       shiftLedger[shift.shiftId] = {
         shiftId: shift.shiftId,
@@ -673,6 +753,10 @@ async function completeShift({
                 details: mealChanges,
               },
               activityCost,
+              biologicalClock: {
+                coveredPendingAccumulations,
+              },
+              missionExpiry,
             },
             visibility: "hidden",
             source: "backend_validation",
@@ -709,6 +793,10 @@ async function completeShift({
             details: mealChanges,
           },
           activityCost,
+          biologicalClock: {
+            coveredPendingAccumulations,
+          },
+          missionExpiry,
           ledger: shiftLedger[shift.shiftId],
           eventLogId: log[0].logId,
         },

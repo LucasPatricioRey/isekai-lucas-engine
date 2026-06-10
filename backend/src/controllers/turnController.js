@@ -14,6 +14,7 @@ const { syncNpcRoutines } = require("../services/routineService");
 const { calculateActivityCost, normalizeCategory } = require("../services/biologicalClockService");
 const { reconcileDailyEventsForGameState } = require("../services/dailyEventSchedulerService");
 const { buildWorldEventSocialConsequencePlan } = require("../services/dailyEventSocialService");
+const { expireAvailableMissionsForGameState } = require("../services/missionService");
 const { previewSkillProgression } = require("../services/skillProgressionService");
 const { ensureCurrentWeatherForGameState } = require("../services/weatherService");
 const {
@@ -131,6 +132,165 @@ function toPlain(value) {
   if (!value) return value;
   if (typeof value.toObject === "function") return value.toObject();
   return JSON.parse(JSON.stringify(value));
+}
+
+async function getContextualLocationIds(locationId, session = null) {
+  const currentLocation = await Location.findOne({ locationId }).session(session).lean();
+  if (!currentLocation) return new Set([locationId]);
+
+  const parentLocation = currentLocation.parentLocationId
+    ? await Location.findOne({ locationId: currentLocation.parentLocationId }).session(session).lean()
+    : null;
+
+  const siblingLocationIds = currentLocation.parentLocationId
+    ? await Location.find({ parentLocationId: currentLocation.parentLocationId })
+        .select("locationId")
+        .session(session)
+        .lean()
+    : [];
+
+  const childLocationIds = await Location.find({ parentLocationId: locationId })
+    .select("locationId")
+    .session(session)
+    .lean();
+
+  return new Set(unique([
+    locationId,
+    currentLocation.parentLocationId,
+    parentLocation?.parentLocationId,
+    ...siblingLocationIds.map((location) => location.locationId),
+    ...childLocationIds.map((location) => location.locationId),
+  ]));
+}
+
+async function validateNpcRelationshipPatchContext({ gameState, npc, patch, session = null }) {
+  const gameId = gameState.gameId || "isekai_lucas_main";
+
+  if (patch.sourceEventId) {
+    const event = await WorldEvent.findOne({
+      eventId: patch.sourceEventId,
+      gameId,
+    })
+      .session(session)
+      .lean();
+
+    if (!event) {
+      throw validationError("npcRelationshipPatch.sourceEventId no existe para este gameId.", {
+        npcId: patch.npcId,
+        sourceEventId: patch.sourceEventId,
+        gameId,
+      });
+    }
+
+    if (!(event.affectedNpcIds || []).includes(patch.npcId)) {
+      throw validationError("npcRelationshipPatch.sourceEventId no afecta al NPC indicado.", {
+        npcId: patch.npcId,
+        sourceEventId: patch.sourceEventId,
+        affectedNpcIds: event.affectedNpcIds || [],
+      });
+    }
+
+    return {
+      type: "sourceEventId",
+      sourceEventId: patch.sourceEventId,
+    };
+  }
+
+  if (patch.sourceEventLogId) {
+    const eventLog = await EventLog.findOne({
+      logId: patch.sourceEventLogId,
+      gameId,
+    })
+      .session(session)
+      .lean();
+
+    if (!eventLog) {
+      throw validationError("npcRelationshipPatch.sourceEventLogId no existe para este gameId.", {
+        npcId: patch.npcId,
+        sourceEventLogId: patch.sourceEventLogId,
+        gameId,
+      });
+    }
+
+    if (!(eventLog.involvedNpcIds || []).includes(patch.npcId)) {
+      throw validationError("npcRelationshipPatch.sourceEventLogId no involucra al NPC indicado.", {
+        npcId: patch.npcId,
+        sourceEventLogId: patch.sourceEventLogId,
+        involvedNpcIds: eventLog.involvedNpcIds || [],
+      });
+    }
+
+    return {
+      type: "sourceEventLogId",
+      sourceEventLogId: patch.sourceEventLogId,
+    };
+  }
+
+  if (patch.sourceMissionId) {
+    const mission = await Mission.findOne({ missionId: patch.sourceMissionId }).session(session).lean();
+
+    if (!mission) {
+      throw validationError("npcRelationshipPatch.sourceMissionId no existe.", {
+        npcId: patch.npcId,
+        sourceMissionId: patch.sourceMissionId,
+      });
+    }
+
+    if (mission.clientNpcId !== patch.npcId) {
+      throw validationError("npcRelationshipPatch.sourceMissionId no corresponde al NPC indicado.", {
+        npcId: patch.npcId,
+        sourceMissionId: patch.sourceMissionId,
+        clientNpcId: mission.clientNpcId,
+      });
+    }
+
+    return {
+      type: "sourceMissionId",
+      sourceMissionId: patch.sourceMissionId,
+    };
+  }
+
+  const contextualLocationIds = await getContextualLocationIds(gameState.locationId, session);
+
+  if (npc.currentLocationId && contextualLocationIds.has(npc.currentLocationId)) {
+    return {
+      type: npc.currentLocationId === gameState.locationId ? "sameRoom" : "locationScope",
+      locationId: npc.currentLocationId,
+    };
+  }
+
+  throw validationError(
+    "npcRelationshipPatch requiere NPC presente/cercano o una fuente valida (sourceEventId, sourceEventLogId o sourceMissionId).",
+    {
+      npcId: patch.npcId,
+      npcCurrentLocationId: npc.currentLocationId || "",
+      currentLocationId: gameState.locationId,
+      allowedLocationIds: Array.from(contextualLocationIds),
+    }
+  );
+}
+
+function normalizePendingAccumulationIdentities(gameState) {
+  const pending = gameState.biologicalClock?.pendingAccumulations || [];
+  let changed = false;
+
+  for (const entry of pending) {
+    if (!entry) continue;
+    if (!entry.gameId) {
+      entry.gameId = gameState.gameId || "isekai_lucas_main";
+      changed = true;
+    }
+    if (!entry.characterId) {
+      entry.characterId = gameState.characterId || "char_lucas";
+      changed = true;
+    }
+  }
+
+  if (changed && typeof gameState.markModified === "function") {
+    gameState.markModified("biologicalClock");
+  }
+
+  return changed;
 }
 
 function getStatusLabel(statKey, current) {
@@ -367,6 +527,13 @@ async function applyNpcRelationshipPatches(gameState, patches, session = null) {
       throw validationError(`No existe NPC persistente con id: ${patch.npcId}`);
     }
 
+    const validationContext = await validateNpcRelationshipPatchContext({
+      gameState,
+      npc,
+      patch,
+      session,
+    });
+
     const relationship = npc.relationshipWithLucas;
     const before = normalizeRelationship(toPlain(relationship));
     const requestedDeltas = {};
@@ -449,6 +616,7 @@ async function applyNpcRelationshipPatches(gameState, patches, session = null) {
       ledgerId: ledgerEntry?.ledgerId || "",
       skippedByDailyCap: hasNonZeroDelta(capped.requestedDeltas) && !hasNonZeroDelta(capped.appliedDeltas),
       reason: patch.reason || "",
+      validationContext,
     });
   }
 
@@ -565,6 +733,9 @@ async function applyWorldEventPatches(gameState, patches, session = null) {
     }
 
     const eventId = patch.eventId || createId("event");
+    const baseEffects = Array.isArray(existingEvent?.effects) ? existingEvent.effects : [];
+    const patchEffects = Array.isArray(patch.effects) ? patch.effects : [];
+    const eventEffects = existingEvent ? [...baseEffects, ...patchEffects] : patchEffects;
 
     const eventPayload = {
       eventId,
@@ -580,7 +751,7 @@ async function applyWorldEventPatches(gameState, patches, session = null) {
       affectedLocationIds: patch.affectedLocationIds || existingEvent?.affectedLocationIds || [gameState.locationId],
       affectedNpcIds: patch.affectedNpcIds || existingEvent?.affectedNpcIds || [],
       affectedFactionIds: patch.affectedFactionIds || existingEvent?.affectedFactionIds || [],
-      effects: patch.effects || existingEvent?.effects || [],
+      effects: eventEffects,
       visibility: patch.visibility || existingEvent?.visibility || "local",
       cause: patch.cause || existingEvent?.cause || "",
       severity: patch.severity || existingEvent?.severity || "minor",
@@ -2024,6 +2195,14 @@ async function applyTurn(req, res) {
         if (missionChanges.length > 0) changes.missions = missionChanges;
       }
 
+      const missionExpiry = await expireAvailableMissionsForGameState(gameState, {
+        session,
+        reason: "expired_during_apply_turn",
+      });
+      if (missionExpiry.expiredCount > 0) {
+        changes.missionExpiry = missionExpiry;
+      }
+
       const dailyEventChanges = await reconcileDailyEventsForGameState(gameState, { session });
       if (dailyEventChanges.changed) {
         changes.dailyEvents = dailyEventChanges;
@@ -2116,6 +2295,7 @@ async function applyTurn(req, res) {
       }
 
       await validateEventLogsForInsert(logsToCreate, session);
+      normalizePendingAccumulationIdentities(gameState);
       await gameState.save({ session });
 
       if (changes.time && gameId === "isekai_lucas_main") {

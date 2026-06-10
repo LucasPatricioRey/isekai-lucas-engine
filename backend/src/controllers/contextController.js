@@ -48,6 +48,10 @@ function timeToMinutes(time) {
   return hours * 60 + minutes;
 }
 
+function toAbsoluteMinutes(day, time) {
+  return (Number(day || 1) - 1) * 1440 + timeToMinutes(time);
+}
+
 function minutesToTime(totalMinutes) {
   const normalized = ((totalMinutes % 1440) + 1440) % 1440;
   const hours = Math.floor(normalized / 60);
@@ -75,6 +79,18 @@ function getRelevantPendingAccumulations(gameState) {
       entry.blockStart === currentBlock.blockStart &&
       entry.blockEnd === currentBlock.blockEnd
   );
+}
+
+function getStalePendingAccumulations(gameState) {
+  const pending = gameState.biologicalClock?.pendingAccumulations || [];
+  const now = toAbsoluteMinutes(gameState.currentDay, gameState.time);
+
+  return pending.filter((entry) => {
+    if (!entry || entry.status === "processed" || entry.processedAt) return false;
+    if (!entry.day || !entry.blockEnd) return false;
+
+    return toAbsoluteMinutes(entry.day, entry.blockEnd) < now;
+  });
 }
 
 async function getFullContext(req, res) {
@@ -334,6 +350,7 @@ async function getCompactContext(req, res) {
     const activeEventIds = gameState.activeEventIds || [];
     const activeMissionIds = gameState.activeMissionIds || [];
     const pendingBiologicalAccumulations = getRelevantPendingAccumulations(gameState);
+    const stalePendingBiologicalAccumulations = getStalePendingAccumulations(gameState);
 
     const [lucas, currentLocation] = await Promise.all([
       Character.findOne({ characterId: gameState.characterId }).lean(),
@@ -661,6 +678,16 @@ async function getCompactContext(req, res) {
         severity: "info",
         message: "Hay acumuladores biologicos pendientes para el bloque horario actual.",
         count: pendingBiologicalAccumulations.length,
+      });
+    }
+
+    if (stalePendingBiologicalAccumulations.length > 0) {
+      alerts.push({
+        type: "stale_pending_biology",
+        severity: "warning",
+        message: "Hay acumuladores biologicos pendientes de bloques anteriores; requieren reparacion o cierre tecnico para evitar doble conteo.",
+        count: stalePendingBiologicalAccumulations.length,
+        accumulationIds: stalePendingBiologicalAccumulations.map((entry) => entry.accumulationId).filter(Boolean),
       });
     }
 

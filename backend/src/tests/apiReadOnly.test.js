@@ -91,7 +91,6 @@ describe("read-only API coverage", () => {
     const board = await get("/api/missions/board");
     assert.equal(board.status, 200);
     assert.ok(Array.isArray(board.data.missions));
-    assert.ok((board.data.missions || []).length >= 1);
 
     const detail = await get("/api/missions/mission_d10_grulla_delivery_guild");
     assert.equal(detail.status, 200);

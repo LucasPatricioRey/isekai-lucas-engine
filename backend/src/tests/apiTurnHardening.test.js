@@ -27,6 +27,7 @@ let tempExpiredMissionId = "";
 let tempGuildMissionId = "";
 let tempJobContractId = "";
 let tempNpcId = "";
+let tempRemoteNpcId = "";
 let tempWeatherRegionId = "";
 
 async function createIsolatedGameState() {
@@ -36,6 +37,7 @@ async function createIsolatedGameState() {
   tempGuildMissionId = `mission_test_turn_hardening_cobre_${Date.now()}`;
   tempJobContractId = `contract_test_turn_hardening_${Date.now()}`;
   tempNpcId = `npc_test_relationship_${Date.now()}`;
+  tempRemoteNpcId = `npc_test_relationship_remote_${Date.now()}`;
   tempWeatherRegionId = `region_test_turn_hardening_${Date.now()}`;
 
   const base = await GameState.findOne({ gameId: "isekai_lucas_main" }).lean();
@@ -179,14 +181,35 @@ async function createIsolatedGameState() {
     npcId: tempNpcId,
     name: "NPC Test Relacion",
     role: "fixture social",
+    currentLocationId: "loc_hoshimori_grulla_azul_comedor",
     relationshipWithLucas: {
       trust: 10,
+      familiarity: 0,
       affection: 0,
       suspicion: 0,
       respect: 5,
       fear: 0,
       jealousy: 0,
+      socialDebt: 0,
       notes: "Fixture temporal de pruebas.",
+    },
+  });
+
+  await Npc.create({
+    npcId: tempRemoteNpcId,
+    name: "NPC Test Relacion Remota",
+    role: "fixture social remoto",
+    currentLocationId: "loc_hoshimori_market",
+    relationshipWithLucas: {
+      trust: 10,
+      familiarity: 0,
+      affection: 0,
+      suspicion: 0,
+      respect: 5,
+      fear: 0,
+      jealousy: 0,
+      socialDebt: 0,
+      notes: "Fixture temporal remota de pruebas.",
     },
   });
 }
@@ -200,6 +223,8 @@ async function cleanupIsolatedState() {
   if (tempJobContractId) await JobContract.deleteOne({ contractId: tempJobContractId });
   if (tempNpcId) await Npc.deleteOne({ npcId: tempNpcId });
   if (tempNpcId) await NpcSocialLedger.deleteMany({ npcId: tempNpcId });
+  if (tempRemoteNpcId) await Npc.deleteOne({ npcId: tempRemoteNpcId });
+  if (tempRemoteNpcId) await NpcSocialLedger.deleteMany({ npcId: tempRemoteNpcId });
   if (tempWeatherRegionId) await WeatherState.deleteMany({ regionId: tempWeatherRegionId });
   await EventLog.deleteMany({
     $or: [
@@ -356,7 +381,21 @@ describe("turn hardening coverage", () => {
             lastProcessedTime: "07:00",
             currentHourBlock: "07:00-08:00",
             pendingAccumulation: [],
-            pendingAccumulations: [],
+            pendingAccumulations: [
+              {
+                accumulationId: "bioacc_test_shift_overlap",
+                gameId: tempGameId,
+                characterId: "char_lucas",
+                day: 10,
+                blockStart: "07:00",
+                blockEnd: "08:00",
+                category: "actividad_normal",
+                minutes: 5,
+                reason: "Fixture de acumulador pendiente cubierto por turno completo.",
+                source: "test",
+                status: "pending",
+              },
+            ],
           },
         },
       }
@@ -379,11 +418,24 @@ describe("turn hardening coverage", () => {
     assert.equal(completed.data.result.after.time, "12:00");
     assert.equal(completed.data.result.after.satiety, 51);
     assert.equal(completed.data.result.after.energy, 70);
+    assert.deepEqual(
+      completed.data.result.changes.biologicalClock.coveredPendingAccumulations.map((entry) => entry.accumulationId),
+      ["bioacc_test_shift_overlap"]
+    );
+    assert.equal(completed.data.result.changes.missionExpiry.expiredCount, 1);
+    assert.equal(completed.data.result.changes.missionExpiry.expired[0].missionId, tempExpiredMissionId);
 
     const stateAfterComplete = await GameState.findOne({ gameId: tempGameId }).lean();
     assert.equal(stateAfterComplete.moneyCopper, 170);
     assert.equal(stateAfterComplete.lucasStatus.satiety.current, 51);
     assert.equal(stateAfterComplete.lucasStatus.energy.current, 70);
+    const coveredAccumulation = stateAfterComplete.biologicalClock.pendingAccumulations.find(
+      (entry) => entry.accumulationId === "bioacc_test_shift_overlap"
+    );
+    assert.equal(coveredAccumulation.status, "processed");
+    assert.equal(coveredAccumulation.processedMode, "covered_by_complete_job_shift");
+    const expiredMission = await Mission.findOne({ missionId: tempExpiredMissionId }).lean();
+    assert.equal(expiredMission.status, "expired");
 
     const repeated = await post("/api/jobs/shifts/shift_test_morning_0700_1200/complete", {
       gameId: tempGameId,
@@ -751,6 +803,81 @@ describe("turn hardening coverage", () => {
       cappedRelationship.data.changes.npcRelationships[0].caps.fields.trust.reason,
       "daily_cap_trust"
     );
+  });
+
+  it("blocks remote npc relationship patches unless a valid source links the npc", async () => {
+    const remoteBefore = await Npc.findOne({ npcId: tempRemoteNpcId }).lean();
+    assert.equal(remoteBefore.relationshipWithLucas.trust, 10);
+
+    const blocked = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Intento invalido de test: cambio social remoto sin fuente.",
+      npcRelationshipPatches: [
+        {
+          npcId: tempRemoteNpcId,
+          trustDelta: 1,
+          reason: "El NPC no esta presente ni vinculado por fuente.",
+          actionType: "test_remote_invalid",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+    });
+    assert.equal(blocked.status, 400);
+    assert.match(blocked.data.error, /NPC presente\/cercano o una fuente valida/);
+
+    const remoteAfterBlocked = await Npc.findOne({ npcId: tempRemoteNpcId }).lean();
+    assert.equal(remoteAfterBlocked.relationshipWithLucas.trust, 10);
+
+    const sourceEventId = `event_${tempGameId}_remote_social_source`;
+    await WorldEvent.create({
+      eventId: sourceEventId,
+      gameId: tempGameId,
+      title: "Fixture de fuente social remota",
+      type: "test_event",
+      scope: "local",
+      status: "active",
+      startDay: 10,
+      startTime: "12:00",
+      endDay: 10,
+      endTime: "18:00",
+      affectedLocationIds: ["loc_hoshimori_market"],
+      affectedNpcIds: [tempRemoteNpcId],
+      affectedFactionIds: [],
+      effects: [],
+      visibility: "hidden",
+      cause: "Fixture de test.",
+      severity: "minor",
+      createdBy: "system",
+      tags: ["test_turn_hardening"],
+    });
+
+    const sourced = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: cambio social remoto con evento fuente valido.",
+      npcRelationshipPatches: [
+        {
+          npcId: tempRemoteNpcId,
+          trustDelta: 1,
+          reason: "Evento fuente valido vincula al NPC remoto.",
+          actionType: "test_remote_valid",
+          sourceEventId,
+          tags: ["test_turn_hardening"],
+        },
+      ],
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de fuente social remota.",
+          visibility: "hidden",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+    });
+    assert.equal(sourced.status, 200);
+    assert.equal(sourced.data.ok, true);
+    assert.equal(sourced.data.changes.npcRelationships[0].npcId, tempRemoteNpcId);
+    assert.equal(sourced.data.changes.npcRelationships[0].after.trust, 11);
+    assert.equal(sourced.data.changes.npcRelationships[0].validationContext.type, "sourceEventId");
   });
 
   it("previews travel biology and applies validated turn mutations atomically", async () => {
