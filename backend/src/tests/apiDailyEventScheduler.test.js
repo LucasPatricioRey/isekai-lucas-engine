@@ -1,7 +1,10 @@
 const { after, before, describe, it } = require("node:test");
 
 const EventLog = require("../models/EventLog");
+const Faction = require("../models/Faction");
 const GameState = require("../models/GameState");
+const Location = require("../models/Location");
+const Npc = require("../models/Npc");
 const WorldEvent = require("../models/WorldEvent");
 const {
   assert,
@@ -10,7 +13,11 @@ const {
   startApi,
   stopApi,
 } = require("./apiTestClient");
-const { buildDailyEventPayload } = require("../services/dailyEventSchedulerService");
+const {
+  buildDailyEventPayload,
+  IMPORTANT_TEMPLATES,
+  MINOR_TEMPLATES,
+} = require("../services/dailyEventSchedulerService");
 
 let tempGameId = "";
 
@@ -90,6 +97,27 @@ describe("daily event scheduler", () => {
     assert.ok(payload.tags.includes("requires_player_resolution"));
     assert.equal(payload.effects[0].value.block, "Tarde");
     assert.equal(payload.effects[0].value.durationDays, 2);
+  });
+
+  it("daily event templates reference existing canon entities", async () => {
+    const templates = [...MINOR_TEMPLATES, ...IMPORTANT_TEMPLATES];
+    const npcIds = Array.from(new Set(templates.flatMap((template) => template.affectedNpcIds || [])));
+    const locationIds = Array.from(new Set(templates.flatMap((template) => template.affectedLocationIds || [])));
+    const factionIds = Array.from(new Set(templates.flatMap((template) => template.affectedFactionIds || [])));
+
+    const [npcs, locations, factions] = await Promise.all([
+      Npc.find({ npcId: { $in: npcIds } }).select("npcId").lean(),
+      Location.find({ locationId: { $in: locationIds } }).select("locationId").lean(),
+      Faction.find({ factionId: { $in: factionIds } }).select("factionId").lean(),
+    ]);
+
+    const existingNpcIds = new Set(npcs.map((npc) => npc.npcId));
+    const existingLocationIds = new Set(locations.map((location) => location.locationId));
+    const existingFactionIds = new Set(factions.map((faction) => faction.factionId));
+
+    assert.deepEqual(npcIds.filter((npcId) => !existingNpcIds.has(npcId)), []);
+    assert.deepEqual(locationIds.filter((locationId) => !existingLocationIds.has(locationId)), []);
+    assert.deepEqual(factionIds.filter((factionId) => !existingFactionIds.has(factionId)), []);
   });
 
   it("generates one daily event when morning begins and exposes it in compact context", async () => {
@@ -195,5 +223,85 @@ describe("daily event scheduler", () => {
     assert.ok(expired.tags.includes("expired_unresolved"));
     assert.ok(expired.tags.includes("consequence_pending"));
     assert.ok(expired.tags.includes("minor_consequence_pending"));
+  });
+
+  it("resolves an active world event patch and removes it from active event ids", async () => {
+    const eventId = `event_${tempGameId}_resolved_fixture`;
+
+    await WorldEvent.create({
+      eventId,
+      gameId: tempGameId,
+      title: "Fixture de evento resuelto",
+      type: "test_event",
+      scope: "local",
+      status: "active",
+      startDay: 12,
+      startTime: "06:00",
+      endDay: 13,
+      endTime: "06:00",
+      affectedLocationIds: ["loc_hoshimori_grulla_azul"],
+      affectedNpcIds: ["npc_fern"],
+      affectedFactionIds: [],
+      effects: [],
+      visibility: "hidden",
+      cause: "Fixture de test.",
+      severity: "minor",
+      createdBy: "world_tick",
+      tags: ["daily_event", "daily_event_day_12", "test_daily_event_scheduler"],
+    });
+
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      { $addToSet: { activeEventIds: eventId }, $set: { currentDay: 12, time: "07:00", block: "Mañana" } }
+    );
+
+    const applied = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: resolver evento diario.",
+      worldEventPatches: [
+        {
+          eventId,
+          status: "resolved",
+          tags: ["event_resolved", "test_resolution"],
+        },
+      ],
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de resolucion de evento diario.",
+          visibility: "hidden",
+          tags: ["test_daily_event_scheduler", "event_resolved"],
+        },
+      ],
+    });
+
+    assert.equal(applied.status, 200);
+    assert.equal(applied.data.ok, true);
+    assert.equal(applied.data.changes.worldEvents[0].status, "resolved");
+
+    const resolved = await WorldEvent.findOne({ eventId }).lean();
+    assert.equal(resolved.status, "resolved");
+    assert.ok(resolved.tags.includes("event_resolved"));
+    assert.ok(resolved.tags.includes("test_resolution"));
+
+    const gameState = await GameState.findOne({ gameId: tempGameId }).lean();
+    assert.equal((gameState.activeEventIds || []).includes(eventId), false);
+  });
+
+  it("lists and reads world events through read-only endpoints", async () => {
+    const list = await get(`/api/world/events?gameId=${encodeURIComponent(tempGameId)}&tag=daily_event&limit=10`);
+
+    assert.equal(list.status, 200);
+    assert.equal(list.data.ok, true);
+    assert.ok(Array.isArray(list.data.events));
+    assert.ok(list.data.events.length > 0);
+
+    const eventId = list.data.events[0].eventId;
+    const detail = await get(`/api/world/events/${encodeURIComponent(eventId)}?gameId=${encodeURIComponent(tempGameId)}`);
+
+    assert.equal(detail.status, 200);
+    assert.equal(detail.data.ok, true);
+    assert.equal(detail.data.event.eventId, eventId);
+    assert.equal(detail.data.raw.eventId, eventId);
   });
 });

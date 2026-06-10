@@ -1,0 +1,363 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Isekai Lucas Engine GPT Actions Admin Extra Read-Only",
+    "version": "0.1.0",
+    "description": "Segundo bloque opcional de Actions para modo tecnico/debug. Solo lectura, sin applyTurn, sin checkpoints create/rollback, sin mutadores directos. Usa operationId con prefijo admin para evitar duplicados con el schema compacto."
+  },
+  "servers": [
+    {
+      "url": "https://isekai-lucas-engine.onrender.com"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key"
+      }
+    },
+    "schemas": {
+      "GenericResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "operationId": "adminGetHealth",
+        "summary": "Health check publico del backend.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Backend disponible.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Health check publico del backend. Usar solo en modo tecnico/debug; no muta estado."
+      }
+    },
+    "/api/world/events": {
+      "get": {
+        "operationId": "adminListWorldEvents",
+        "summary": "Lista eventos del mundo de forma read-only para auditoria tecnica.",
+        "description": "Permite revisar eventos activos, programados, resueltos o vencidos sin usar getFullContext. No muta estado. Usar solo en modo tecnico/debug; no muta estado.",
+        "parameters": [
+          {
+            "name": "gameId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "isekai_lucas_main"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Estado unico o lista separada por comas: scheduled,active,resolved,expired,consequences_applied,cancelled.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "description": "Tag unico o lista separada por comas; se filtra con $all.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "description": "Severidad unica o lista separada por comas: minor,moderate,major,critical.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "npcId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "locationId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Respuesta OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/world/events/{eventId}": {
+      "get": {
+        "operationId": "adminGetWorldEvent",
+        "summary": "Obtiene un evento del mundo por id de forma read-only.",
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "gameId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "isekai_lucas_main"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Respuesta OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Obtiene un evento del mundo por id de forma read-only. Usar solo en modo tecnico/debug; no muta estado."
+      }
+    },
+    "/api/checkpoints": {
+      "get": {
+        "operationId": "adminListCheckpoints",
+        "summary": "Lista checkpoints disponibles.",
+        "responses": {
+          "200": {
+            "description": "Checkpoints.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista checkpoints disponibles. Usar solo en modo tecnico/debug; no muta estado."
+      }
+    },
+    "/api/checkpoints/{checkpointId}": {
+      "get": {
+        "operationId": "adminGetCheckpoint",
+        "summary": "Obtiene checkpoint por id.",
+        "parameters": [
+          {
+            "name": "checkpointId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Checkpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Obtiene checkpoint por id. Usar solo en modo tecnico/debug; no muta estado."
+      }
+    },
+    "/api/combat/enemies": {
+      "get": {
+        "operationId": "adminListCombatEnemies",
+        "summary": "Lista templates de enemigos.",
+        "responses": {
+          "200": {
+            "description": "Enemigos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista templates de enemigos. Usar solo en modo tecnico/debug; no muta estado."
+      }
+    },
+    "/api/combat/enemies/{enemyId}": {
+      "get": {
+        "operationId": "adminGetCombatEnemy",
+        "summary": "Obtiene template de enemigo.",
+        "parameters": [
+          {
+            "name": "enemyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Enemigo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Obtiene template de enemigo. Usar solo en modo tecnico/debug; no muta estado."
+      }
+    },
+    "/api/economy/shops": {
+      "get": {
+        "operationId": "adminListShops",
+        "summary": "Lista shops vivos.",
+        "parameters": [
+          {
+            "name": "locationId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "regionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shops vivos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista shops vivos. Usar solo en modo tecnico/debug; no muta estado."
+      }
+    },
+    "/api/travel/routes/{routeId}": {
+      "get": {
+        "operationId": "adminGetTravelRoute",
+        "summary": "Obtiene una ruta de viaje.",
+        "parameters": [
+          {
+            "name": "routeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ruta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Obtiene una ruta de viaje. Usar solo en modo tecnico/debug; no muta estado."
+      }
+    },
+    "/api/magic/disciplines": {
+      "get": {
+        "operationId": "adminListMagicDisciplines",
+        "summary": "Lista disciplinas magicas.",
+        "responses": {
+          "200": {
+            "description": "Disciplinas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        },
+        "description": "Lista disciplinas magicas. Usar solo en modo tecnico/debug; no muta estado."
+      }
+    }
+  },
+  "x-action-role": "admin-extra-read-only",
+  "x-no-overlap-with": "openapi-gpt-action-compact.json"
+}

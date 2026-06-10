@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions",
-    "version": "0.23.0",
-    "description": "Schema normal para GPT Actions. Expone endpoints de lectura, busqueda, preview y mutacion central controlada. Incluye previewSocialImpact y applyTurn.npcRelationshipPatches para vinculos sociales. No expone rollback, admin ni mutadores peligrosos de combate/misiones. El backend genera eventos diarios con scheduler de manana y los expira con consecuencias pendientes."
+    "version": "0.24.0",
+    "description": "Schema normal para GPT Actions. Expone endpoints de lectura, busqueda, preview y mutacion central controlada. Incluye previewSocialImpact y applyTurn.npcRelationshipPatches para vinculos sociales. Incluye lectura read-only de WorldEvents para auditoria tecnica. No expone rollback, admin ni mutadores peligrosos de combate/misiones. El backend genera eventos diarios con scheduler de manana y los expira con consecuencias pendientes."
   },
   "servers": [
     {
@@ -1978,6 +1978,127 @@
         "responses": {
           "200": {
             "description": "Estado directo del personaje.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/world/events": {
+      "get": {
+        "operationId": "listWorldEvents",
+        "summary": "Lista eventos del mundo de forma read-only para auditoria tecnica.",
+        "description": "Permite revisar eventos activos, programados, resueltos o vencidos sin usar getFullContext. No muta estado.",
+        "parameters": [
+          {
+            "name": "gameId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "isekai_lucas_main"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Estado unico o lista separada por comas: scheduled,active,resolved,expired,consequences_applied,cancelled.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "description": "Tag unico o lista separada por comas; se filtra con $all.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "description": "Severidad unica o lista separada por comas: minor,moderate,major,critical.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "npcId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "locationId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Respuesta OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/world/events/{eventId}": {
+      "get": {
+        "operationId": "getWorldEvent",
+        "summary": "Obtiene un evento del mundo por id de forma read-only.",
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "gameId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "isekai_lucas_main"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Respuesta OK.",
             "content": {
               "application/json": {
                 "schema": {

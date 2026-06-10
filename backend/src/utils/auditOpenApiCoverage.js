@@ -28,6 +28,8 @@ const EXPECTED_INCLUDED = [
   ["GET", "/api/travel/routes"],
   ["GET", "/api/travel/routes/{routeId}"],
   ["POST", "/api/travel/preview"],
+  ["GET", "/api/world/events"],
+  ["GET", "/api/world/events/{eventId}"],
   ["POST", "/api/world/tick/preview"],
   ["GET", "/api/jobs/contracts/active"],
   ["GET", "/api/jobs/shifts/available"],

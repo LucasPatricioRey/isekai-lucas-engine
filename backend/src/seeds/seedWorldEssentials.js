@@ -254,6 +254,78 @@ async function seedWorldEssentials() {
         upsert: true,
       },
     },
+    {
+      updateOne: {
+        filter: { factionId: "faction_hoshimori_innkeepers" },
+        update: {
+          $set: {
+            factionId: "faction_hoshimori_innkeepers",
+            name: "Posaderos de Hoshimori",
+            type: "shop",
+            scope: "local",
+            regionIds: ["region_hoshimori"],
+            goals: ["hospitalidad estable", "clientes seguros", "suministros constantes"],
+            resources: ["posadas", "cocinas", "habitaciones", "contactos de viajeros"],
+            relationshipWithLucas: {
+              reputation: 10,
+              trust: 10,
+              suspicion: 0,
+              accessLevel: "basic",
+              notes: "Lucas es conocido principalmente por su trabajo en La Grulla Azul.",
+            },
+          },
+        },
+        upsert: true,
+      },
+    },
+    {
+      updateOne: {
+        filter: { factionId: "faction_hoshimori_merchants" },
+        update: {
+          $set: {
+            factionId: "faction_hoshimori_merchants",
+            name: "Comerciantes de Hoshimori",
+            type: "merchant",
+            scope: "local",
+            regionIds: ["region_hoshimori"],
+            goals: ["precios estables", "rutas abiertas", "stock suficiente"],
+            resources: ["puestos", "mercado", "red local de intercambio"],
+            relationshipWithLucas: {
+              reputation: 0,
+              trust: 0,
+              suspicion: 0,
+              accessLevel: "basic",
+              notes: "Lucas todavia no tiene reputacion comercial fuerte.",
+            },
+          },
+        },
+        upsert: true,
+      },
+    },
+    {
+      updateOne: {
+        filter: { factionId: "faction_hoshimori_guard" },
+        update: {
+          $set: {
+            factionId: "faction_hoshimori_guard",
+            name: "Guardia local de Hoshimori",
+            type: "guard",
+            scope: "local",
+            regionIds: ["region_hoshimori"],
+            goals: ["orden local", "rutas seguras", "respuesta ante amenazas"],
+            resources: ["puesto de guardia", "patrullas", "reportes de ruta"],
+            relationshipWithLucas: {
+              reputation: 0,
+              trust: 0,
+              suspicion: 0,
+              accessLevel: "basic",
+              notes: "Lucas todavia no tiene historial formal con la guardia.",
+            },
+          },
+        },
+        upsert: true,
+      },
+    },
   ]);
 
   await Shop.bulkWrite([

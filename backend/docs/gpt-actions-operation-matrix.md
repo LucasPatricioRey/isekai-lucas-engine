@@ -42,6 +42,8 @@ Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.j
 | previewTravel | `POST /api/travel/preview` | si | si | preview | gameplay |
 | applyTurn | `POST /api/turn/apply` | si | si | mutacion | gameplay |
 | previewWeatherEffects | `POST /api/weather/effects/preview` | si | si | preview | gameplay |
+| listWorldEvents | `GET /api/world/events` | si | no | lectura | admin/debug |
+| getWorldEvent | `GET /api/world/events/{eventId}` | si | no | lectura | admin/debug |
 | previewWorldTick | `POST /api/world/tick/preview` | si | si | preview | gameplay |
 
 Notas:
@@ -52,4 +54,4 @@ Notas:
 - Mutadores directos de misiones, combate, restock y rollback quedan fuera; misiones se gestionan por `applyTurn.missionPatch` y eventos por `applyTurn.worldEventPatches`.
 - `applyTurn` esta marcado como consequential para forzar confirmacion antes de mutar estado real.
 - `applyTurn.activityCost` no suma operaciones: acumula automaticamente actividades entre horas y procesa pendientes al llegar a `:00`.
-- El schema admin es solo lectura y no debe usarse para juego normal.
+- El schema `admin-extra` es solo lectura, usa `operationId` prefijados por `admin` y no debe usarse para juego normal.

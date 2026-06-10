@@ -22,6 +22,7 @@ const REQUIRED_FILES = [
   "world_bible.md",
   "coverage-map.md",
   "openapi-gpt-action.json",
+  "openapi-gpt-action-admin-extra.json",
   "gpt-builder-final-checklist.md",
   "gpt-playtest-script.md",
   "gpt-response-rubric.md",
@@ -121,6 +122,8 @@ function validateOpenApi(issues) {
   assertCondition(issues, "OpenAPI uses ApiKeyAuth", Boolean(openapi.components?.securitySchemes?.ApiKeyAuth));
   assertCondition(issues, "OpenAPI includes context", Boolean(paths["/api/context/full"]?.get));
   assertCondition(issues, "OpenAPI includes weather", Boolean(paths["/api/weather/current"]?.get));
+  assertCondition(issues, "OpenAPI includes world events list", Boolean(paths["/api/world/events"]?.get));
+  assertCondition(issues, "OpenAPI includes world event detail", Boolean(paths["/api/world/events/{eventId}"]?.get));
   assertCondition(issues, "OpenAPI includes world tick preview", Boolean(paths["/api/world/tick/preview"]?.post));
   assertCondition(issues, "OpenAPI excludes rollback path", !paths["/api/checkpoints/{checkpointId}/rollback"]);
   assertCondition(

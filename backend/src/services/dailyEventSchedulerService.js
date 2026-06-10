@@ -30,7 +30,7 @@ const MINOR_TEMPLATES = [
     type: "social_market",
     visibility: "local",
     affectedLocationIds: ["loc_hoshimori_market"],
-    affectedNpcIds: ["npc_pavo_miret", "npc_irma_solan"],
+    affectedNpcIds: ["npc_pavo", "npc_irma"],
     affectedFactionIds: ["faction_hoshimori_merchants"],
     cause: "Precios, barro residual o rumores de ruta tensan una conversación cotidiana.",
     consequence:
@@ -42,7 +42,7 @@ const MINOR_TEMPLATES = [
     type: "guild_notice",
     visibility: "public",
     affectedLocationIds: ["loc_hoshimori_guild"],
-    affectedNpcIds: ["npc_mara_quent"],
+    affectedNpcIds: ["npc_mara_vell"],
     affectedFactionIds: ["faction_hoshimori_guild"],
     cause: "El gremio reorganiza encargos simples y avisos para Porcelana/Cobre.",
     consequence:
@@ -53,7 +53,7 @@ const MINOR_TEMPLATES = [
     title: "Reporte menor sobre una ruta cercana",
     type: "travel_rumor",
     visibility: "local",
-    affectedLocationIds: ["loc_hoshimori_guild", "loc_hoshimori_mill_road"],
+    affectedLocationIds: ["loc_hoshimori_guild", "loc_hoshimori_road_to_mill"],
     affectedNpcIds: ["npc_garrick_thorne"],
     affectedFactionIds: ["faction_hoshimori_guild", "faction_hoshimori_guard"],
     cause: "Caminantes y guardias traen una observación breve sobre caminos, barro o rastros.",
@@ -66,7 +66,7 @@ const MINOR_TEMPLATES = [
     type: "social_favor",
     visibility: "local",
     affectedLocationIds: ["loc_hoshimori_grulla_azul", "loc_hoshimori_market"],
-    affectedNpcIds: ["npc_fern", "npc_irma_solan"],
+    affectedNpcIds: ["npc_fern", "npc_irma"],
     affectedFactionIds: [],
     cause: "Alguien cercano necesita ayuda sencilla o una respuesta breve durante su rutina.",
     consequence:
@@ -80,8 +80,8 @@ const IMPORTANT_TEMPLATES = [
     title: "Recadero retrasado sin confirmar",
     type: "urgent_local",
     visibility: "local",
-    affectedLocationIds: ["loc_hoshimori_guild", "loc_hoshimori_mill_road"],
-    affectedNpcIds: ["npc_mara_quent", "npc_garrick_thorne"],
+    affectedLocationIds: ["loc_hoshimori_guild", "loc_hoshimori_road_to_mill"],
+    affectedNpcIds: ["npc_mara_vell", "npc_garrick_thorne"],
     affectedFactionIds: ["faction_hoshimori_guild", "faction_hoshimori_guard"],
     cause: "Un traslado local no cerró a tiempo y el gremio necesita confirmar que no haya peligro real.",
     consequence:
@@ -93,7 +93,7 @@ const IMPORTANT_TEMPLATES = [
     type: "economy_pressure",
     visibility: "local",
     affectedLocationIds: ["loc_hoshimori_grulla_azul", "loc_hoshimori_market"],
-    affectedNpcIds: ["npc_roberto_valen", "npc_pavo_miret"],
+    affectedNpcIds: ["npc_roberto_valen", "npc_pavo"],
     affectedFactionIds: ["faction_hoshimori_merchants"],
     cause: "La economía diaria de Hoshimori depende de rutas cortas, clima y coordinación entre comerciantes.",
     consequence:
@@ -104,8 +104,8 @@ const IMPORTANT_TEMPLATES = [
     title: "Aviso importante sobre amenaza de ruta",
     type: "route_threat",
     visibility: "local",
-    affectedLocationIds: ["loc_hoshimori_guild", "loc_hoshimori_mill_road"],
-    affectedNpcIds: ["npc_garrick_thorne", "npc_sael_lyren"],
+    affectedLocationIds: ["loc_hoshimori_guild", "loc_hoshimori_road_to_mill"],
+    affectedNpcIds: ["npc_garrick_thorne", "npc_sael_nyra"],
     affectedFactionIds: ["faction_hoshimori_guild", "faction_hoshimori_guard"],
     cause: "Rastros, rumores o demoras sugieren que una ruta cercana necesita atención antes de empeorar.",
     consequence:
@@ -116,8 +116,8 @@ const IMPORTANT_TEMPLATES = [
     title: "Anomalía inquietante del Bosque de los Susurros",
     type: "magic_anomaly",
     visibility: "local",
-    affectedLocationIds: ["loc_hoshimori_guild", "loc_hoshimori_forest_edge"],
-    affectedNpcIds: ["npc_fern", "npc_mara_quent"],
+    affectedLocationIds: ["loc_hoshimori_guild", "loc_hoshimori_forest_whispers_edge"],
+    affectedNpcIds: ["npc_fern", "npc_mara_vell"],
     affectedFactionIds: ["faction_hoshimori_guild"],
     cause: "Los rumores sobre luces y sensaciones raras del bosque se vuelven lo bastante concretos como para exigir cuidado.",
     consequence:
@@ -129,7 +129,7 @@ const IMPORTANT_TEMPLATES = [
     type: "guild_priority",
     visibility: "public",
     affectedLocationIds: ["loc_hoshimori_guild", "loc_hoshimori_grulla_azul"],
-    affectedNpcIds: ["npc_mara_quent", "npc_roberto_valen"],
+    affectedNpcIds: ["npc_mara_vell", "npc_roberto_valen"],
     affectedFactionIds: ["faction_hoshimori_guild"],
     cause: "El gremio necesita a gente disponible para resolver un problema local antes de que cierre el día.",
     consequence:

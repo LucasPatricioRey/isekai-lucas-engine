@@ -22,6 +22,17 @@ describe("read-only API coverage", () => {
     assertCanonState(state);
   });
 
+  it("serves public OpenAPI schemas for GPT Builder import", async () => {
+    const compact = await get("/docs/openapi-gpt-action-compact.json");
+    assert.equal(compact.status, 200);
+    assert.equal(compact.data.openapi, "3.1.0");
+
+    const adminExtra = await get("/docs/openapi-gpt-action-admin-extra.json");
+    assert.equal(adminExtra.status, 200);
+    assert.equal(adminExtra.data.openapi, "3.1.0");
+    assert.ok(adminExtra.data.paths["/api/world/events"]);
+  });
+
   it("searches DB and docs", async () => {
     const db = await get("/api/search/db?q=fern");
     assert.equal(db.status, 200);
@@ -107,5 +118,10 @@ describe("read-only API coverage", () => {
         (checkpoint) => checkpoint.checkpointId === "checkpoint_d10_1200_1779723391623"
       )
     );
+
+    const worldEvents = await get("/api/world/events?limit=5");
+    assert.equal(worldEvents.status, 200);
+    assert.equal(worldEvents.data.ok, true);
+    assert.ok(Array.isArray(worldEvents.data.events));
   });
 });

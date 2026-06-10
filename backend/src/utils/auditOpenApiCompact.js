@@ -5,6 +5,7 @@ const DOCS_DIR = path.resolve(__dirname, "../../docs");
 const FULL_PATH = path.join(DOCS_DIR, "openapi-gpt-action.json");
 const COMPACT_PATH = path.join(DOCS_DIR, "openapi-gpt-action-compact.json");
 const ADMIN_PATH = path.join(DOCS_DIR, "openapi-gpt-action-admin.json");
+const ADMIN_EXTRA_PATH = path.join(DOCS_DIR, "openapi-gpt-action-admin-extra.json");
 const MATRIX_PATH = path.join(DOCS_DIR, "gpt-actions-operation-matrix.md");
 
 const EXPECTED_COMPACT = [
@@ -75,6 +76,18 @@ function collectOperations(openapi) {
   return operations;
 }
 
+function collectOperationIds(openapi) {
+  const operationIds = [];
+
+  for (const pathItem of Object.values(openapi.paths || {})) {
+    for (const method of ["get", "post", "put", "patch", "delete"]) {
+      if (pathItem[method]?.operationId) operationIds.push(pathItem[method].operationId);
+    }
+  }
+
+  return operationIds;
+}
+
 function section(title) {
   console.log(`\n=== ${title} ===`);
 }
@@ -95,13 +108,16 @@ function main() {
   console.log(`Full: ${FULL_PATH}`);
   console.log(`Compact: ${COMPACT_PATH}`);
   console.log(`Admin: ${ADMIN_PATH}`);
+  console.log(`Admin extra: ${ADMIN_EXTRA_PATH}`);
 
   const full = readJson(FULL_PATH);
   const compact = readJson(COMPACT_PATH);
   const admin = readJson(ADMIN_PATH);
+  const adminExtra = readJson(ADMIN_EXTRA_PATH);
   const fullOps = collectOperations(full);
   const compactOps = collectOperations(compact);
   const adminOps = collectOperations(admin);
+  const adminExtraOps = collectOperations(adminExtra);
 
   section("Compact Shape");
   assertCondition(issues, "compact file exists", fs.existsSync(COMPACT_PATH));
@@ -216,6 +232,18 @@ function main() {
   assertCondition(issues, "admin schema exists", fs.existsSync(ADMIN_PATH));
   assertCondition(issues, "admin schema has no POST operations", adminMutators.length === 0, adminMutators.join(", "));
   assertCondition(issues, "admin schema excludes rollback", !adminOps.has("POST /api/checkpoints/{checkpointId}/rollback"));
+
+  section("Admin Extra Read-Only Schema");
+  const adminExtraMutators = Array.from(adminExtraOps.keys()).filter((operationKey) => !operationKey.startsWith("GET "));
+  const compactOperationIds = new Set(collectOperationIds(compact));
+  const adminExtraOperationIds = collectOperationIds(adminExtra);
+  const duplicatedOperationIds = adminExtraOperationIds.filter((operationId) => compactOperationIds.has(operationId));
+  assertCondition(issues, "admin extra schema exists", fs.existsSync(ADMIN_EXTRA_PATH));
+  assertCondition(issues, "admin extra has 10 operations", adminExtraOps.size === 10, String(adminExtraOps.size));
+  assertCondition(issues, "admin extra schema has only GET operations", adminExtraMutators.length === 0, adminExtraMutators.join(", "));
+  assertCondition(issues, "admin extra includes world event list", adminExtraOps.has("GET /api/world/events"));
+  assertCondition(issues, "admin extra includes world event detail", adminExtraOps.has("GET /api/world/events/{eventId}"));
+  assertCondition(issues, "admin extra operationIds do not duplicate compact", duplicatedOperationIds.length === 0, duplicatedOperationIds.join(", "));
 
   section("Operation Matrix");
   assertCondition(issues, "operation matrix exists", fs.existsSync(MATRIX_PATH));

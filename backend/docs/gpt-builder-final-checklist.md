@@ -53,9 +53,11 @@ El schema full de referencia tecnica queda en:
 
 El schema opcional para una segunda Action tecnica/read-only queda en:
 
-- `docs/openapi-gpt-action-admin.json`
+- `docs/openapi-gpt-action-admin-extra.json`
 
-en **Configure > Actions > Import from schema** solo si se quiere separar modo tecnico seguro.
+en **Configure > Actions > Import from schema** solo si se quiere separar modo tecnico seguro. Este segundo schema no reemplaza al compacto: agrega lecturas extra para debug/admin con `operationId` prefijados por `admin` para no duplicar herramientas.
+
+El schema historico `docs/openapi-gpt-action-admin.json` queda como referencia read-only, pero para el GPT Builder conviene importar `openapi-gpt-action-admin-extra.json`.
 
 Servidor esperado:
 
@@ -87,6 +89,8 @@ No incluir en el schema normal de GPT Builder:
 - `POST /api/missions/expire-available`
 - `POST /api/economy/restock-daily`
 
+El segundo bloque `admin-extra` tambien debe mantenerse solo GET/read-only. No agregarle `applyTurn`, checkpoint create, rollback, restock, mutadores directos de misiones ni combate real.
+
 Si se prueban mutaciones reales, hacerlo solo con checkpoint previo y rollback manual externo fuera del GPT normal.
 
 ## Validacion antes de probar
@@ -113,3 +117,13 @@ Condicion minima para abrir Preview:
 - Combates activos responde como array.
 - OpenAPI validado.
 - `.env` no aparece en `git status --short`.
+
+## URLs para importar desde GPT Builder
+
+Action principal compacta:
+
+- `https://isekai-lucas-engine.onrender.com/docs/openapi-gpt-action-compact.json`
+
+Action tecnica extra read-only:
+
+- `https://isekai-lucas-engine.onrender.com/docs/openapi-gpt-action-admin-extra.json`

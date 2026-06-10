@@ -127,6 +127,10 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function unique(values) {
+  return Array.from(new Set((values || []).filter(Boolean)));
+}
+
 function toPlain(value) {
   if (!value) return value;
   if (typeof value.toObject === "function") return value.toObject();

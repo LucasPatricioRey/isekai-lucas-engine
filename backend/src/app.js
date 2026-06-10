@@ -1,6 +1,7 @@
 ﻿const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
+const path = require("path");
 
 const contextRoutes = require("./routes/contextRoutes");
 const turnRoutes = require("./routes/turnRoutes");
@@ -22,6 +23,13 @@ const weatherRoutes = require("./routes/weatherRoutes");
 
 const app = express();
 
+const PUBLIC_DOC_FILES = new Set([
+  "openapi-gpt-action.json",
+  "openapi-gpt-action-compact.json",
+  "openapi-gpt-action-admin.json",
+  "openapi-gpt-action-admin-extra.json",
+]);
+
 app.use(cors());
 app.use(express.json());
 app.use(morgan("dev"));
@@ -31,6 +39,19 @@ app.get("/api/health", (req, res) => {
     ok: true,
     message: "Isekai Lucas Engine API funcionando",
   });
+});
+
+app.get("/docs/:fileName", (req, res) => {
+  const fileName = req.params.fileName;
+
+  if (!PUBLIC_DOC_FILES.has(fileName)) {
+    return res.status(404).json({
+      ok: false,
+      error: "Documento no disponible.",
+    });
+  }
+
+  return res.sendFile(path.resolve(__dirname, "../docs", fileName));
 });
 
 app.use("/api/context", contextRoutes);

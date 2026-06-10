@@ -18,6 +18,7 @@ const ROOT_DIR = path.resolve(__dirname, "../..");
 const DOCS_DIR = path.join(ROOT_DIR, "docs");
 const COMPACT_OPENAPI_PATH = path.join(DOCS_DIR, "openapi-gpt-action-compact.json");
 const ADMIN_OPENAPI_PATH = path.join(DOCS_DIR, "openapi-gpt-action-admin.json");
+const ADMIN_EXTRA_OPENAPI_PATH = path.join(DOCS_DIR, "openapi-gpt-action-admin-extra.json");
 const MATRIX_PATH = path.join(DOCS_DIR, "gpt-actions-operation-matrix.md");
 
 const EXPECTED_STATE = {
@@ -97,6 +98,16 @@ function summarizeGameState(context) {
     mpCurrent: lucas.mp?.current,
     activeMissionIds: gameState.activeMissionIds || [],
   };
+}
+
+function collectOperationIds(openapi) {
+  const operationIds = [];
+  for (const pathItem of Object.values(openapi.paths || {})) {
+    for (const method of ["get", "post", "put", "patch", "delete"]) {
+      if (pathItem[method]?.operationId) operationIds.push(pathItem[method].operationId);
+    }
+  }
+  return operationIds;
 }
 
 async function checkCompactEndpoints(issues) {
@@ -228,14 +239,20 @@ async function main() {
   console.log("Mode: compact OpenAPI + read-only/preview endpoint checks.");
 
   section("Files");
-  for (const filePath of [COMPACT_OPENAPI_PATH, ADMIN_OPENAPI_PATH, MATRIX_PATH]) {
+  for (const filePath of [COMPACT_OPENAPI_PATH, ADMIN_OPENAPI_PATH, ADMIN_EXTRA_OPENAPI_PATH, MATRIX_PATH]) {
     assertCondition(issues, path.relative(ROOT_DIR, filePath).replace(/\\/g, "/"), fs.existsSync(filePath));
   }
 
   const compact = readJson(COMPACT_OPENAPI_PATH);
   const admin = readJson(ADMIN_OPENAPI_PATH);
+  const adminExtra = readJson(ADMIN_EXTRA_OPENAPI_PATH);
   const compactOps = collectOperations(compact);
   const adminOps = collectOperations(admin);
+  const adminExtraOps = collectOperations(adminExtra);
+  const compactOperationIds = new Set(collectOperationIds(compact));
+  const adminExtraDuplicates = collectOperationIds(adminExtra).filter((operationId) =>
+    compactOperationIds.has(operationId)
+  );
 
   section("Schema Shape");
   assertEqual(issues, "compact operation count", compactOps.length, 30);
@@ -253,6 +270,11 @@ async function main() {
   assertCondition(issues, "compact excludes direct accept mission", !compact.paths?.["/api/missions/{missionId}/accept"]);
   assertCondition(issues, "compact excludes direct report mission", !compact.paths?.["/api/missions/{missionId}/report"]);
   assertCondition(issues, "admin schema has only GET operations", adminOps.every((operation) => operation.startsWith("GET ")));
+  assertEqual(issues, "admin extra operation count", adminExtraOps.length, 10);
+  assertCondition(issues, "admin extra has only GET operations", adminExtraOps.every((operation) => operation.startsWith("GET ")));
+  assertCondition(issues, "admin extra includes world event list", adminExtraOps.includes("GET /api/world/events"));
+  assertCondition(issues, "admin extra includes world event detail", adminExtraOps.includes("GET /api/world/events/{eventId}"));
+  assertCondition(issues, "admin extra operationIds do not duplicate compact", adminExtraDuplicates.length === 0, adminExtraDuplicates.join(", "));
 
   await checkCompactEndpoints(issues);
 
