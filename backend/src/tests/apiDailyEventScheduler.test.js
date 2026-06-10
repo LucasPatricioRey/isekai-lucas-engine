@@ -288,6 +288,46 @@ describe("daily event scheduler", () => {
     assert.equal((gameState.activeEventIds || []).includes(eventId), false);
   });
 
+  it("does not warn daily event missing when the current day event is already resolved", async () => {
+    const eventId = `event_${tempGameId}_resolved_day_14_fixture`;
+
+    await WorldEvent.create({
+      eventId,
+      gameId: tempGameId,
+      title: "Fixture de evento diario ya resuelto",
+      type: "test_event",
+      scope: "local",
+      status: "resolved",
+      startDay: 14,
+      startTime: "06:00",
+      endDay: 15,
+      endTime: "06:00",
+      affectedLocationIds: ["loc_hoshimori_grulla_azul"],
+      affectedNpcIds: ["npc_fern"],
+      affectedFactionIds: [],
+      effects: [],
+      visibility: "hidden",
+      cause: "Fixture de test.",
+      severity: "minor",
+      createdBy: "world_tick",
+      tags: ["daily_event", "daily_event_day_14", "event_resolved", "test_daily_event_scheduler"],
+    });
+
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      { $set: { currentDay: 14, time: "20:00", block: "Noche", activeEventIds: [] } }
+    );
+
+    const compact = await get(`/api/context/compact?gameId=${encodeURIComponent(tempGameId)}`);
+
+    assert.equal(compact.status, 200);
+    assert.equal(compact.data.ok, true);
+    assert.equal(
+      compact.data.context.alerts.some((alert) => alert.type === "daily_event_missing"),
+      false
+    );
+  });
+
   it("lists and reads world events through read-only endpoints", async () => {
     const list = await get(`/api/world/events?gameId=${encodeURIComponent(tempGameId)}&tag=daily_event&limit=10`);
 

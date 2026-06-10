@@ -432,7 +432,7 @@ async function getCompactContext(req, res) {
         ? WorldEvent.find({
             ...eventGameFilter(gameId),
             tags: DAILY_EVENT_TAG,
-            status: { $in: ["scheduled", "active"] },
+            status: { $in: ["scheduled", "active", "resolved", "expired", "consequences_applied"] },
           })
             .sort({ startDay: -1, startTime: 1 })
             .limit(Math.min(limits.eventLimit, 6))
