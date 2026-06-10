@@ -547,6 +547,39 @@ async function getCompactContext(req, res) {
         .filter((npc) => npc.currentLocationId === currentLocationId)
         .map((npc) => npc.npcId)
     );
+    const directVisibleNpcIdSet = new Set(directVisibleNpcIds);
+    const probableNpcIdSet = new Set(probableNpcIds);
+    const sameBuildingLocationIds = new Set(locationIds.filter((locationId) => locationId !== currentLocationId));
+    const npcPresence = {
+      visible: [],
+      sameRoom: [],
+      sameBuilding: [],
+      probable: [],
+      relevant: [],
+      staticVisibleButNotHere: [],
+    };
+
+    for (const npc of nearbyNpcSummaries) {
+      const actuallyPresent = directPresentNpcIds.has(npc.npcId);
+      const staticallyVisible = directVisibleNpcIdSet.has(npc.npcId);
+      const sameBuilding = sameBuildingLocationIds.has(npc.currentLocationId);
+      const probable = probableNpcIdSet.has(npc.npcId);
+
+      if (actuallyPresent) {
+        npcPresence.visible.push(npc);
+        npcPresence.sameRoom.push(npc);
+      } else if (sameBuilding) {
+        npcPresence.sameBuilding.push(npc);
+      } else if (probable) {
+        npcPresence.probable.push(npc);
+      } else {
+        npcPresence.relevant.push(npc);
+      }
+
+      if (staticallyVisible && !actuallyPresent) {
+        npcPresence.staticVisibleButNotHere.push(npc);
+      }
+    }
     const npcById = new Map(nearbyNpcs.map((npc) => [npc.npcId, npc]));
     const alerts = [];
 
@@ -662,6 +695,7 @@ async function getCompactContext(req, res) {
           probableNpcIds,
           npcsPresent: nearbyNpcSummaries.filter((npc) => directPresentNpcIds.has(npc.npcId)),
           nearbyNpcs: nearbyNpcSummaries,
+          npcPresence,
           routineOverrides,
           recentEventSummaries: recentEventLogs.map((log) => responseShaping.summarizeEventLog(log)),
         },

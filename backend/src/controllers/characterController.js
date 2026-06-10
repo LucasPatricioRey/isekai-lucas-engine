@@ -57,13 +57,21 @@ async function getCharacterState(req, res) {
     const inventoryItems = inventoryItemIds.length
       ? await Item.find({ itemId: { $in: inventoryItemIds } }).sort({ name: 1 }).lean()
       : [];
+    const biologicalAccumulations = gameState.biologicalClock?.pendingAccumulations || [];
+    const pendingBiologicalAccumulations = biologicalAccumulations.filter(
+      (entry) => entry && entry.status !== "processed" && !entry.processedAt
+    );
+    const biologicalAccumulationHistory = biologicalAccumulations
+      .filter((entry) => entry && (entry.status === "processed" || entry.processedAt))
+      .slice(-20);
 
     return res.json({
       ok: true,
       character: summarizeCharacter(character),
       gameState: responseShaping.summarizeGameState(gameState),
       state: responseShaping.summarizeLucasState(gameState, character, inventoryItems),
-      pendingBiologicalAccumulations: gameState.biologicalClock?.pendingAccumulations || [],
+      pendingBiologicalAccumulations,
+      biologicalAccumulationHistory,
     });
   } catch (error) {
     return res.status(500).json({

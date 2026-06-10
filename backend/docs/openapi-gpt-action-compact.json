@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Compact",
-    "version": "2.7.0",
+    "version": "2.8.0",
     "description": "Schema compacto con hasta 30 operaciones para GPT Builder. Incluye ApplyTurn con missionPatch, activityCost, gameStatePatch y parches de economia/memoria/relacion social. Incluye previewSocialImpact con proyeccion de relationshipState y excluye rollback y mutadores peligrosos directos. El backend genera eventos diarios con scheduler de manana y los expira con consecuencias pendientes."
   },
   "servers": [
@@ -40,6 +40,46 @@
           }
         },
         "additionalProperties": true
+      },
+      "CompleteJobShiftRequest": {
+        "type": "object",
+        "properties": {
+          "gameId": {
+            "type": "string",
+            "default": "isekai_lucas_main"
+          },
+          "characterId": {
+            "type": "string",
+            "default": "char_lucas"
+          },
+          "contractId": {
+            "type": "string",
+            "description": "Opcional. Usar solo para debug/test o si hay mas de un contrato activo."
+          },
+          "alreadyConsumedMealIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Comidas de contrato ya consumidas antes de completar el turno; se marcan en ledger y no aplican bonus otra vez."
+          },
+          "skipMealIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Comidas incluidas que no se consumieron ni deben marcarse."
+          },
+          "completionSummary": {
+            "type": "string"
+          },
+          "allowLateCompletion": {
+            "type": "boolean",
+            "default": false,
+            "description": "Solo true con motivo tecnico si el turno ya empezo y se esta cerrando manualmente."
+          }
+        },
+        "additionalProperties": false
       },
       "SocialImpactPreviewRequest": {
         "type": "object",
@@ -725,7 +765,15 @@
           },
           "overrideReason": {
             "type": "string",
-            "description": "Motivo explicito para expirar manualmente una mision antes de su vencimiento formal."
+            "description": "Motivo explicito para expirar manualmente una mision antes de su vencimiento formal o aceptar con override de registro gremial."
+          },
+          "registrationOverride": {
+            "type": "boolean",
+            "description": "Solo true para aceptar mision de rango con registro formal pendiente bajo supervision/permiso explicito."
+          },
+          "registrationOverrideReason": {
+            "type": "string",
+            "description": "Motivo alternativo para registrationOverride si no se usa overrideReason."
           },
           "proofStatus": {
             "type": "string",
@@ -1678,6 +1726,50 @@
           }
         ],
         "x-openai-isConsequential": false
+      }
+    },
+    "/api/jobs/shifts/{shiftId}/complete": {
+      "post": {
+        "operationId": "completeJobShift",
+        "summary": "Completa un turno laboral real validado: avanza tiempo, procesa comida/pago/coste biologico y guarda ledger idempotente.",
+        "parameters": [
+          {
+            "name": "shiftId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteJobShiftRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Turno laboral completado o ya completado idempotentemente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-openai-isConsequential": true
       }
     },
     "/api/needs/activity-cost/preview": {

@@ -20,6 +20,7 @@ Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.j
 | getHealth | `GET /api/health` | si | no | lectura | admin/debug |
 | getActiveJobContract | `GET /api/jobs/contracts/active` | si | si | lectura | gameplay |
 | getAvailableJobShifts | `GET /api/jobs/shifts/available` | si | si | lectura | gameplay |
+| completeJobShift | `POST /api/jobs/shifts/{shiftId}/complete` | si | si | mutacion | gameplay |
 | getLocationFull | `GET /api/locations/{locationId}/full` | si | si | lectura | gameplay |
 | listMagicDisciplines | `GET /api/magic/disciplines` | si | no | lectura | gameplay |
 | listMagicTechniques | `GET /api/magic/techniques` | si | si | lectura | gameplay |

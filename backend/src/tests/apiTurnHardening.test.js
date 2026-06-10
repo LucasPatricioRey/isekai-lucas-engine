@@ -2,6 +2,7 @@ const { after, before, describe, it } = require("node:test");
 
 const EventLog = require("../models/EventLog");
 const GameState = require("../models/GameState");
+const JobContract = require("../models/JobContract");
 const Mission = require("../models/Mission");
 const Npc = require("../models/Npc");
 const NpcSocialLedger = require("../models/NpcSocialLedger");
@@ -23,6 +24,8 @@ const {
 let tempGameId = "";
 let tempMissionId = "";
 let tempExpiredMissionId = "";
+let tempGuildMissionId = "";
+let tempJobContractId = "";
 let tempNpcId = "";
 let tempWeatherRegionId = "";
 
@@ -30,6 +33,8 @@ async function createIsolatedGameState() {
   tempGameId = `test_turn_hardening_${Date.now()}`;
   tempMissionId = `mission_test_turn_hardening_${Date.now()}`;
   tempExpiredMissionId = `mission_test_turn_hardening_expired_${Date.now()}`;
+  tempGuildMissionId = `mission_test_turn_hardening_cobre_${Date.now()}`;
+  tempJobContractId = `contract_test_turn_hardening_${Date.now()}`;
   tempNpcId = `npc_test_relationship_${Date.now()}`;
   tempWeatherRegionId = `region_test_turn_hardening_${Date.now()}`;
 
@@ -107,6 +112,69 @@ async function createIsolatedGameState() {
     flags: { testSuite: true },
   });
 
+  await Mission.create({
+    missionId: tempGuildMissionId,
+    templateId: "test_turn_hardening_cobre",
+    title: "Test controlado de registro gremial",
+    description: "Mision temporal Cobre para validar registro formal pendiente.",
+    sourceFactionId: "faction_hoshimori_guild",
+    clientNpcId: "npc_garrick_thorne",
+    locationId: "loc_hoshimori_guild",
+    rank: "Cobre",
+    requirements: [],
+    reward: { moneyCopper: 1, items: [], other: "" },
+    mgReward: 0,
+    riskLevel: "low",
+    status: "available",
+    postedDay: 10,
+    postedTime: "12:00",
+    expiresDay: 10,
+    expiresTime: "18:00",
+    proofRequired: "Reporte de prueba.",
+    proofStatus: "pending",
+    flags: { testSuite: true },
+  });
+
+  await JobContract.create({
+    contractId: tempJobContractId,
+    characterId: "char_lucas",
+    jobId: "job_test_turn_hardening",
+    title: "Contrato temporal de test",
+    employerNpcId: "npc_roberto_valen",
+    locationId: "loc_hoshimori_grulla_azul",
+    factionId: "faction_grulla_azul",
+    status: "active",
+    startDay: 10,
+    pay: {
+      dailyCopper: 70,
+      notes: "Fixture temporal.",
+    },
+    includesMeals: true,
+    mealBenefits: [
+      {
+        mealId: "meal_test_breakfast",
+        name: "Desayuno temporal de test",
+        satietyBonus: 20,
+        energyBonus: 2,
+      },
+    ],
+    shifts: [
+      {
+        shiftId: "shift_test_morning_0700_1200",
+        name: "Turno temporal mañana",
+        startTime: "07:00",
+        endTime: "12:00",
+        activityCategory: "trabajo_normal",
+        expectedMinutes: 300,
+        payCopper: 70,
+        includedMealIds: ["meal_test_breakfast"],
+        typicalTasks: ["Fixture temporal de trabajo."],
+        rules: ["No tocar contrato canon."],
+      },
+    ],
+    flags: { testSuite: true },
+  });
+
   await Npc.create({
     npcId: tempNpcId,
     name: "NPC Test Relacion",
@@ -126,7 +194,10 @@ async function createIsolatedGameState() {
 async function cleanupIsolatedState() {
   if (tempGameId) await GameState.deleteOne({ gameId: tempGameId });
   if (tempGameId) await WorldEvent.deleteMany({ gameId: tempGameId });
-  await Mission.deleteMany({ missionId: { $in: [tempMissionId, tempExpiredMissionId].filter(Boolean) } });
+  await Mission.deleteMany({
+    missionId: { $in: [tempMissionId, tempExpiredMissionId, tempGuildMissionId].filter(Boolean) },
+  });
+  if (tempJobContractId) await JobContract.deleteOne({ contractId: tempJobContractId });
   if (tempNpcId) await Npc.deleteOne({ npcId: tempNpcId });
   if (tempNpcId) await NpcSocialLedger.deleteMany({ npcId: tempNpcId });
   if (tempWeatherRegionId) await WeatherState.deleteMany({ regionId: tempWeatherRegionId });
@@ -264,6 +335,125 @@ describe("turn hardening coverage", () => {
       if (previousAdminWrite === undefined) delete process.env.ADMIN_WRITE_API_KEY;
       else process.env.ADMIN_WRITE_API_KEY = previousAdminWrite;
     }
+  });
+
+  it("completes job shifts without duplicating consumed meals or pay", async () => {
+    const originalState = await GameState.findOne({ gameId: tempGameId }).lean();
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: 10,
+          "diegeticDate.day": 10,
+          block: "Mañana",
+          time: "07:00",
+          moneyCopper: 100,
+          "lucasStatus.satiety.current": 66,
+          "lucasStatus.satiety.label": "hambre leve",
+          "lucasStatus.energy.current": 100,
+          "lucasStatus.energy.label": "rendimiento normal",
+          biologicalClock: {
+            lastProcessedTime: "07:00",
+            currentHourBlock: "07:00-08:00",
+            pendingAccumulation: [],
+            pendingAccumulations: [],
+          },
+        },
+      }
+    );
+
+    const completed = await post("/api/jobs/shifts/shift_test_morning_0700_1200/complete", {
+      gameId: tempGameId,
+      contractId: tempJobContractId,
+      alreadyConsumedMealIds: ["meal_test_breakfast"],
+      completionSummary: "Test controlado: completar turno sin duplicar desayuno.",
+    });
+
+    assert.equal(completed.status, 200);
+    assert.equal(completed.data.ok, true);
+    assert.equal(completed.data.result.alreadyCompleted, false);
+    assert.deepEqual(completed.data.result.changes.meals.applied, []);
+    assert.deepEqual(completed.data.result.changes.meals.markedConsumed, ["meal_test_breakfast"]);
+    assert.equal(completed.data.result.changes.pay.delta, 70);
+    assert.equal(completed.data.result.after.moneyCopper, 170);
+    assert.equal(completed.data.result.after.time, "12:00");
+    assert.equal(completed.data.result.after.satiety, 51);
+    assert.equal(completed.data.result.after.energy, 70);
+
+    const stateAfterComplete = await GameState.findOne({ gameId: tempGameId }).lean();
+    assert.equal(stateAfterComplete.moneyCopper, 170);
+    assert.equal(stateAfterComplete.lucasStatus.satiety.current, 51);
+    assert.equal(stateAfterComplete.lucasStatus.energy.current, 70);
+
+    const repeated = await post("/api/jobs/shifts/shift_test_morning_0700_1200/complete", {
+      gameId: tempGameId,
+      contractId: tempJobContractId,
+      completionSummary: "Test controlado: completar turno repetido.",
+    });
+    assert.equal(repeated.status, 200);
+    assert.equal(repeated.data.ok, true);
+    assert.equal(repeated.data.result.alreadyCompleted, true);
+
+    const stateAfterRepeated = await GameState.findOne({ gameId: tempGameId }).lean();
+    assert.equal(stateAfterRepeated.moneyCopper, 170);
+    assert.equal(stateAfterRepeated.lucasStatus.satiety.current, 51);
+    assert.equal(stateAfterRepeated.lucasStatus.energy.current, 70);
+
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: originalState.currentDay,
+          diegeticDate: originalState.diegeticDate,
+          block: originalState.block,
+          time: originalState.time,
+          locationId: originalState.locationId,
+          moneyCopper: originalState.moneyCopper,
+          lucasStatus: originalState.lucasStatus,
+          biologicalClock: originalState.biologicalClock,
+        },
+      }
+    );
+    await JobContract.updateOne({ contractId: tempJobContractId }, { $set: { flags: { testSuite: true } } });
+  });
+
+  it("blocks Cobre mission acceptance while formal guild registration is pending unless overridden", async () => {
+    const blocked = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Intento invalido de test: aceptar Cobre con registro pendiente.",
+      missionPatch: {
+        op: "accept",
+        missionId: tempGuildMissionId,
+      },
+    });
+    assert.equal(blocked.status, 400);
+    assert.match(blocked.data.error, /registro formal del gremio/);
+
+    const overridden = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: aceptar Cobre con override formal.",
+      missionPatch: {
+        op: "accept",
+        missionId: tempGuildMissionId,
+        registrationOverride: true,
+        overrideReason: "Fixture de test con supervisor autorizado.",
+      },
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de registro gremial con override.",
+          visibility: "hidden",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+    });
+    assert.equal(overridden.status, 200);
+    assert.equal(overridden.data.ok, true);
+    assert.equal(overridden.data.changes.missions[0].after.status, "accepted");
+    assert.equal(
+      overridden.data.changes.missions[0].after.flags.acceptedWithRegistrationOverride.reason,
+      "Fixture de test con supervisor autorizado."
+    );
   });
 
   it("applies skill patches only through validated progression ranges", async () => {

@@ -1,14 +1,123 @@
+const mongoose = require("mongoose");
+
+const EventLog = require("../models/EventLog");
 const GameState = require("../models/GameState");
 const JobContract = require("../models/JobContract");
-const { previewBiologicalClockBlock } = require("./biologicalClockService");
+const {
+  calculateActivityCost,
+  getEnergyLabel,
+  getSatietyLabel,
+  previewBiologicalClockBlock,
+} = require("./biologicalClockService");
 
 function timeToMinutes(time) {
   const [hours, minutes] = String(time || "00:00").split(":").map(Number);
   return hours * 60 + minutes;
 }
 
+function minutesToTime(totalMinutes) {
+  const normalized = ((totalMinutes % 1440) + 1440) % 1440;
+  const hours = Math.floor(normalized / 60);
+  const minutes = normalized % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function getBlockFromTime(time) {
+  const hour = Number(String(time || "00:00").split(":")[0]);
+
+  if (hour >= 0 && hour < 6) return "Madrugada";
+  if (hour >= 6 && hour < 12) return "Mañana";
+  if (hour >= 12 && hour < 14) return "Mediodía";
+  if (hour >= 14 && hour < 18) return "Tarde";
+  return "Noche";
+}
+
+function getHourBlockForTime(time) {
+  const blockStart = Math.floor(timeToMinutes(time) / 60) * 60;
+  return `${minutesToTime(blockStart)}-${minutesToTime(blockStart + 60)}`;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function unique(values) {
+  return Array.from(new Set((values || []).filter(Boolean)));
+}
+
+function createLogId() {
+  return `log_job_shift_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function dayKey(day) {
+  return `day_${Number(day) || 1}`;
+}
+
 function findShift(contract, shiftId) {
   return (contract.shifts || []).find((shift) => shift.shiftId === shiftId);
+}
+
+function getContractFlags(contract) {
+  if (!contract.flags || typeof contract.flags !== "object") contract.flags = {};
+  if (!contract.flags.completedShifts || typeof contract.flags.completedShifts !== "object") {
+    contract.flags.completedShifts = {};
+  }
+  if (!contract.flags.consumedMeals || typeof contract.flags.consumedMeals !== "object") {
+    contract.flags.consumedMeals = {};
+  }
+  return contract.flags;
+}
+
+function getMealLedgerForDay(flags, currentDay) {
+  const key = dayKey(currentDay);
+  if (!flags.consumedMeals[key] || typeof flags.consumedMeals[key] !== "object") {
+    flags.consumedMeals[key] = {};
+  }
+  return flags.consumedMeals[key];
+}
+
+function getShiftLedgerForDay(flags, currentDay) {
+  const key = dayKey(currentDay);
+  if (!flags.completedShifts[key] || typeof flags.completedShifts[key] !== "object") {
+    flags.completedShifts[key] = {};
+  }
+  return flags.completedShifts[key];
+}
+
+function summarizeMealAvailability({ contract, shift, gameState }) {
+  const flags = getContractFlags(contract);
+  const mealLedger = getMealLedgerForDay(flags, gameState.currentDay);
+  const includedMealIds = new Set(shift.includedMealIds || []);
+  const mealBenefits = (contract.mealBenefits || [])
+    .filter((meal) => includedMealIds.has(meal.mealId))
+    .map((meal) => ({
+      ...meal,
+      consumedToday: Boolean(mealLedger[meal.mealId]),
+      consumedEntry: mealLedger[meal.mealId] || null,
+    }));
+  const availableMealBenefits = mealBenefits.filter((meal) => !meal.consumedToday);
+
+  const grossMealDelta = mealBenefits.reduce(
+    (total, meal) => ({
+      satiety: total.satiety + (meal.satietyBonus || 0),
+      energy: total.energy + (meal.energyBonus || 0),
+    }),
+    { satiety: 0, energy: 0 }
+  );
+  const directMealDelta = availableMealBenefits.reduce(
+    (total, meal) => ({
+      satiety: total.satiety + (meal.satietyBonus || 0),
+      energy: total.energy + (meal.energyBonus || 0),
+    }),
+    { satiety: 0, energy: 0 }
+  );
+
+  return {
+    mealBenefits,
+    availableMealBenefits,
+    grossMealDelta,
+    directMealDelta,
+  };
 }
 
 function getShiftAvailability(shift, gameState) {
@@ -35,15 +144,20 @@ function getShiftAvailability(shift, gameState) {
   return {
     canStart: true,
     status: currentMinutes === startMinutes ? "now" : "upcoming",
-    reason: "Turno disponible como preview; completarlo aun no muta estado en G8.",
+    reason: "Turno disponible para preview o completar con validacion de contrato.",
   };
 }
 
-async function getActiveJobContract({ characterId = "char_lucas" } = {}) {
-  const contract = await JobContract.findOne({ characterId, status: "active" }).lean();
+async function getActiveJobContract({ characterId = "char_lucas", contractId = "" } = {}) {
+  const query = contractId ? { contractId, characterId } : { characterId, status: "active" };
+  const contract = await JobContract.findOne(query).lean();
 
   if (!contract) {
-    const error = new Error(`No existe contrato laboral activo para characterId: ${characterId}`);
+    const error = new Error(
+      contractId
+        ? `No existe contrato laboral ${contractId} para characterId: ${characterId}`
+        : `No existe contrato laboral activo para characterId: ${characterId}`
+    );
     error.statusCode = 404;
     throw error;
   }
@@ -51,10 +165,10 @@ async function getActiveJobContract({ characterId = "char_lucas" } = {}) {
   return contract;
 }
 
-async function getAvailableShifts({ gameId = "isekai_lucas_main", characterId = "char_lucas" } = {}) {
+async function getAvailableShifts({ gameId = "isekai_lucas_main", characterId = "char_lucas", contractId = "" } = {}) {
   const [gameState, contract] = await Promise.all([
     GameState.findOne({ gameId }).lean(),
-    getActiveJobContract({ characterId }),
+    getActiveJobContract({ characterId, contractId }),
   ]);
 
   if (!gameState) {
@@ -80,10 +194,15 @@ async function getAvailableShifts({ gameId = "isekai_lucas_main", characterId = 
   };
 }
 
-async function previewShift({ shiftId, gameId = "isekai_lucas_main", characterId = "char_lucas" } = {}) {
+async function previewShift({
+  shiftId,
+  gameId = "isekai_lucas_main",
+  characterId = "char_lucas",
+  contractId = "",
+} = {}) {
   const [gameState, contract] = await Promise.all([
     GameState.findOne({ gameId }).lean(),
-    getActiveJobContract({ characterId }),
+    getActiveJobContract({ characterId, contractId }),
   ]);
 
   if (!gameState) {
@@ -113,16 +232,7 @@ async function previewShift({ shiftId, gameId = "isekai_lucas_main", characterId
     },
   });
 
-  const mealBenefits = (contract.mealBenefits || []).filter((meal) =>
-    (shift.includedMealIds || []).includes(meal.mealId)
-  );
-  const directMealDelta = mealBenefits.reduce(
-    (total, meal) => ({
-      satiety: total.satiety + (meal.satietyBonus || 0),
-      energy: total.energy + (meal.energyBonus || 0),
-    }),
-    { satiety: 0, energy: 0 }
-  );
+  const mealAvailability = summarizeMealAvailability({ contract, shift, gameState });
 
   return {
     dryRun: true,
@@ -141,21 +251,374 @@ async function previewShift({ shiftId, gameId = "isekai_lucas_main", characterId
       dailyContractPayCopper: contract.pay?.dailyCopper || 0,
       notes: contract.pay?.notes || "",
     },
-    mealBenefits,
-    directMealDelta,
+    mealBenefits: mealAvailability.mealBenefits,
+    availableMealBenefits: mealAvailability.availableMealBenefits,
+    grossMealDelta: mealAvailability.grossMealDelta,
+    directMealDelta: mealAvailability.directMealDelta,
     biologicalPreview,
     mutation: {
       willMutateGameState: false,
-      reason: "G8 solo expone preview/dryRun; completar turnos reales queda pendiente.",
+      reason: "Preview sin mutacion. Usar completeJobShift para cerrar un turno real validado.",
     },
   };
 }
 
-async function completeShiftDryRun({ shiftId, gameId = "isekai_lucas_main", characterId = "char_lucas" } = {}) {
-  return previewShift({ shiftId, gameId, characterId });
+function applyMealBenefit(gameState, meal) {
+  const before = {
+    satiety: gameState.lucasStatus.satiety.current,
+    energy: gameState.lucasStatus.energy.current,
+  };
+
+  const satietyAfter = clamp(before.satiety + (meal.satietyBonus || 0), 0, gameState.lucasStatus.satiety.max);
+  const energyAfter = clamp(before.energy + (meal.energyBonus || 0), 0, gameState.lucasStatus.energy.max);
+
+  gameState.lucasStatus.satiety.current = satietyAfter;
+  gameState.lucasStatus.satiety.label = getSatietyLabel(satietyAfter);
+  gameState.lucasStatus.energy.current = energyAfter;
+  gameState.lucasStatus.energy.label = getEnergyLabel(energyAfter);
+
+  return {
+    mealId: meal.mealId,
+    name: meal.name,
+    satiety: {
+      before: before.satiety,
+      delta: satietyAfter - before.satiety,
+      after: satietyAfter,
+      labelAfter: gameState.lucasStatus.satiety.label,
+    },
+    energy: {
+      before: before.energy,
+      delta: energyAfter - before.energy,
+      after: energyAfter,
+      labelAfter: gameState.lucasStatus.energy.label,
+    },
+  };
+}
+
+function applyShiftActivityCost(gameState, shift) {
+  const before = {
+    satiety: gameState.lucasStatus.satiety.current,
+    energy: gameState.lucasStatus.energy.current,
+  };
+  const cost = calculateActivityCost({
+    category: shift.activityCategory,
+    minutes: shift.expectedMinutes,
+    currentEnergy: before.energy,
+    currentSatiety: before.satiety,
+  });
+  const satietyAfter = clamp(before.satiety + cost.delta.satiety, 0, gameState.lucasStatus.satiety.max);
+  const energyAfter = clamp(before.energy + cost.delta.energy, 0, gameState.lucasStatus.energy.max);
+
+  gameState.lucasStatus.satiety.current = satietyAfter;
+  gameState.lucasStatus.satiety.label = getSatietyLabel(satietyAfter);
+  gameState.lucasStatus.energy.current = energyAfter;
+  gameState.lucasStatus.energy.label = getEnergyLabel(energyAfter);
+
+  if (!gameState.biologicalClock) gameState.biologicalClock = {};
+  if (!Array.isArray(gameState.biologicalClock.pendingAccumulations)) {
+    gameState.biologicalClock.pendingAccumulations = [];
+  }
+  gameState.biologicalClock.lastProcessedTime = shift.endTime;
+  gameState.biologicalClock.currentHourBlock = getHourBlockForTime(shift.endTime);
+
+  return {
+    category: cost.categoryId,
+    label: cost.label,
+    minutes: shift.expectedMinutes,
+    satiety: {
+      before: before.satiety,
+      delta: satietyAfter - before.satiety,
+      after: satietyAfter,
+      labelAfter: gameState.lucasStatus.satiety.label,
+    },
+    energy: {
+      before: before.energy,
+      delta: energyAfter - before.energy,
+      after: energyAfter,
+      labelAfter: gameState.lucasStatus.energy.label,
+    },
+    rawPreview: cost,
+  };
+}
+
+async function completeShift({
+  shiftId,
+  gameId = "isekai_lucas_main",
+  characterId = "char_lucas",
+  contractId = "",
+  alreadyConsumedMealIds = [],
+  skipMealIds = [],
+  completionSummary = "",
+  allowLateCompletion = false,
+} = {}) {
+  const session = await mongoose.startSession();
+  let result;
+
+  try {
+    await session.withTransaction(async () => {
+      const gameState = await GameState.findOne({ gameId }).session(session);
+      if (!gameState) {
+        const error = new Error(`No existe GameState para gameId: ${gameId}`);
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const contractQuery = contractId
+        ? { contractId, characterId }
+        : { characterId, status: "active" };
+      const contract = await JobContract.findOne(contractQuery).session(session);
+      if (!contract) {
+        const error = new Error(
+          contractId
+            ? `No existe contrato laboral ${contractId} para characterId: ${characterId}`
+            : `No existe contrato laboral activo para characterId: ${characterId}`
+        );
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const shift = findShift(contract, shiftId);
+      if (!shift) {
+        const error = new Error(`No existe turno laboral con id: ${shiftId}`);
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const currentMinutes = timeToMinutes(gameState.time);
+      const startMinutes = timeToMinutes(shift.startTime);
+      const endMinutes = timeToMinutes(shift.endTime);
+      const flags = getContractFlags(contract);
+      const shiftLedger = getShiftLedgerForDay(flags, gameState.currentDay);
+      const mealLedger = getMealLedgerForDay(flags, gameState.currentDay);
+      const before = {
+        day: gameState.currentDay,
+        time: gameState.time,
+        block: gameState.block,
+        moneyCopper: gameState.moneyCopper,
+        satiety: gameState.lucasStatus.satiety.current,
+        energy: gameState.lucasStatus.energy.current,
+      };
+
+      if (shiftLedger[shift.shiftId]) {
+        result = {
+          alreadyCompleted: true,
+          gameId,
+          contractId: contract.contractId,
+          shiftId: shift.shiftId,
+          shift,
+          previousCompletion: shiftLedger[shift.shiftId],
+          before,
+          after: before,
+          changes: {
+            pay: { applied: false, reason: "shift_already_completed" },
+            meals: [],
+            activityCost: null,
+          },
+        };
+        return;
+      }
+
+      if (endMinutes <= startMinutes) {
+        const error = new Error("completeJobShift no soporta turnos que cruzan medianoche.");
+        error.statusCode = 400;
+        throw error;
+      }
+      if (currentMinutes < startMinutes) {
+        const error = new Error("El turno todavia no comenzo; no se puede completarlo antes de su hora de inicio.");
+        error.statusCode = 400;
+        error.details = { currentTime: gameState.time, shiftStartTime: shift.startTime };
+        throw error;
+      }
+      if (currentMinutes > endMinutes) {
+        const error = new Error("El turno ya termino para la hora actual.");
+        error.statusCode = 400;
+        error.details = { currentTime: gameState.time, shiftEndTime: shift.endTime };
+        throw error;
+      }
+      if (currentMinutes > startMinutes && !allowLateCompletion) {
+        const error = new Error("El turno ya empezo; se requiere allowLateCompletion para cierre tardio controlado.");
+        error.statusCode = 400;
+        error.details = { currentTime: gameState.time, shiftStartTime: shift.startTime, shiftEndTime: shift.endTime };
+        throw error;
+      }
+
+      const includedMealIds = new Set(shift.includedMealIds || []);
+      const skipMeals = new Set(unique(skipMealIds));
+      const markConsumedOnly = new Set(unique(alreadyConsumedMealIds));
+      const includedMeals = (contract.mealBenefits || []).filter((meal) => includedMealIds.has(meal.mealId));
+      const mealChanges = [];
+      const mealAppliedIds = [];
+      const mealMarkedConsumedIds = [];
+      const mealSkippedIds = [];
+
+      for (const meal of includedMeals) {
+        if (mealLedger[meal.mealId]) {
+          mealSkippedIds.push(meal.mealId);
+          continue;
+        }
+
+        if (skipMeals.has(meal.mealId)) {
+          mealSkippedIds.push(meal.mealId);
+          continue;
+        }
+
+        if (markConsumedOnly.has(meal.mealId)) {
+          mealLedger[meal.mealId] = {
+            mealId: meal.mealId,
+            day: gameState.currentDay,
+            time: gameState.time,
+            sourceShiftId: shift.shiftId,
+            status: "already_consumed_before_shift_completion",
+          };
+          mealMarkedConsumedIds.push(meal.mealId);
+          continue;
+        }
+
+        const mealChange = applyMealBenefit(gameState, meal);
+        mealLedger[meal.mealId] = {
+          mealId: meal.mealId,
+          day: gameState.currentDay,
+          time: gameState.time,
+          sourceShiftId: shift.shiftId,
+          status: "applied_by_complete_shift",
+          satietyDelta: mealChange.satiety.delta,
+          energyDelta: mealChange.energy.delta,
+        };
+        mealAppliedIds.push(meal.mealId);
+        mealChanges.push(mealChange);
+      }
+
+      const activityCost = applyShiftActivityCost(gameState, shift);
+      const beforeMoney = gameState.moneyCopper;
+      const payCopper = shift.payCopper || 0;
+      gameState.moneyCopper += payCopper;
+      gameState.time = shift.endTime;
+      gameState.block = getBlockFromTime(shift.endTime);
+
+      shiftLedger[shift.shiftId] = {
+        shiftId: shift.shiftId,
+        day: gameState.currentDay,
+        startedAt: shift.startTime,
+        completedAt: shift.endTime,
+        processedAt: new Date(),
+        payCopper,
+        mealAppliedIds,
+        mealMarkedConsumedIds,
+        mealSkippedIds,
+        activityCategory: shift.activityCategory,
+        expectedMinutes: shift.expectedMinutes,
+        completionSummary,
+      };
+
+      gameState.markModified("biologicalClock");
+      contract.markModified("flags");
+      await gameState.save({ session });
+      await contract.save({ session });
+
+      const after = {
+        day: gameState.currentDay,
+        time: gameState.time,
+        block: gameState.block,
+        moneyCopper: gameState.moneyCopper,
+        satiety: gameState.lucasStatus.satiety.current,
+        energy: gameState.lucasStatus.energy.current,
+      };
+      const log = await EventLog.create(
+        [
+          {
+            logId: createLogId(),
+            gameId,
+            day: before.day,
+            timeStart: before.time,
+            timeEnd: after.time,
+            locationId: contract.locationId,
+            type: "job_shift_completed",
+            summary: completionSummary || `Turno laboral completado: ${shift.name}.`,
+            involvedCharacterIds: [characterId],
+            involvedNpcIds: unique([contract.employerNpcId]),
+            mechanicalChanges: {
+              contractId: contract.contractId,
+              shiftId: shift.shiftId,
+              before,
+              after,
+              pay: {
+                before: beforeMoney,
+                delta: payCopper,
+                after: gameState.moneyCopper,
+              },
+              meals: {
+                applied: mealAppliedIds,
+                markedConsumed: mealMarkedConsumedIds,
+                skipped: mealSkippedIds,
+                details: mealChanges,
+              },
+              activityCost,
+            },
+            visibility: "hidden",
+            source: "backend_validation",
+            tags: ["job_shift", "complete_shift"],
+          },
+        ],
+        { session }
+      );
+
+      result = {
+        alreadyCompleted: false,
+        gameId,
+        contractId: contract.contractId,
+        shiftId: shift.shiftId,
+        shift,
+        before,
+        after,
+        changes: {
+          time: {
+            before: before.time,
+            after: after.time,
+            elapsedMinutes: endMinutes - startMinutes,
+          },
+          pay: {
+            before: beforeMoney,
+            delta: payCopper,
+            after: gameState.moneyCopper,
+          },
+          meals: {
+            applied: mealAppliedIds,
+            markedConsumed: mealMarkedConsumedIds,
+            skipped: mealSkippedIds,
+            details: mealChanges,
+          },
+          activityCost,
+          ledger: shiftLedger[shift.shiftId],
+          eventLogId: log[0].logId,
+        },
+        skillProgressionSuggestions: [
+          {
+            skillId: "skill_resistencia",
+            category: shift.activityCategory,
+            reason: "Turno laboral completado; resolver EXP con previewSkillProgression/applyTurn si corresponde.",
+            mutates: false,
+          },
+        ],
+      };
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  return result;
+}
+
+async function completeShiftDryRun({
+  shiftId,
+  gameId = "isekai_lucas_main",
+  characterId = "char_lucas",
+  contractId = "",
+} = {}) {
+  return previewShift({ shiftId, gameId, characterId, contractId });
 }
 
 module.exports = {
+  completeShift,
   completeShiftDryRun,
   getActiveJobContract,
   getAvailableShifts,

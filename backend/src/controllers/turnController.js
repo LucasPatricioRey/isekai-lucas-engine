@@ -845,6 +845,44 @@ function isMissionExpired(mission, gameState) {
   return timeToMinutes(mission.expiresTime) <= timeToMinutes(gameState.time);
 }
 
+const GUILD_RANKS_REQUIRING_FORMAL_REGISTRATION = new Set([
+  "Cobre",
+  "Bronce",
+  "Hierro",
+  "Plata",
+  "Oro",
+  "Platino",
+  "Mithril",
+  "Oricalco",
+  "Adamantita",
+]);
+
+function validateGuildRegistrationForMissionAccept({ gameState, mission, patch }) {
+  if (!gameState.flags?.formalGuildRegistrationPending) return null;
+
+  const flags = getMissionFlags(mission);
+  const requiresFormalRegistration =
+    flags.requiresFormalRegistration === true ||
+    GUILD_RANKS_REQUIRING_FORMAL_REGISTRATION.has(mission.rank);
+
+  if (!requiresFormalRegistration) return null;
+
+  const overrideReason = String(patch.overrideReason || patch.registrationOverrideReason || "").trim();
+  if (patch.registrationOverride === true && overrideReason.length >= 8) {
+    return {
+      allowedWithOverride: true,
+      overrideReason,
+    };
+  }
+
+  throw validationError("La misión requiere registro formal del gremio antes de aceptarla.", {
+    missionId: mission.missionId,
+    rank: mission.rank,
+    formalGuildRegistrationPending: true,
+    allowedOverride: "registrationOverride=true con overrideReason explícito de 8+ caracteres.",
+  });
+}
+
 function normalizeMissionPatches(missionPatch) {
   if (!missionPatch) return [];
   return Array.isArray(missionPatch) ? missionPatch : [missionPatch];
@@ -1016,12 +1054,28 @@ async function applyMissionPatches(gameState, missionPatch, session = null) {
         });
       }
 
+      const guildRegistrationValidation = validateGuildRegistrationForMissionAccept({
+        gameState,
+        mission,
+        patch,
+      });
+
       mission.status = "accepted";
       mission.acceptedByCharacterId = characterId;
       mission.acceptedDay = gameState.currentDay;
 
       if (!gameState.activeMissionIds.includes(mission.missionId)) {
         gameState.activeMissionIds.push(mission.missionId);
+      }
+
+      if (guildRegistrationValidation?.allowedWithOverride) {
+        const flags = getMissionFlags(mission);
+        flags.acceptedWithRegistrationOverride = {
+          day: gameState.currentDay,
+          time: gameState.time,
+          reason: guildRegistrationValidation.overrideReason,
+        };
+        setMissionFlags(mission, flags);
       }
     }
 

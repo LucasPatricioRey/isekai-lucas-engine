@@ -34,6 +34,7 @@ const EXPECTED_INCLUDED = [
   ["GET", "/api/jobs/contracts/active"],
   ["GET", "/api/jobs/shifts/available"],
   ["POST", "/api/jobs/shifts/{shiftId}/preview"],
+  ["POST", "/api/jobs/shifts/{shiftId}/complete"],
   ["POST", "/api/needs/activity-cost/preview"],
   ["POST", "/api/progression/skills/preview"],
   ["GET", "/api/magic/disciplines"],
