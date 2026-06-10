@@ -255,8 +255,9 @@ async function main() {
   );
 
   section("Schema Shape");
-  assertEqual(issues, "compact operation count", compactOps.length, 30);
+  assertCondition(issues, "compact operation count within limit", compactOps.length <= 30, String(compactOps.length));
   assertCondition(issues, "compact includes context/compact", compactOps.includes("GET /api/context/compact"));
+  assertCondition(issues, "compact excludes context/full", !compactOps.includes("GET /api/context/full"));
   assertCondition(issues, "compact includes character state", compactOps.includes("GET /api/characters/{characterId}/state"));
   assertCondition(issues, "compact has missionPatch", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.missionPatch));
   assertCondition(issues, "compact has shopStockPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.shopStockPatches));

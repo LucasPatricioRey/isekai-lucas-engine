@@ -43,7 +43,7 @@ Para el GPT Builder normal, pegar el contenido completo de:
 
 - `docs/openapi-gpt-action-compact.json`
 
-Este schema mantiene 30 operaciones y usa `applyTurn.missionPatch` para aceptar/reportar misiones sin exponer mutadores directos de misiones. También expone `applyTurn.worldEventPatches` para resolver/cancelar eventos existentes sin agregar nuevas operaciones.
+Este schema mantiene hasta 30 operaciones y usa `applyTurn.missionPatch` para aceptar/reportar misiones sin exponer mutadores directos de misiones. También expone `applyTurn.worldEventPatches` para resolver/cancelar eventos existentes sin agregar nuevas operaciones.
 Para vinculos sociales, expone `POST /api/npcs/social/impact/preview` y `applyTurn.npcRelationshipPatches`. `GET /api/combat/enemies` queda solo en el schema full para conservar el limite de 30 operaciones.
 La lectura normal por turno debe empezar por `GET /api/context/compact`. Si hace falta estado mecanico directo de Lucas, usar `GET /api/characters/char_lucas/state`.
 

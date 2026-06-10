@@ -458,7 +458,7 @@ async function getCompactContext(req, res) {
       limits.missionLimit > 0
         ? Mission.find({ status: "available" })
             .sort({ postedDay: -1, postedTime: -1 })
-            .limit(limits.missionLimit)
+            .limit(Math.max(limits.missionLimit * 4, limits.missionLimit))
             .lean()
         : Promise.resolve([]),
 
@@ -509,9 +509,12 @@ async function getCompactContext(req, res) {
     const activeMissionSummaries = activeMissions.map((mission) =>
       responseShaping.summarizeMission(mission, gameState.currentDay, gameState.time)
     );
-    const availableMissionPreview = availableMissions.map((mission) =>
+    const availableMissionSummaries = availableMissions.map((mission) =>
       responseShaping.summarizeMission(mission, gameState.currentDay, gameState.time)
     );
+    const availableMissionPreview = availableMissionSummaries
+      .filter((mission) => !mission.expiredByCurrentTime)
+      .slice(0, limits.missionLimit);
     const nearbyNpcSummaries = nearbyNpcs.map(responseShaping.summarizeNpc);
     const directPresentNpcIds = new Set(
       nearbyNpcs
@@ -571,7 +574,7 @@ async function getCompactContext(req, res) {
       }
     }
 
-    const expiredAvailableMissions = availableMissionPreview.filter((mission) => mission.expiredByCurrentTime);
+    const expiredAvailableMissions = availableMissionSummaries.filter((mission) => mission.expiredByCurrentTime);
     if (expiredAvailableMissions.length > 0) {
       alerts.push({
         type: "available_missions_expired",

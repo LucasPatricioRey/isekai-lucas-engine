@@ -10,7 +10,6 @@ const MATRIX_PATH = path.join(DOCS_DIR, "gpt-actions-operation-matrix.md");
 
 const EXPECTED_COMPACT = [
   ["GET", "/api/context/compact"],
-  ["GET", "/api/context/full"],
   ["GET", "/api/characters/{characterId}/state"],
   ["GET", "/api/search/db"],
   ["GET", "/api/search/docs"],
@@ -42,6 +41,7 @@ const EXPECTED_COMPACT = [
 ];
 
 const COMPACT_EXCLUDED = [
+  "GET /api/context/full",
   "GET /api/checkpoints",
   "POST /api/checkpoints",
   "POST /api/checkpoints/{checkpointId}/rollback",
@@ -121,7 +121,7 @@ function main() {
 
   section("Compact Shape");
   assertCondition(issues, "compact file exists", fs.existsSync(COMPACT_PATH));
-  assertCondition(issues, "compact operation count is 30", compactOps.size === 30, String(compactOps.size));
+  assertCondition(issues, "compact operation count is within limit", compactOps.size <= 30, String(compactOps.size));
   assertCondition(issues, "compact declares operation limit", compact["x-operation-limit"] === 30);
   assertCondition(issues, "compact uses ApiKeyAuth", Boolean(compact.components?.securitySchemes?.ApiKeyAuth));
   assertCondition(issues, "compact server points to Render", (compact.servers || []).some((server) => /onrender\.com/.test(server.url || "")));

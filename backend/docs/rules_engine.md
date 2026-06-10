@@ -128,13 +128,13 @@ MongoDB guarda todo lo dinámico:
 
 Antes de resolver un turno, el GPT debe leer el backend.
 
-Endpoint conceptual recomendado:
+Endpoint conceptual recomendado para juego normal:
 
 ```txt
-GET /api/context/full
+GET /api/context/compact
 ```
 
-Debe devolver un contexto dinámico amplio y estructurado:
+Debe devolver un contexto dinamico compacto y estructurado:
 
 - estado completo de Lucas;
 - ubicación actual;
@@ -144,12 +144,14 @@ Debe devolver un contexto dinámico amplio y estructurado:
 - memorias relevantes de NPCs involucrados;
 - rumores vivos relevantes;
 - eventos activos o próximos;
-- stock y comercios relevantes;
+- stock y comercios relevantes cuando correspondan;
 - misiones relevantes;
 - facciones y reputación;
 - alertas de coherencia.
 
-Si `context/full` no trae la información necesaria, el GPT no debe inventar. Debe buscar más con endpoints profundos:
+`context/full` queda reservado para modo tecnico/admin/debug, no como lectura normal por turno.
+
+Si `context/compact` no trae la informacion necesaria, el GPT no debe inventar. Debe buscar mas con endpoints profundos:
 
 ```txt
 GET /api/docs/search?q=...
@@ -1738,7 +1740,7 @@ Lucas confirmó las siguientes decisiones como parte de la validación de `rules
 15. Romance lento, lógico e inocente si son menores; celos y malentendidos solo con personalidad, señales y contexto.
 16. Economía avanzada con stock real, oferta/demanda y negocios afectados por eventos; bancos/deudas/alquiler/impuestos existen como sistemas dormidos hasta interacción.
 17. Gremio: reglas y pool base en archivos; cartelera activa y estado vivo de misiones en MongoDB.
-18. Backend: primero `context/full`; si falta información, búsqueda profunda en docs/mundo/DB antes de inventar o preguntar.
+18. Backend: primero `context/compact`; `context/full` solo en modo tecnico/admin/debug. Si falta informacion, busqueda profunda en docs/mundo/DB antes de inventar o preguntar.
 
 Estas decisiones son parte del núcleo validado del motor.
 

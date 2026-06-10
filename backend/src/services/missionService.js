@@ -23,7 +23,15 @@ function createLogId() {
   return `log_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function getMissionBoard({ status, locationId, rank, riskLevel, sourceFactionId } = {}) {
+async function getMissionBoard({
+  status,
+  locationId,
+  rank,
+  riskLevel,
+  sourceFactionId,
+  gameId = "isekai_lucas_main",
+  includeExpiredAvailable = false,
+} = {}) {
   const query = {};
 
   if (status) {
@@ -37,10 +45,20 @@ async function getMissionBoard({ status, locationId, rank, riskLevel, sourceFact
   if (riskLevel) query.riskLevel = riskLevel;
   if (sourceFactionId) query.sourceFactionId = sourceFactionId;
 
-  return Mission.find(query)
+  const missions = await Mission.find(query)
     .sort({ status: 1, rank: 1, postedDay: -1, postedTime: -1 })
     .limit(50)
     .lean();
+
+  if (includeExpiredAvailable) return missions;
+
+  const hasAvailableStatus = !status || status === "available" || (Array.isArray(status) && status.includes("available"));
+  if (!hasAvailableStatus) return missions;
+
+  const gameState = await GameState.findOne({ gameId }).lean();
+  if (!gameState) return missions;
+
+  return missions.filter((mission) => mission.status !== "available" || !isMissionExpired(mission, gameState));
 }
 
 async function getMissionDetail(missionId) {

@@ -9,6 +9,7 @@ const {
   assert,
   assertCanonState,
   assertSameState,
+  get,
   getCanonicalState,
   post,
   startApi,
@@ -17,11 +18,13 @@ const {
 
 let tempGameId = "";
 let tempMissionId = "";
+let tempExpiredMissionId = "";
 let tempNpcId = "";
 
 async function createIsolatedGameState() {
   tempGameId = `test_turn_hardening_${Date.now()}`;
   tempMissionId = `mission_test_turn_hardening_${Date.now()}`;
+  tempExpiredMissionId = `mission_test_turn_hardening_expired_${Date.now()}`;
   tempNpcId = `npc_test_relationship_${Date.now()}`;
 
   const base = await GameState.findOne({ gameId: "isekai_lucas_main" }).lean();
@@ -75,6 +78,29 @@ async function createIsolatedGameState() {
     flags: { testSuite: true },
   });
 
+  await Mission.create({
+    missionId: tempExpiredMissionId,
+    templateId: "test_turn_hardening_expired",
+    title: "Test controlado de mision vencida",
+    description: "Mision temporal para probar que la cartelera no ofrece encargos vencidos.",
+    sourceFactionId: "faction_hoshimori_guild",
+    clientNpcId: "npc_garrick_thorne",
+    locationId: "loc_test_turn_hardening_board",
+    rank: "Porcelana",
+    requirements: [],
+    reward: { moneyCopper: 1, items: [], other: "" },
+    mgReward: 0,
+    riskLevel: "none",
+    status: "available",
+    postedDay: 10,
+    postedTime: "10:00",
+    expiresDay: 10,
+    expiresTime: "11:00",
+    proofRequired: "Reporte de prueba.",
+    proofStatus: "pending",
+    flags: { testSuite: true },
+  });
+
   await Npc.create({
     npcId: tempNpcId,
     name: "NPC Test Relacion",
@@ -94,7 +120,7 @@ async function createIsolatedGameState() {
 async function cleanupIsolatedState() {
   if (tempGameId) await GameState.deleteOne({ gameId: tempGameId });
   if (tempGameId) await WorldEvent.deleteMany({ gameId: tempGameId });
-  if (tempMissionId) await Mission.deleteOne({ missionId: tempMissionId });
+  await Mission.deleteMany({ missionId: { $in: [tempMissionId, tempExpiredMissionId].filter(Boolean) } });
   if (tempNpcId) await Npc.deleteOne({ npcId: tempNpcId });
   await EventLog.deleteMany({
     $or: [
@@ -113,6 +139,22 @@ describe("turn hardening coverage", () => {
   after(async () => {
     await cleanupIsolatedState();
     await stopApi();
+  });
+
+  it("hides expired available missions from the normal board", async () => {
+    const board = await get(
+      `/api/missions/board?gameId=${encodeURIComponent(tempGameId)}&status=available&locationId=loc_test_turn_hardening_board`
+    );
+    assert.equal(board.status, 200);
+    assert.equal(board.data.ok, true);
+    assert.equal(board.data.missions.some((mission) => mission.missionId === tempExpiredMissionId), false);
+
+    const debugBoard = await get(
+      `/api/missions/board?gameId=${encodeURIComponent(tempGameId)}&status=available&locationId=loc_test_turn_hardening_board&includeExpiredAvailable=true`
+    );
+    assert.equal(debugBoard.status, 200);
+    assert.equal(debugBoard.data.ok, true);
+    assert.equal(debugBoard.data.missions.some((mission) => mission.missionId === tempExpiredMissionId), true);
   });
 
   it("applies npc relationship patches through applyTurn", async () => {

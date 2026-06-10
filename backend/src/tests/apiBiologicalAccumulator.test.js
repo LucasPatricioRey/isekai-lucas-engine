@@ -142,6 +142,29 @@ describe("persistent biological accumulators", () => {
     assert.equal(response.data.changes.biologicalClock.pendingCreated[0].category, "esfuerzo_fuerte");
   });
 
+  it("rejects activity cost without time advance", async () => {
+    const gameId = await createBiologyTestGame({ time: "13:10", satiety: 88, energy: 69 });
+    const before = await getGameState(gameId);
+
+    const response = await post("/api/turn/apply", {
+      gameId,
+      actionSummary: "Test biologico: coste sin reloj.",
+      activityCost: {
+        category: "trabajo_normal",
+        minutes: 10,
+        reason: "Coste de prueba sin avance temporal.",
+      },
+    });
+
+    assert.equal(response.status, 400);
+    assert.match(response.data.error, /activityCost requiere timeAdvance/);
+
+    const after = await getGameState(gameId);
+    assert.equal(after.time, before.time);
+    assert.equal(after.lucasStatus.satiety.current, before.lucasStatus.satiety.current);
+    assert.equal(after.lucasStatus.energy.current, before.lucasStatus.energy.current);
+  });
+
   it("processes pending accumulation at hour boundary and does not process it twice", async () => {
     const gameId = await createBiologyTestGame({ time: "13:00", satiety: 88, energy: 69 });
 

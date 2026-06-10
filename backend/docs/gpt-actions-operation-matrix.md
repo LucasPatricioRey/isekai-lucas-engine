@@ -13,7 +13,7 @@ Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.j
 | listCombatEnemies | `GET /api/combat/enemies` | si | no | lectura | gameplay/debug |
 | getCombatEnemy | `GET /api/combat/enemies/{enemyId}` | si | no | lectura | gameplay |
 | getCompactContext | `GET /api/context/compact` | si | si | lectura | gameplay |
-| getFullContext | `GET /api/context/full` | si | si | lectura | gameplay |
+| getFullContext | `GET /api/context/full` | si | no | lectura | debug/admin |
 | getItem | `GET /api/economy/items/{itemId}` | si | si | lectura | gameplay |
 | listShops | `GET /api/economy/shops` | si | no | lectura | gameplay |
 | getShopStock | `GET /api/economy/shops/{shopId}/stock` | si | si | lectura | gameplay |
@@ -47,8 +47,8 @@ Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.j
 | previewWorldTick | `POST /api/world/tick/preview` | si | si | preview | gameplay |
 
 Notas:
-- El compact mantiene 30 operaciones para respetar el limite practico de GPT Builder.
-- `getCompactContext` es la lectura principal por turno; `getFullContext` queda como apoyo/debug con parametros de limite.
+- El compact mantiene hasta 30 operaciones para respetar el limite practico de GPT Builder.
+- `getCompactContext` es la lectura principal por turno; `getFullContext` queda fuera del compact y solo debe usarse en debug/admin.
 - `getCharacterState` evita reconstruir HP/MP/inventario/skills desde logs.
 - `previewSocialImpact` sugiere deltas de confianza/respeto/etc.; el guardado real se hace con `applyTurn.npcRelationshipPatches`.
 - Mutadores directos de misiones, combate, restock y rollback quedan fuera; misiones se gestionan por `applyTurn.missionPatch` y eventos por `applyTurn.worldEventPatches`.

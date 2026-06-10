@@ -7,6 +7,14 @@ const EventLog = require("../models/EventLog");
 const GameState = require("../models/GameState");
 const Mission = require("../models/Mission");
 const WeatherState = require("../models/WeatherState");
+const WorldEvent = require("../models/WorldEvent");
+const {
+  DAILY_EVENT_TAG,
+  eventGameFilter,
+  getEventStatusAt,
+  reconcileDailyEventsForGameState,
+  shouldEnsureDailyEvent,
+} = require("../services/dailyEventSchedulerService");
 
 const GAME_ID = process.env.REPAIR_GAME_ID || "isekai_lucas_main";
 const REGION_ID = process.env.REPAIR_REGION_ID || "region_hoshimori";
@@ -113,6 +121,10 @@ function docSummary(doc, fields) {
   return summary;
 }
 
+function unique(values) {
+  return Array.from(new Set((values || []).filter(Boolean)));
+}
+
 function buildWeatherRefresh(gameState, latestWeather) {
   const block = getWeatherBlock(gameState.currentDay, gameState.time);
   const weatherId = `weather_${sanitizeIdPart(REGION_ID)}_d${block.startDay}_${block.key}_${SOURCE}`;
@@ -142,10 +154,20 @@ async function buildRepairPlan() {
   const gameState = await GameState.findOne({ gameId: GAME_ID }).lean();
   if (!gameState) throw new Error(`No existe GameState para gameId: ${GAME_ID}`);
 
-  const [availableMissions, latestWeather] = await Promise.all([
+  const [availableMissions, latestWeather, currentDailyEvent, lifecycleCandidates] = await Promise.all([
     Mission.find({ status: "available" }).sort({ expiresDay: 1, expiresTime: 1 }).lean(),
     WeatherState.findOne({ regionId: REGION_ID })
       .sort({ startedDay: -1, startedTime: -1, updatedAt: -1 })
+      .lean(),
+    WorldEvent.findOne({
+      ...eventGameFilter(GAME_ID),
+      tags: { $all: [DAILY_EVENT_TAG, `daily_event_day_${gameState.currentDay}`] },
+    }).lean(),
+    WorldEvent.find({
+      ...eventGameFilter(GAME_ID),
+      status: { $in: ["scheduled", "active"] },
+    })
+      .select("eventId status startDay startTime endDay endTime severity tags")
       .lean(),
   ]);
 
@@ -196,6 +218,54 @@ async function buildRepairPlan() {
     }
   }
 
+  if (shouldEnsureDailyEvent(gameState) && !currentDailyEvent) {
+    changes.push({
+      type: "ensure_daily_event",
+      before: null,
+      after: {
+        day: gameState.currentDay,
+        time: gameState.time,
+        reason: "Debe existir un evento diario desde el bloque de manana.",
+      },
+    });
+  }
+
+  const lifecycleUpdates = lifecycleCandidates
+    .map((event) => ({
+      eventId: event.eventId,
+      beforeStatus: event.status,
+      afterStatus: getEventStatusAt(event, gameState.currentDay, gameState.time),
+    }))
+    .filter((entry) => entry.beforeStatus !== entry.afterStatus);
+
+  if (lifecycleUpdates.length > 0) {
+    changes.push({
+      type: "reconcile_daily_event_lifecycle",
+      before: lifecycleUpdates.map((entry) => ({
+        eventId: entry.eventId,
+        status: entry.beforeStatus,
+      })),
+      after: lifecycleUpdates.map((entry) => ({
+        eventId: entry.eventId,
+        status: entry.afterStatus,
+      })),
+    });
+  }
+
+  const expectedActiveEventIds = unique(
+    lifecycleCandidates
+      .filter((event) => getEventStatusAt(event, gameState.currentDay, gameState.time) === "active")
+      .map((event) => event.eventId)
+  );
+  const currentActiveEventIds = unique(gameState.activeEventIds || []);
+  if (JSON.stringify(expectedActiveEventIds) !== JSON.stringify(currentActiveEventIds)) {
+    changes.push({
+      type: "reconcile_active_event_ids",
+      before: currentActiveEventIds,
+      after: expectedActiveEventIds,
+    });
+  }
+
   return {
     gameState: docSummary(gameState, ["gameId", "currentDay", "time", "block", "locationId"]),
     changes,
@@ -235,6 +305,17 @@ async function applyRepairPlan(plan) {
         }
       }
 
+      if (
+        plan.changes.some((change) =>
+          ["ensure_daily_event", "reconcile_daily_event_lifecycle"].includes(change.type)
+          || change.type === "reconcile_active_event_ids"
+        )
+      ) {
+        const dailyEventResult = await reconcileDailyEventsForGameState(gameState, { session });
+        gameState.activeEventIds = dailyEventResult.activeEventIds || gameState.activeEventIds || [];
+        await gameState.save({ session });
+      }
+
       await EventLog.create(
         [
           {
@@ -246,7 +327,7 @@ async function applyRepairPlan(plan) {
             locationId: gameState.locationId,
             type: "system_correction",
             summary:
-              "Reparacion previa a partida: misiones disponibles vencidas expiradas y clima actual refrescado si estaba vencido.",
+              "Reparacion previa a partida: misiones vencidas expiradas, clima refrescado y evento diario reconciliado si hacia falta.",
             involvedCharacterIds: [gameState.characterId],
             mechanicalChanges: {
               source: SOURCE,

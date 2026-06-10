@@ -1157,36 +1157,7 @@ function applyBiologicalClockForTurn(gameState, body, turnTimeAdvance) {
   }
 
   if (!turnTimeAdvance && body.activityCost) {
-    const immediate = applyActivityCost(gameState, body.activityCost);
-    clock.currentHourBlock = getHourBlockForTime(gameState.time);
-
-    return {
-      mode: "legacy_immediate",
-      pendingCreated: [],
-      processedBlocks: [
-        {
-          blockStart: getHourBlockStart(gameState.time),
-          blockEnd: getHourBlockEnd(getHourBlockStart(gameState.time)),
-          activities: [
-            {
-              category: immediate.category,
-              label: immediate.label,
-              minutes: immediate.minutes,
-              reasons: [immediate.reason].filter(Boolean),
-              delta: {
-                satiety: immediate.satiety.delta,
-                energy: immediate.energy.delta,
-              },
-              perHour: immediate.perHour,
-              fatigueMultiplier: immediate.fatigueMultiplier,
-            },
-          ],
-          satiety: immediate.satiety,
-          energy: immediate.energy,
-        },
-      ],
-      pendingCount: clock.pendingAccumulations.filter(isUnprocessedAccumulation).length,
-    };
+    throw validationError("activityCost requiere timeAdvance para guardar acumuladores biologicos formales.");
   }
 
   const fromDay = turnTimeAdvance.fromDay || gameState.currentDay;

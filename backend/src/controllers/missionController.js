@@ -14,6 +14,10 @@ async function getMissionBoardController(req, res) {
       rank: req.query.rank,
       riskLevel: req.query.riskLevel,
       sourceFactionId: req.query.sourceFactionId,
+      gameId: req.query.gameId || "isekai_lucas_main",
+      includeExpiredAvailable: ["1", "true", "yes"].includes(
+        String(req.query.includeExpiredAvailable || "").toLowerCase()
+      ),
     });
 
     return res.json({
