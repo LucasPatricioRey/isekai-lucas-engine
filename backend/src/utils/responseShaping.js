@@ -5,6 +5,7 @@ const {
 } = require("../services/socialLedgerService");
 const { summarizeNpcSocialProfile } = require("../services/socialProfileService");
 const { buildSocialConsequenceHintEffect } = require("../services/dailyEventSocialService");
+const { evaluateSocialRelationshipState } = require("../services/socialRelationshipStateService");
 
 function unique(values) {
   return Array.from(new Set((values || []).filter(Boolean)));
@@ -181,6 +182,7 @@ function summarizeNpc(npc) {
       fear: relationshipBand(relationship.fear),
       jealousy: relationshipBand(relationship.jealousy),
     },
+    relationshipState: evaluateSocialRelationshipState(relationship),
     factionLinks: npc.factionLinks || [],
     knownPublicFacts: npc.knownPublicFacts || [],
     flags: npc.flags || {},

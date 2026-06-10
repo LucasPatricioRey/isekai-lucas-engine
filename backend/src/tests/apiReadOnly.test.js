@@ -24,6 +24,11 @@ describe("read-only API coverage", () => {
     const compact = await get("/api/context/compact");
     assert.equal(compact.status, 200);
     assert.ok(Array.isArray(compact.data.context.pendingBiology));
+    assert.ok(
+      (compact.data.context.scene.nearbyNpcs || []).some(
+        (npc) => npc.relationshipState?.schemaVersion === "social_state_v1"
+      )
+    );
     assert.deepEqual(
       compact.data.context.pendingBiology,
       compact.data.context.pendingBiologicalAccumulations
@@ -59,6 +64,8 @@ describe("read-only API coverage", () => {
     assert.equal(npc.status, 200);
     assert.equal(npc.data.ok, true);
     assert.equal(npc.data.npc.npcId, "npc_fern");
+    assert.equal(npc.data.relationshipState.schemaVersion, "social_state_v1");
+    assert.equal(npc.data.npcSummary.relationshipState.schemaVersion, "social_state_v1");
 
     const location = await get("/api/locations/loc_hoshimori_grulla_azul_comedor/full");
     assert.equal(location.status, 200);

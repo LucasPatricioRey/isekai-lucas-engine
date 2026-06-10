@@ -64,6 +64,8 @@ describe("preview and rejection API coverage", () => {
     assert.ok(social.data.preview.evaluation.caps.daily);
     assert.ok(social.data.preview.evaluation.dailyUsage || social.data.preview.evaluation.caps.dailyUsage);
     assert.ok(social.data.preview.npc.socialProfile.values.length > 0);
+    assert.equal(social.data.preview.npc.relationshipState.schemaVersion, "social_state_v1");
+    assert.ok(Number.isInteger(social.data.preview.evaluation.projectedRelationship.relationshipState.accessScore));
     assert.equal(social.data.preview.evaluation.socialProfile.profileFit, "aligned");
     assert.ok(social.data.preview.evaluation.socialProfile.matchedTolerates.length >= 1);
 
@@ -92,6 +94,7 @@ describe("preview and rejection API coverage", () => {
     assert.ok((social.data.preview.suggestedPatch.trustDelta || 0) < 0);
     assert.ok((social.data.preview.suggestedPatch.suspicionDelta || 0) >= 1);
     assert.ok((social.data.preview.suggestedPatch.fearDelta || 0) >= 1);
+    assert.equal(social.data.preview.evaluation.projectedRelationship.relationshipState.access.privateInfo, false);
 
     const afterState = await getCanonicalState();
     assertSameState(beforeState, afterState);

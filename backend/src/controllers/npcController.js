@@ -66,10 +66,13 @@ async function getNpcFull(req, res) {
       .limit(socialLedgerLimit)
       .lean(),
   ]);
+  const npcSummary = responseShaping.summarizeNpc(npc);
 
   return res.json({
     ok: true,
     npc,
+    npcSummary,
+    relationshipState: npcSummary.relationshipState,
     memories,
     rumors,
     recentEventLogs: recentEventLogs.map((log) =>

@@ -16,6 +16,10 @@ const {
   evaluateNpcSocialProfile,
   summarizeNpcSocialProfile,
 } = require("./socialProfileService");
+const {
+  applyRelationshipDeltas,
+  evaluateSocialRelationshipState,
+} = require("./socialRelationshipStateService");
 
 const IMPORTANCE_SCORE = {
   none: 0,
@@ -419,6 +423,9 @@ async function previewSocialImpact(body = {}) {
     overrideReason: body.overrideReason || "",
   });
   const currentRelationship = normalizeRelationship(npc.relationshipWithLucas || {});
+  const currentRelationshipState = evaluateSocialRelationshipState(currentRelationship);
+  const projectedRelationship = applyRelationshipDeltas(currentRelationship, capEvaluation.appliedDeltas);
+  const projectedRelationshipState = evaluateSocialRelationshipState(projectedRelationship);
   const reason = evaluation.reasons.join("; ");
   const suggestedPatch = buildSuggestedPatch(
     npc.npcId,
@@ -439,6 +446,7 @@ async function previewSocialImpact(body = {}) {
       role: npc.role || "",
       socialProfile: summarizeNpcSocialProfile(npc),
       relationshipWithLucas: currentRelationship,
+      relationshipState: currentRelationshipState,
       trustBand: getTrustBand(currentRelationship.trust || 0),
       familiarityBand: relationshipBand(currentRelationship.familiarity || 0),
     },
@@ -475,6 +483,10 @@ async function previewSocialImpact(body = {}) {
         deltaModifiers: socialProfileFit.deltaModifiers,
         reasons: socialProfileFit.reasons,
         warnings: socialProfileFit.warnings,
+      },
+      projectedRelationship: {
+        relationshipWithLucas: projectedRelationship,
+        relationshipState: projectedRelationshipState,
       },
       relationshipThresholds: TRUST_BANDS,
     },

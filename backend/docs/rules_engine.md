@@ -1369,6 +1369,16 @@ Eventos diarios y vínculos:
 - estos cambios deben guardarse por backend mediante `applyTurn`, `worldEventPatches` y el ledger social, nunca solo narrarse;
 - `applySocialConsequences=false` o `socialOutcome=none` solo debe usarse en modo técnico si hay motivo claro.
 
+Estado social efectivo:
+
+- `relationshipState` traduce numeros sociales a acceso real, riesgos, bloqueos, oportunidades y guia narrativa;
+- `trust/respect/familiarity/affection` abren conversacion, favores, informacion sensible o apoyo si no hay riesgos altos;
+- `suspicion/fear/jealousy/socialDebt` pueden bloquear cercania aunque la confianza sea alta;
+- si `relationshipState.access.privateInfo=false`, el NPC no debe revelar informacion privada ni secretos;
+- si `relationshipState.access.riskyHelp=false`, no conceder ayuda peligrosa, favores grandes ni recursos importantes;
+- `fear` alto no es respeto ni afecto: puede producir obediencia defensiva, pero no cercania autentica;
+- `relationshipState.romance.locked=true` significa que los numeros no desbloquean romance automatico.
+
 Umbrales de confianza:
 
 - `0-9`: desconocido/cautela.

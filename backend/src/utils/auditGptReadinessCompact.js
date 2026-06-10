@@ -187,6 +187,13 @@ async function checkCompactEndpoints(issues) {
     "context/compact exposes NPC social profiles",
     (context.context?.scene?.nearbyNpcs || []).some((npc) => npc.socialProfile?.values?.length > 0)
   );
+  assertCondition(
+    issues,
+    "context/compact exposes effective relationship states",
+    (context.context?.scene?.nearbyNpcs || []).some(
+      (npc) => npc.relationshipState?.schemaVersion === "social_state_v1"
+    )
+  );
   assertCondition(issues, "character state has HP", Boolean(characterState.state?.life?.max));
   assertCondition(issues, "character state has MP", Boolean(characterState.state?.mp?.max));
   assertCondition(issues, "search/db returns Fern", (fern.results?.npcs || []).length > 0);
@@ -210,6 +217,11 @@ async function checkCompactEndpoints(issues) {
   );
   assertCondition(issues, "social impact preview has actionType", Boolean(socialImpact.preview?.suggestedPatch?.actionType));
   assertCondition(issues, "social impact preview has daily caps", Boolean(socialImpact.preview?.evaluation?.caps?.daily));
+  assertCondition(
+    issues,
+    "social impact preview projects relationship state",
+    socialImpact.preview?.evaluation?.projectedRelationship?.relationshipState?.schemaVersion === "social_state_v1"
+  );
   assertCondition(
     issues,
     "social impact preview has NPC profile fit",
