@@ -2,6 +2,7 @@
 const cors = require("cors");
 const morgan = require("morgan");
 const path = require("path");
+const fs = require("fs");
 
 const contextRoutes = require("./routes/contextRoutes");
 const turnRoutes = require("./routes/turnRoutes");
@@ -51,7 +52,25 @@ app.get("/docs/:fileName", (req, res) => {
     });
   }
 
-  return res.sendFile(path.resolve(__dirname, "../docs", fileName));
+  const filePath = path.resolve(__dirname, "../docs", fileName);
+  const protocol = String(req.get("x-forwarded-proto") || req.protocol || "https")
+    .split(",")[0]
+    .trim();
+  const host = String(req.get("x-forwarded-host") || req.get("host") || "")
+    .split(",")[0]
+    .trim();
+
+  if (!host) {
+    return res.status(400).json({
+      ok: false,
+      error: "No se pudo resolver host para el schema.",
+    });
+  }
+
+  const openApi = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  openApi.servers = [{ url: `${protocol}://${host}` }];
+
+  return res.json(openApi);
 });
 
 app.use("/api/context", contextRoutes);
