@@ -5,12 +5,17 @@ const {
   SOCIAL_BANDS,
   SOCIAL_RELATIONSHIP_FIELDS,
   applyDailySocialCaps,
+  buildEmptyDeltas,
   getDailySocialUsage,
   normalizeActionType,
   normalizeRelationship,
   relationshipBand,
   summarizeDailySocialUsage,
 } = require("./socialLedgerService");
+const {
+  evaluateNpcSocialProfile,
+  summarizeNpcSocialProfile,
+} = require("./socialProfileService");
 
 const IMPORTANCE_SCORE = {
   none: 0,
@@ -76,7 +81,7 @@ function inferFactors(body) {
   );
   const respectsBoundaries = boolFrom(
     factors.respectsBoundaries,
-    /\b(respet|limite|espacio|sin invadir|sin presion)\w*/.test(text)
+    /\b(respet|limite|sin invadir|sin presion)\w*/.test(text)
   );
   const promiseFulfilled = boolFrom(
     factors.promiseFulfilled,
@@ -140,6 +145,12 @@ function normalizeDeltaObject(deltas, sceneCap) {
     normalized[field] = clamp(value, -3, sceneCap);
   }
   return normalized;
+}
+
+function mergeDeltas(base, modifiers = {}) {
+  for (const field of SOCIAL_RELATIONSHIP_FIELDS) {
+    base[field] = (base[field] || 0) + (modifiers[field] || 0);
+  }
 }
 
 function buildSuggestedPatch(npcId, deltas, reason, notes) {
@@ -209,7 +220,7 @@ function calculateMemorySignal(memories) {
   };
 }
 
-function evaluateSocialImpact({ npc, factors, body, memorySignal }) {
+function evaluateSocialImpact({ npc, factors, body, memorySignal, socialProfileFit }) {
   const current = normalizeRelationship(npc.relationshipWithLucas || {});
   const sceneCap = clamp(Number.isInteger(body.sceneCap) ? body.sceneCap : 2, 0, 3);
   const deltas = {
@@ -230,13 +241,18 @@ function evaluateSocialImpact({ npc, factors, body, memorySignal }) {
   if (!factors.mattersToNpc) gateFailures.push("la accion no le importa al NPC");
   if (!factors.fitsPersonality) gateFailures.push("no encaja con su personalidad/valores");
 
+  const profileConflict = socialProfileFit?.profileFit === "conflict";
+  const profileMixedFriction =
+    socialProfileFit?.profileFit === "mixed" && (socialProfileFit?.negativeSignals || 0) > (socialProfileFit?.positiveSignals || 0);
   const negative =
     factors.liedOrBrokePromise ||
     factors.embarrassedNpc ||
     factors.pressuredNpc ||
     factors.harmedNpc ||
     factors.unreliableWork ||
-    body.polarity === "negative";
+    body.polarity === "negative" ||
+    profileConflict ||
+    profileMixedFriction;
 
   if (gateFailures.length > 0) {
     warnings.push(...gateFailures);
@@ -250,10 +266,6 @@ function evaluateSocialImpact({ npc, factors, body, memorySignal }) {
 
   const importance = importanceScore(factors.importance);
 
-  if (importance >= 1 && !factors.repetitiveSocialFarming) {
-    deltas.familiarity += importance >= 3 ? 2 : 1;
-  }
-
   if (negative) {
     const baseLoss = importance >= 3 ? -2 : -1;
     deltas.trust += baseLoss;
@@ -262,13 +274,20 @@ function evaluateSocialImpact({ npc, factors, body, memorySignal }) {
     if (factors.unreliableWork) deltas.respect -= 1;
     if (factors.provokedJealousy) deltas.jealousy += 1;
     if (factors.harmedNpc || factors.liedOrBrokePromise) deltas.socialDebt -= 1;
-    reasons.push("impacto negativo: dano social, presion, mentira, humillacion o incumplimiento");
+    mergeDeltas(deltas, socialProfileFit?.deltaModifiers);
+    reasons.push("impacto negativo: dano social, presion, mentira, humillacion, incumplimiento o choque con limites del NPC");
+    reasons.push(...(socialProfileFit?.reasons || []));
+    warnings.push(...(socialProfileFit?.warnings || []));
     return {
       deltas: normalizeDeltaObject(deltas, sceneCap),
       reasons,
       warnings,
       sceneCap,
     };
+  }
+
+  if (importance >= 1 && !factors.repetitiveSocialFarming) {
+    deltas.familiarity += importance >= 3 ? 2 : 1;
   }
 
   if (factors.repetitiveSocialFarming && importance < 4) {
@@ -295,6 +314,10 @@ function evaluateSocialImpact({ npc, factors, body, memorySignal }) {
     deltas.socialDebt += importance >= 3 || factors.riskOrCostToLucas ? 2 : 1;
     reasons.push("favor practico fuera del deber normal crea deuda social leve");
   }
+
+  mergeDeltas(deltas, socialProfileFit?.deltaModifiers);
+  reasons.push(...(socialProfileFit?.reasons || []));
+  warnings.push(...(socialProfileFit?.warnings || []));
 
   if (factors.withinExpectedDuty && deltas.trust > 1 && !factors.promiseFulfilled && !factors.riskOrCostToLucas) {
     deltas.trust = 1;
@@ -366,7 +389,21 @@ async function previewSocialImpact(body = {}) {
   );
   const memorySignal = calculateMemorySignal(recentPositiveMemories);
   const factors = inferFactors(body);
-  const evaluation = evaluateSocialImpact({ npc, factors, body, memorySignal });
+  const socialProfileFit = body.respectNpcProfile === false
+    ? {
+        profileFit: "disabled",
+        positiveSignals: 0,
+        negativeSignals: 0,
+        matchedValues: [],
+        matchedTolerates: [],
+        matchedRejects: [],
+        matchedPersonality: [],
+        deltaModifiers: buildEmptyDeltas(),
+        reasons: ["perfil social del NPC omitido por request"],
+        warnings: [],
+      }
+    : evaluateNpcSocialProfile({ npc, body, factors });
+  const evaluation = evaluateSocialImpact({ npc, factors, body, memorySignal, socialProfileFit });
   const dailyUsage = gameState?.currentDay
     ? await getDailySocialUsage({
         gameId,
@@ -400,6 +437,7 @@ async function previewSocialImpact(body = {}) {
       npcId: npc.npcId,
       name: npc.name,
       role: npc.role || "",
+      socialProfile: summarizeNpcSocialProfile(npc),
       relationshipWithLucas: currentRelationship,
       trustBand: getTrustBand(currentRelationship.trust || 0),
       familiarityBand: relationshipBand(currentRelationship.familiarity || 0),
@@ -426,6 +464,18 @@ async function previewSocialImpact(body = {}) {
         majorEventException: true,
       },
       memorySignal,
+      socialProfile: {
+        profileFit: socialProfileFit.profileFit,
+        positiveSignals: socialProfileFit.positiveSignals,
+        negativeSignals: socialProfileFit.negativeSignals,
+        matchedValues: socialProfileFit.matchedValues,
+        matchedTolerates: socialProfileFit.matchedTolerates,
+        matchedRejects: socialProfileFit.matchedRejects,
+        matchedPersonality: socialProfileFit.matchedPersonality,
+        deltaModifiers: socialProfileFit.deltaModifiers,
+        reasons: socialProfileFit.reasons,
+        warnings: socialProfileFit.warnings,
+      },
       relationshipThresholds: TRUST_BANDS,
     },
     suggestedPatch,

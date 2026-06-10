@@ -182,6 +182,11 @@ async function checkCompactEndpoints(issues) {
   assertCondition(issues, "context/compact OK", context.ok === true && context.compact === true);
   assertCondition(issues, "context/compact stays under GPT Actions response budget", JSON.stringify(context).length < 100000);
   assertCondition(issues, "context/compact has socialLedgerToday", Array.isArray(context.context?.socialLedgerToday));
+  assertCondition(
+    issues,
+    "context/compact exposes NPC social profiles",
+    (context.context?.scene?.nearbyNpcs || []).some((npc) => npc.socialProfile?.values?.length > 0)
+  );
   assertCondition(issues, "character state has HP", Boolean(characterState.state?.life?.max));
   assertCondition(issues, "character state has MP", Boolean(characterState.state?.mp?.max));
   assertCondition(issues, "search/db returns Fern", (fern.results?.npcs || []).length > 0);
@@ -205,6 +210,11 @@ async function checkCompactEndpoints(issues) {
   );
   assertCondition(issues, "social impact preview has actionType", Boolean(socialImpact.preview?.suggestedPatch?.actionType));
   assertCondition(issues, "social impact preview has daily caps", Boolean(socialImpact.preview?.evaluation?.caps?.daily));
+  assertCondition(
+    issues,
+    "social impact preview has NPC profile fit",
+    Boolean(socialImpact.preview?.evaluation?.socialProfile?.profileFit)
+  );
   assertCondition(issues, "social impact preview is dryRun", socialImpact.dryRun === true);
 
   const gameState = summarizeGameState(context);

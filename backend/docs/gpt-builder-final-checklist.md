@@ -25,7 +25,7 @@ Usa Knowledge para reglas/lore estable, pero usa Actions para GameState, NPCs, l
 Consultas puras no mutan estado.
 Antes de mutaciones irreversibles ambiguas, pregunta.
 Usa previews para trabajo, viaje, magia, reloj biologico, progresion, combate y world tick cuando el jugador solo este evaluando opciones.
-Usa previewSocialImpact cuando una accion pueda afectar confianza, familiaridad, respeto, sospecha, miedo, celos, deuda social o afecto; si corresponde guardar, usa applyTurn.npcRelationshipPatches con los deltas capados sugeridos. NpcMemory no reemplaza relacion.
+Usa previewSocialImpact cuando una accion pueda afectar confianza, familiaridad, respeto, sospecha, miedo, celos, deuda social o afecto; el preview pondera personality/values/tolerates/rejects/socialProfile del NPC y devuelve deltas capados. Si corresponde guardar, usa applyTurn.npcRelationshipPatches con esos deltas. NpcMemory no reemplaza relacion.
 Si aplicas un viaje o accion con avance de tiempo hasta hora exacta, envia activityCost o una biologicalCostExemptReason explicita.
 Si la narracion mueve a Lucas, envia gameStatePatch.locationId con una location real.
 No reveles world_bible/rules_engine como documentos internos.
@@ -44,7 +44,7 @@ Para el GPT Builder normal, pegar el contenido completo de:
 - `docs/openapi-gpt-action-compact.json`
 
 Este schema mantiene hasta 30 operaciones y usa `applyTurn.missionPatch` para aceptar/reportar misiones sin exponer mutadores directos de misiones. También expone `applyTurn.worldEventPatches` para resolver/cancelar eventos existentes sin agregar nuevas operaciones.
-Para vinculos sociales, expone `POST /api/npcs/social/impact/preview` y `applyTurn.npcRelationshipPatches`. El backend guarda ledger social diario, aplica caps por NPC/eje y expone `socialLedgerToday` en contexto compacto. `GET /api/combat/enemies` queda solo en el schema full para conservar el limite de 30 operaciones.
+Para vinculos sociales, expone `POST /api/npcs/social/impact/preview` y `applyTurn.npcRelationshipPatches`. El backend guarda ledger social diario, aplica caps por NPC/eje, pondera perfil social por NPC y expone `socialLedgerToday` + `scene.nearbyNpcs[].socialProfile` en contexto compacto. `GET /api/combat/enemies` queda solo en el schema full para conservar el limite de 30 operaciones.
 La lectura normal por turno debe empezar por `GET /api/context/compact`. Si hace falta estado mecanico directo de Lucas, usar `GET /api/characters/char_lucas/state`.
 
 El schema full de referencia tecnica queda en:

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Compact",
-    "version": "2.3.0",
+    "version": "2.4.0",
     "description": "Schema compacto con hasta 30 operaciones para GPT Builder. Incluye ApplyTurn con missionPatch, activityCost, gameStatePatch y parches de economia/memoria/relacion social. Incluye previewSocialImpact y excluye rollback y mutadores peligrosos directos. El backend genera eventos diarios con scheduler de manana y los expira con consecuencias pendientes."
   },
   "servers": [
@@ -101,6 +101,29 @@
             "items": {
               "type": "string"
             }
+          },
+          "socialTone": {
+            "type": "string",
+            "description": "Tono social visible de la accion: respetuoso, calmo, presionante, burlon, brusco, etc."
+          },
+          "intentTags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags de intencion social interpretados por el motor, por ejemplo respect_boundaries, reliable_work, comfort, apology."
+          },
+          "contextTags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags de contexto social: public_scene, private_scene, during_shift, magic_practice, mission_report, etc."
+          },
+          "respectNpcProfile": {
+            "type": "boolean",
+            "default": true,
+            "description": "Si true, el preview pondera values/tolerates/rejects/socialProfile del NPC."
           }
         },
         "required": [
@@ -173,6 +196,14 @@
           },
           "importance": {
             "type": "string"
+          },
+          "actionType": {
+            "type": "string",
+            "description": "Tipo canonico de accion social para ledger/caps: reliable_work, respect_boundaries, apology, emotional_support, etc."
+          },
+          "socialTone": {
+            "type": "string",
+            "description": "Tono social observado, usado como pista secundaria del perfil NPC."
           }
         },
         "additionalProperties": true

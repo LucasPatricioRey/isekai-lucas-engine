@@ -63,6 +63,35 @@ describe("preview and rejection API coverage", () => {
     assert.equal(social.data.preview.suggestedPatch.actionType, "reliable_work");
     assert.ok(social.data.preview.evaluation.caps.daily);
     assert.ok(social.data.preview.evaluation.dailyUsage || social.data.preview.evaluation.caps.dailyUsage);
+    assert.ok(social.data.preview.npc.socialProfile.values.length > 0);
+    assert.equal(social.data.preview.evaluation.socialProfile.profileFit, "aligned");
+    assert.ok(social.data.preview.evaluation.socialProfile.matchedTolerates.length >= 1);
+
+    const afterState = await getCanonicalState();
+    assertSameState(beforeState, afterState);
+  });
+
+  it("social preview applies NPC-specific profile friction without mutating canonical state", async () => {
+    const beforeState = await getCanonicalState();
+    assertCanonState(beforeState);
+
+    const social = await post("/api/npcs/social/impact/preview", {
+      npcId: "npc_fern",
+      actionSummary: "Lucas insiste con magia imprudente e invade su espacio personal para demostrar mana.",
+      factors: {
+        witnessedByNpc: true,
+        mattersToNpc: true,
+        importance: "meaningful",
+      },
+    });
+
+    assert.equal(social.status, 200);
+    assert.equal(social.data.dryRun, true);
+    assert.equal(social.data.preview.evaluation.socialProfile.profileFit, "conflict");
+    assert.ok(social.data.preview.evaluation.socialProfile.matchedRejects.length >= 1);
+    assert.ok((social.data.preview.suggestedPatch.trustDelta || 0) < 0);
+    assert.ok((social.data.preview.suggestedPatch.suspicionDelta || 0) >= 1);
+    assert.ok((social.data.preview.suggestedPatch.fearDelta || 0) >= 1);
 
     const afterState = await getCanonicalState();
     assertSameState(beforeState, afterState);

@@ -329,6 +329,15 @@ const npcs = [
     values: ["responsabilidad", "trabajo bien hecho", "palabra dada"],
     tolerates: ["errores honestos", "esfuerzo", "preguntas directas"],
     rejects: ["mentiras", "robo", "faltas graves", "excusas flojas"],
+    socialProfile: {
+      archetype: "pragmatic_employer",
+      affinityTags: ["reliable_work", "punctuality", "promise_fulfilled"],
+      frictionTags: ["excuses", "theft", "broken_promise"],
+      trustSignals: ["palabra dada", "errores honestos"],
+      respectSignals: ["trabajo bien hecho", "responsabilidad"],
+      suspicionSignals: ["mentiras", "excusas flojas"],
+      boundaries: ["no pedir adelantos sin motivo claro", "no abandonar turno sin avisar"],
+    },
     relationshipWithLucas: {
       trust: 56,
       respect: 35,
@@ -360,6 +369,15 @@ const npcs = [
     values: ["discrecion", "control", "responsabilidad", "seguridad"],
     tolerates: ["respeto", "honestidad", "ayuda sin presion"],
     rejects: ["invasion", "insistencia", "magia imprudente"],
+    socialProfile: {
+      archetype: "reserved_boundary_sensitive",
+      affinityTags: ["discretion", "quiet_honesty", "safe_magic"],
+      frictionTags: ["pressure", "invasion", "reckless_magic"],
+      trustSignals: ["discrecion", "respeto", "honestidad"],
+      respectSignals: ["control", "seguridad", "responsabilidad"],
+      fearSignals: ["magia imprudente"],
+      boundaries: ["no insistir", "no invadir espacio personal", "no hacer magia imprudente cerca"],
+    },
     relationshipWithLucas: {
       trust: 24,
       notes: "Trato basico-cordial. Sabe que Lucas desperto magia/mana porque el se lo conto.",
@@ -389,6 +407,15 @@ const npcs = [
     values: ["sentirse util", "no ser humillada", "que respeten su esfuerzo"],
     tolerates: ["bromas ligeras", "ayuda genuina", "compania tranquila"],
     rejects: ["presion", "burla publica", "coqueteo brusco", "comparaciones crueles"],
+    socialProfile: {
+      archetype: "shy_helper_sensitive_to_public_pressure",
+      affinityTags: ["gentle_help", "calm_company", "effort_respected"],
+      frictionTags: ["public_mockery", "rough_flirting", "cruel_comparison"],
+      trustSignals: ["ayuda genuina", "compania tranquila"],
+      respectSignals: ["que respeten su esfuerzo", "sentirse util"],
+      jealousySignals: ["comparaciones crueles"],
+      boundaries: ["no presionarla", "no burlarse en publico", "no forzar coqueteo"],
+    },
     relationshipWithLucas: {
       trust: 15,
       jealousy: 5,
@@ -419,6 +446,15 @@ const npcs = [
     values: ["reportes honestos", "preparacion", "responsabilidad"],
     tolerates: ["preguntas claras", "cautela", "disciplina"],
     rejects: ["exageraciones", "imprudencia", "mentiras en mision"],
+    socialProfile: {
+      archetype: "guild_mentor_procedural",
+      affinityTags: ["clear_report", "caution", "discipline"],
+      frictionTags: ["reckless_novice", "false_report", "mission_lie"],
+      trustSignals: ["reportes honestos", "claridad"],
+      respectSignals: ["preparacion", "disciplina", "responsabilidad"],
+      suspicionSignals: ["exageraciones", "mentiras en mision"],
+      boundaries: ["no exagerar reportes", "no ocultar riesgos de mision"],
+    },
     relationshipWithLucas: {
       trust: 36,
       respect: 25,

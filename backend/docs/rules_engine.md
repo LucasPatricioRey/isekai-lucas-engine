@@ -1351,6 +1351,16 @@ Diferenciar métricas:
 - `fear`: amenaza o daño.
 - `jealousy`: solo si el contexto social lo justifica; no usar como romance automático.
 
+Perfil social del NPC:
+
+- cada NPC puede tener `personality`, `values`, `tolerates`, `rejects` y `socialProfile`;
+- `previewSocialImpact` debe ponderar esos rasgos antes de sugerir deltas;
+- si la acción toca valores del NPC, puede reforzar `respect` dentro del tope;
+- si la acción encaja con formas de trato toleradas/apreciadas, puede reforzar `trust`;
+- si la acción choca con `rejects` o límites del NPC, debe generar warnings y puede bajar `trust` o subir `suspicion/fear/jealousy`;
+- una misma acción puede ser positiva para un NPC y mala para otro;
+- los rasgos sociales guían mecánica y voz narrativa, pero no revelan secretos in-game.
+
 Umbrales de confianza:
 
 - `0-9`: desconocido/cautela.

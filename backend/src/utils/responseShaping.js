@@ -3,6 +3,7 @@ const {
   normalizeRelationship,
   relationshipBand,
 } = require("../services/socialLedgerService");
+const { summarizeNpcSocialProfile } = require("../services/socialProfileService");
 
 function unique(values) {
   return Array.from(new Set((values || []).filter(Boolean)));
@@ -168,6 +169,7 @@ function summarizeNpc(npc) {
     currentTask: npc.currentTask || "",
     availability: npc.availability || {},
     persistenceLevel: npc.persistenceLevel || "",
+    socialProfile: summarizeNpcSocialProfile(npc),
     relationshipWithLucas: relationship,
     relationshipBands: {
       trust: relationshipBand(relationship.trust),

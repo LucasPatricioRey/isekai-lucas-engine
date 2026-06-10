@@ -84,6 +84,56 @@ const relationshipSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const socialProfileSchema = new mongoose.Schema(
+  {
+    archetype: {
+      type: String,
+      default: "",
+    },
+    affinityTags: {
+      type: [String],
+      default: [],
+    },
+    frictionTags: {
+      type: [String],
+      default: [],
+    },
+    trustSignals: {
+      type: [String],
+      default: [],
+    },
+    respectSignals: {
+      type: [String],
+      default: [],
+    },
+    affectionSignals: {
+      type: [String],
+      default: [],
+    },
+    suspicionSignals: {
+      type: [String],
+      default: [],
+    },
+    fearSignals: {
+      type: [String],
+      default: [],
+    },
+    jealousySignals: {
+      type: [String],
+      default: [],
+    },
+    boundaries: {
+      type: [String],
+      default: [],
+    },
+    notes: {
+      type: String,
+      default: "",
+    },
+  },
+  { _id: false }
+);
+
 const factionLinkSchema = new mongoose.Schema(
   {
     factionId: {
@@ -223,6 +273,11 @@ const npcSchema = new mongoose.Schema(
 
     relationshipWithLucas: {
       type: relationshipSchema,
+      default: () => ({}),
+    },
+
+    socialProfile: {
+      type: socialProfileSchema,
       default: () => ({}),
     },
 

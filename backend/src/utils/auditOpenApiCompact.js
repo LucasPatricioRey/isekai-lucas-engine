@@ -244,6 +244,28 @@ function main() {
       Boolean(compact.components?.schemas?.NpcRelationshipPatchItem?.properties?.[propertyName])
     );
   }
+  for (const propertyName of [
+    "socialTone",
+    "intentTags",
+    "contextTags",
+    "respectNpcProfile",
+  ]) {
+    assertCondition(
+      issues,
+      `full SocialImpactPreviewRequest has ${propertyName}`,
+      Boolean(full.components?.schemas?.SocialImpactPreviewRequest?.properties?.[propertyName])
+    );
+    assertCondition(
+      issues,
+      `compact SocialImpactPreviewRequest has ${propertyName}`,
+      Boolean(compact.components?.schemas?.SocialImpactPreviewRequest?.properties?.[propertyName])
+    );
+  }
+  assertCondition(
+    issues,
+    "compact SocialImpactFactors has actionType",
+    Boolean(compact.components?.schemas?.SocialImpactFactors?.properties?.actionType)
+  );
 
   section("Admin Read-Only Schema");
   const adminMutators = Array.from(adminOps.keys()).filter((operationKey) => operationKey.startsWith("POST "));
