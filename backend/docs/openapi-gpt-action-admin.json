@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Admin Read-Only",
-    "version": "2.4.0",
+    "version": "2.5.0",
     "description": "Schema opcional para una segunda Action tecnica segura. Solo incluye endpoints existentes read-only. Sus componentes documentan parches sociales, pero las rutas expuestas no incluyen applyTurn, rollback, reset, delete ni mutadores peligrosos. El backend genera eventos diarios con scheduler de manana y los expira con consecuencias pendientes."
   },
   "servers": [
@@ -710,6 +710,22 @@
             "items": {
               "type": "string"
             }
+          },
+          "applySocialConsequences": {
+            "type": "boolean",
+            "default": true,
+            "description": "Para eventos diarios: si true, resolver/vencer el evento puede crear parches sociales sobre affectedNpcIds."
+          },
+          "socialOutcome": {
+            "type": "string",
+            "enum": [
+              "resolved",
+              "resolved_partial",
+              "ignored",
+              "failed",
+              "none"
+            ],
+            "description": "Resultado social opcional del evento diario. Si se omite, se infiere desde status."
           }
         },
         "additionalProperties": false

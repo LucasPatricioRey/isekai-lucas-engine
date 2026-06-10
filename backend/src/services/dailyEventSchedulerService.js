@@ -1,4 +1,5 @@
 const WorldEvent = require("../models/WorldEvent");
+const { buildSocialConsequenceHintEffect } = require("./dailyEventSocialService");
 
 const DAILY_EVENT_TAG = "daily_event";
 const DAILY_EVENT_PENDING_CONSEQUENCE_TAG = "consequence_pending";
@@ -255,7 +256,7 @@ function buildDailyEventPayload({ gameState, rolls }) {
     gameState.time
   );
 
-  return {
+  const payload = {
     eventId,
     gameId,
     title: template.title,
@@ -319,6 +320,10 @@ function buildDailyEventPayload({ gameState, rolls }) {
       durationDays,
     },
   };
+
+  payload.effects.push(buildSocialConsequenceHintEffect(payload));
+
+  return payload;
 }
 
 async function findDailyEventForDay({ gameId = DEFAULT_GAME_ID, day, session = null }) {

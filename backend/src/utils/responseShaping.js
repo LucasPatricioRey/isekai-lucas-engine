@@ -4,6 +4,7 @@ const {
   relationshipBand,
 } = require("../services/socialLedgerService");
 const { summarizeNpcSocialProfile } = require("../services/socialProfileService");
+const { buildSocialConsequenceHintEffect } = require("../services/dailyEventSocialService");
 
 function unique(values) {
   return Array.from(new Set((values || []).filter(Boolean)));
@@ -303,11 +304,24 @@ function summarizeRumor(rumor) {
 
 function summarizeWorldEvent(event) {
   if (!event) return null;
-  const relevantEffects = (event.effects || [])
+  const storedEffects = event.effects || [];
+  const relevantEffects = storedEffects
     .filter((effect) =>
-      ["daily_event_rolls", "consequence_if_ignored", "consequence_applied"].includes(effect.type)
-    )
-    .slice(0, 5);
+      [
+        "daily_event_rolls",
+        "consequence_if_ignored",
+        "consequence_applied",
+        "social_consequence_rules",
+        "social_consequence_applied",
+      ].includes(effect.type)
+    );
+
+  if (
+    (event.tags || []).includes("daily_event") &&
+    !storedEffects.some((effect) => effect.type === "social_consequence_rules")
+  ) {
+    relevantEffects.push(buildSocialConsequenceHintEffect(event));
+  }
 
   return {
     eventId: event.eventId,
@@ -325,7 +339,7 @@ function summarizeWorldEvent(event) {
     severity: event.severity,
     visibility: event.visibility,
     cause: truncateText(event.cause || "", 500),
-    effects: relevantEffects,
+    effects: relevantEffects.slice(0, 6),
     tags: event.tags || [],
   };
 }

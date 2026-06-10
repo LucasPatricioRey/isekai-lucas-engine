@@ -5,6 +5,7 @@ const Faction = require("../models/Faction");
 const GameState = require("../models/GameState");
 const Location = require("../models/Location");
 const Npc = require("../models/Npc");
+const NpcSocialLedger = require("../models/NpcSocialLedger");
 const WorldEvent = require("../models/WorldEvent");
 const {
   assert,
@@ -20,9 +21,11 @@ const {
 } = require("../services/dailyEventSchedulerService");
 
 let tempGameId = "";
+let tempSocialNpcId = "";
 
 async function createIsolatedGameState() {
   tempGameId = `test_daily_event_${Date.now()}`;
+  tempSocialNpcId = `npc_test_daily_event_social_${Date.now()}`;
 
   const base = await GameState.findOne({ gameId: "isekai_lucas_main" }).lean();
   assert.ok(base, "Base GameState is required for daily event scheduler tests.");
@@ -52,6 +55,23 @@ async function createIsolatedGameState() {
   delete payload.createdAt;
   delete payload.updatedAt;
   await GameState.create(payload);
+
+  await Npc.create({
+    npcId: tempSocialNpcId,
+    name: "NPC Test Evento Diario",
+    role: "fixture social de evento diario",
+    relationshipWithLucas: {
+      trust: 20,
+      familiarity: 0,
+      respect: 10,
+      suspicion: 0,
+      fear: 0,
+      jealousy: 0,
+      socialDebt: 0,
+      notes: "Fixture temporal para consecuencias sociales de evento diario.",
+    },
+    flags: { testSuite: true },
+  });
 }
 
 async function cleanupIsolatedState() {
@@ -59,6 +79,8 @@ async function cleanupIsolatedState() {
     await GameState.deleteOne({ gameId: tempGameId });
     await WorldEvent.deleteMany({ gameId: tempGameId });
     await EventLog.deleteMany({ gameId: tempGameId });
+    if (tempSocialNpcId) await Npc.deleteOne({ npcId: tempSocialNpcId });
+    if (tempSocialNpcId) await NpcSocialLedger.deleteMany({ npcId: tempSocialNpcId });
   }
 }
 
@@ -160,6 +182,7 @@ describe("daily event scheduler", () => {
     assert.ok(["minor", "major"].includes(event.severity));
     assert.ok(event.effects.some((effect) => effect.type === "daily_event_rolls"));
     assert.ok(event.effects.some((effect) => effect.type === "consequence_if_ignored"));
+    assert.ok(event.effects.some((effect) => effect.type === "social_consequence_rules"));
 
     const compact = await get(`/api/context/compact?gameId=${encodeURIComponent(tempGameId)}`);
     assert.equal(compact.status, 200);
@@ -190,7 +213,7 @@ describe("daily event scheduler", () => {
       endDay: 12,
       endTime: "06:00",
       affectedLocationIds: ["loc_hoshimori_grulla_azul"],
-      affectedNpcIds: [],
+      affectedNpcIds: [tempSocialNpcId],
       affectedFactionIds: [],
       effects: [
         {
@@ -223,12 +246,24 @@ describe("daily event scheduler", () => {
     assert.equal(applied.status, 200);
     assert.equal(applied.data.ok, true);
     assert.equal(applied.data.changes.dailyEvents.expired.length, 1);
+    assert.equal(applied.data.changes.worldEventSocialConsequences[0].outcome, "ignored");
+    assert.equal(applied.data.changes.npcRelationships[0].npcId, tempSocialNpcId);
+    assert.equal(applied.data.changes.npcRelationships[0].appliedDeltas.trust, -1);
+    assert.equal(applied.data.changes.npcRelationships[0].appliedDeltas.respect, -1);
 
     const expired = await WorldEvent.findOne({ eventId: `event_${tempGameId}_expired_fixture` }).lean();
     assert.equal(expired.status, "expired");
     assert.ok(expired.tags.includes("expired_unresolved"));
     assert.ok(expired.tags.includes("consequence_pending"));
     assert.ok(expired.tags.includes("minor_consequence_pending"));
+    assert.ok(expired.tags.includes("social_consequence_ignored"));
+
+    const ignoredLedger = await NpcSocialLedger.findOne({
+      gameId: tempGameId,
+      npcId: tempSocialNpcId,
+      sourceEventId: `event_${tempGameId}_expired_fixture`,
+    }).lean();
+    assert.equal(ignoredLedger.actionType, "daily_event_ignored");
   });
 
   it("resolves an active world event patch and removes it from active event ids", async () => {
@@ -246,7 +281,7 @@ describe("daily event scheduler", () => {
       endDay: 13,
       endTime: "06:00",
       affectedLocationIds: ["loc_hoshimori_grulla_azul"],
-      affectedNpcIds: ["npc_fern"],
+      affectedNpcIds: [tempSocialNpcId],
       affectedFactionIds: [],
       effects: [],
       visibility: "hidden",
@@ -284,11 +319,17 @@ describe("daily event scheduler", () => {
     assert.equal(applied.status, 200);
     assert.equal(applied.data.ok, true);
     assert.equal(applied.data.changes.worldEvents[0].status, "resolved");
+    assert.equal(applied.data.changes.worldEventSocialConsequences[0].outcome, "resolved");
+    assert.equal(applied.data.changes.npcRelationships[0].npcId, tempSocialNpcId);
+    assert.equal(applied.data.changes.npcRelationships[0].appliedDeltas.trust, 1);
+    assert.equal(applied.data.changes.npcRelationships[0].appliedDeltas.respect, 1);
+    assert.equal(applied.data.changes.npcRelationships[0].appliedDeltas.familiarity, 1);
 
     const resolved = await WorldEvent.findOne({ eventId }).lean();
     assert.equal(resolved.status, "resolved");
     assert.ok(resolved.tags.includes("event_resolved"));
     assert.ok(resolved.tags.includes("test_resolution"));
+    assert.ok(resolved.tags.includes("social_consequence_resolved"));
 
     const gameState = await GameState.findOne({ gameId: tempGameId }).lean();
     assert.equal((gameState.activeEventIds || []).includes(eventId), false);

@@ -1361,6 +1361,14 @@ Perfil social del NPC:
 - una misma acción puede ser positiva para un NPC y mala para otro;
 - los rasgos sociales guían mecánica y voz narrativa, pero no revelan secretos in-game.
 
+Eventos diarios y vínculos:
+
+- los eventos diarios incluyen NPCs afectados y una pista `social_consequence_rules`;
+- resolver un evento diario puede aplicar cambios positivos leves/medios a `trust/respect/familiarity/socialDebt` de NPCs afectados;
+- dejar vencer un evento diario sin resolver puede aplicar consecuencias negativas leves/medias a `trust/respect/suspicion`;
+- estos cambios deben guardarse por backend mediante `applyTurn`, `worldEventPatches` y el ledger social, nunca solo narrarse;
+- `applySocialConsequences=false` o `socialOutcome=none` solo debe usarse en modo técnico si hay motivo claro.
+
 Umbrales de confianza:
 
 - `0-9`: desconocido/cautela.

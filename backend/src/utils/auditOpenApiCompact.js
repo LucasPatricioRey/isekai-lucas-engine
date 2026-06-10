@@ -226,6 +226,18 @@ function main() {
     "compact WorldEventPatchItem supports expired status",
     compact.components?.schemas?.WorldEventPatchItem?.properties?.status?.enum?.includes("expired")
   );
+  for (const propertyName of ["applySocialConsequences", "socialOutcome"]) {
+    assertCondition(
+      issues,
+      `full WorldEventPatchItem has ${propertyName}`,
+      Boolean(full.components?.schemas?.WorldEventPatchItem?.properties?.[propertyName])
+    );
+    assertCondition(
+      issues,
+      `compact WorldEventPatchItem has ${propertyName}`,
+      Boolean(compact.components?.schemas?.WorldEventPatchItem?.properties?.[propertyName])
+    );
+  }
   for (const propertyName of [
     "familiarityDelta",
     "socialDebtDelta",

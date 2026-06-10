@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Compact",
-    "version": "2.4.0",
+    "version": "2.5.0",
     "description": "Schema compacto con hasta 30 operaciones para GPT Builder. Incluye ApplyTurn con missionPatch, activityCost, gameStatePatch y parches de economia/memoria/relacion social. Incluye previewSocialImpact y excluye rollback y mutadores peligrosos directos. El backend genera eventos diarios con scheduler de manana y los expira con consecuencias pendientes."
   },
   "servers": [
@@ -900,6 +900,22 @@
             "items": {
               "type": "string"
             }
+          },
+          "applySocialConsequences": {
+            "type": "boolean",
+            "default": true,
+            "description": "Para eventos diarios: si true, resolver/vencer el evento puede crear parches sociales sobre affectedNpcIds."
+          },
+          "socialOutcome": {
+            "type": "string",
+            "enum": [
+              "resolved",
+              "resolved_partial",
+              "ignored",
+              "failed",
+              "none"
+            ],
+            "description": "Resultado social opcional del evento diario. Si se omite, se infiere desde status."
           }
         },
         "additionalProperties": false

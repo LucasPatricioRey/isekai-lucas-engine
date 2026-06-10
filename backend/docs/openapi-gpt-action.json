@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions",
-    "version": "2.4.0",
+    "version": "2.5.0",
     "description": "Schema normal para GPT Actions. Expone endpoints de lectura, busqueda, preview y mutacion central controlada. Incluye previewSocialImpact y applyTurn.npcRelationshipPatches para vinculos sociales. Incluye lectura read-only de WorldEvents para auditoria tecnica. No expone rollback, admin ni mutadores peligrosos de combate/misiones. El backend genera eventos diarios con scheduler de manana y los expira con consecuencias pendientes."
   },
   "servers": [
@@ -900,6 +900,22 @@
             "items": {
               "type": "string"
             }
+          },
+          "applySocialConsequences": {
+            "type": "boolean",
+            "default": true,
+            "description": "Para eventos diarios: si true, resolver/vencer el evento puede crear parches sociales sobre affectedNpcIds."
+          },
+          "socialOutcome": {
+            "type": "string",
+            "enum": [
+              "resolved",
+              "resolved_partial",
+              "ignored",
+              "failed",
+              "none"
+            ],
+            "description": "Resultado social opcional del evento diario. Si se omite, se infiere desde status."
           }
         },
         "additionalProperties": false

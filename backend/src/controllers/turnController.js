@@ -13,6 +13,7 @@ const Mission = require("../models/Mission");
 const { syncNpcRoutines } = require("../services/routineService");
 const { calculateActivityCost, normalizeCategory } = require("../services/biologicalClockService");
 const { reconcileDailyEventsForGameState } = require("../services/dailyEventSchedulerService");
+const { buildWorldEventSocialConsequencePlan } = require("../services/dailyEventSocialService");
 const { ensureCurrentWeatherForGameState } = require("../services/weatherService");
 const {
   SOCIAL_FIELD_RANGES,
@@ -539,7 +540,11 @@ async function applyRumorPatches(gameState, patches, session = null) {
 }
 
 async function applyWorldEventPatches(gameState, patches, session = null) {
-  const results = [];
+  const results = {
+    events: [],
+    npcRelationships: [],
+    socialConsequences: [],
+  };
 
   for (const patch of patches) {
     let existingEvent = null;
@@ -580,13 +585,92 @@ async function applyWorldEventPatches(gameState, patches, session = null) {
       tags: unique([...(existingEvent?.tags || []), ...(patch.tags || [])]),
     };
 
+    const socialPlan = buildWorldEventSocialConsequencePlan({
+      before: existingEvent,
+      event: eventPayload,
+      patch,
+    });
+
+    if (socialPlan.shouldApply) {
+      eventPayload.tags = unique([...(eventPayload.tags || []), ...socialPlan.tags]);
+      eventPayload.effects = [...(eventPayload.effects || []), ...socialPlan.effects];
+    }
+
     const worldEvent = await WorldEvent.findOneAndUpdate(
       { eventId },
       { $set: eventPayload },
       { upsert: true, returnDocument: "after", runValidators: true, session }
     ).lean();
 
-    results.push(worldEvent);
+    results.events.push(worldEvent);
+
+    if (socialPlan.shouldApply) {
+      const npcRelationships = await applyNpcRelationshipPatches(
+        gameState,
+        socialPlan.npcRelationshipPatches,
+        session
+      );
+      results.npcRelationships.push(...npcRelationships);
+      results.socialConsequences.push({
+        eventId: worldEvent.eventId,
+        title: worldEvent.title,
+        outcome: socialPlan.outcome,
+        affectedNpcIds: worldEvent.affectedNpcIds || [],
+        relationshipChangeCount: npcRelationships.length,
+      });
+    }
+  }
+
+  return results;
+}
+
+async function applyExpiredWorldEventSocialConsequences(gameState, events = [], session = null) {
+  const results = {
+    events: [],
+    npcRelationships: [],
+    socialConsequences: [],
+  };
+
+  for (const event of events || []) {
+    const socialPlan = buildWorldEventSocialConsequencePlan({
+      event,
+      forcedOutcome: "ignored",
+    });
+
+    if (!socialPlan.shouldApply) continue;
+
+    const updated = await WorldEvent.findOneAndUpdate(
+      { eventId: event.eventId },
+      {
+        $addToSet: {
+          tags: {
+            $each: socialPlan.tags,
+          },
+        },
+        $push: {
+          effects: {
+            $each: socialPlan.effects,
+          },
+        },
+      },
+      { returnDocument: "after", runValidators: true, session }
+    ).lean();
+
+    const npcRelationships = await applyNpcRelationshipPatches(
+      gameState,
+      socialPlan.npcRelationshipPatches,
+      session
+    );
+
+    results.events.push(updated);
+    results.npcRelationships.push(...npcRelationships);
+    results.socialConsequences.push({
+      eventId: updated.eventId,
+      title: updated.title,
+      outcome: socialPlan.outcome,
+      affectedNpcIds: updated.affectedNpcIds || [],
+      relationshipChangeCount: npcRelationships.length,
+    });
   }
 
   return results;
@@ -1597,7 +1681,19 @@ async function applyTurn(req, res) {
 
       if (Array.isArray(body.worldEventPatches)) {
         const worldEventChanges = await applyWorldEventPatches(updatedGameState, body.worldEventPatches, session);
-        if (worldEventChanges.length > 0) changes.worldEvents = worldEventChanges;
+        if (worldEventChanges.events.length > 0) changes.worldEvents = worldEventChanges.events;
+        if (worldEventChanges.npcRelationships.length > 0) {
+          changes.npcRelationships = [
+            ...(changes.npcRelationships || []),
+            ...worldEventChanges.npcRelationships,
+          ];
+        }
+        if (worldEventChanges.socialConsequences.length > 0) {
+          changes.worldEventSocialConsequences = [
+            ...(changes.worldEventSocialConsequences || []),
+            ...worldEventChanges.socialConsequences,
+          ];
+        }
       }
 
       if (Array.isArray(body.locationPatches)) {
@@ -1618,6 +1714,29 @@ async function applyTurn(req, res) {
       const dailyEventChanges = await reconcileDailyEventsForGameState(gameState, { session });
       if (dailyEventChanges.changed) {
         changes.dailyEvents = dailyEventChanges;
+      }
+
+      if (dailyEventChanges.expired?.length > 0) {
+        const expiredSocialConsequences = await applyExpiredWorldEventSocialConsequences(
+          gameState,
+          dailyEventChanges.expired,
+          session
+        );
+
+        if (expiredSocialConsequences.npcRelationships.length > 0) {
+          changes.npcRelationships = [
+            ...(changes.npcRelationships || []),
+            ...expiredSocialConsequences.npcRelationships,
+          ];
+        }
+
+        if (expiredSocialConsequences.socialConsequences.length > 0) {
+          changes.worldEventSocialConsequences = [
+            ...(changes.worldEventSocialConsequences || []),
+            ...expiredSocialConsequences.socialConsequences,
+          ];
+          changes.dailyEvents.socialConsequencesApplied = expiredSocialConsequences.socialConsequences;
+        }
       }
 
       if (changes.time && gameId === "isekai_lucas_main") {

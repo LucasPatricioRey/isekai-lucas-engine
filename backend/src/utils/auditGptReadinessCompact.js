@@ -227,6 +227,13 @@ async function checkCompactEndpoints(issues) {
     !dailyEventRequired || Boolean(currentDailyEvent?.eventId),
     currentDailyEvent?.eventId || ""
   );
+  assertCondition(
+    issues,
+    "daily event exposes social consequence rules",
+    !currentDailyEvent?.eventId ||
+      (currentDailyEvent.effects || []).some((effect) => effect.type === "social_consequence_rules"),
+    currentDailyEvent?.eventId || ""
+  );
   if (currentDailyEvent?.status === "scheduled") {
     assertCondition(
       issues,
