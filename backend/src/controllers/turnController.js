@@ -13,6 +13,7 @@ const Mission = require("../models/Mission");
 const { syncNpcRoutines } = require("../services/routineService");
 const { calculateActivityCost, normalizeCategory } = require("../services/biologicalClockService");
 const { reconcileDailyEventsForGameState } = require("../services/dailyEventSchedulerService");
+const { ensureCurrentWeatherForGameState } = require("../services/weatherService");
 
 const VALID_EVENT_LOG_SOURCES = new Set([
   "player_action",
@@ -1553,6 +1554,30 @@ async function applyTurn(req, res) {
       const dailyEventChanges = await reconcileDailyEventsForGameState(gameState, { session });
       if (dailyEventChanges.changed) {
         changes.dailyEvents = dailyEventChanges;
+      }
+
+      if (changes.time && gameId === "isekai_lucas_main") {
+        const weatherChanges = await ensureCurrentWeatherForGameState(gameState, { session });
+        if (weatherChanges.changed) {
+          changes.weather = {
+            before: weatherChanges.before
+              ? {
+                  weatherId: weatherChanges.before.weatherId,
+                  currentCondition: weatherChanges.before.currentCondition,
+                  expectedUntilDay: weatherChanges.before.expectedUntilDay,
+                  expectedUntilTime: weatherChanges.before.expectedUntilTime,
+                }
+              : null,
+            after: {
+              weatherId: weatherChanges.weather.weatherId,
+              currentCondition: weatherChanges.weather.currentCondition,
+              startedDay: weatherChanges.weather.startedDay,
+              startedTime: weatherChanges.weather.startedTime,
+              expectedUntilDay: weatherChanges.weather.expectedUntilDay,
+              expectedUntilTime: weatherChanges.weather.expectedUntilTime,
+            },
+          };
+        }
       }
 
       const logsToCreate = [];

@@ -29,6 +29,19 @@ function unique(values) {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
+function uniqueByEventId(events) {
+  const seen = new Set();
+  const result = [];
+
+  for (const event of events || []) {
+    if (!event?.eventId || seen.has(event.eventId)) continue;
+    seen.add(event.eventId);
+    result.push(event);
+  }
+
+  return result;
+}
+
 function timeToMinutes(time) {
   const [hours, minutes] = String(time || "00:00").split(":").map(Number);
   return hours * 60 + minutes;
@@ -584,12 +597,17 @@ async function getCompactContext(req, res) {
       });
     }
 
-    const activeEventSummaries = activeEvents
+    const eventSummaryCandidates = uniqueByEventId([
+      ...activeEvents,
+      currentDayDailyEvent,
+    ]);
+    const activeEventSummaries = eventSummaryCandidates
       .filter((event) => event.status === "active")
       .map(responseShaping.summarizeWorldEvent);
-    const scheduledEventSummaries = activeEvents
+    const scheduledEventSummaries = eventSummaryCandidates
       .filter((event) => event.status === "scheduled")
       .map(responseShaping.summarizeWorldEvent);
+    const currentDailyEventSummary = responseShaping.summarizeWorldEvent(currentDayDailyEvent);
 
     if (pendingBiologicalAccumulations.length > 0) {
       alerts.push({
@@ -637,6 +655,7 @@ async function getCompactContext(req, res) {
         relevantNpcMemories: relevantNpcMemories.map(responseShaping.summarizeNpcMemory),
         activeEvents: activeEventSummaries,
         scheduledEvents: scheduledEventSummaries,
+        currentDailyEvent: currentDailyEventSummary,
         dailyEvents: dailyEvents.map(responseShaping.summarizeWorldEvent),
         activeRumors: activeRumors.map(responseShaping.summarizeRumor),
         activeMissions: activeMissionSummaries,

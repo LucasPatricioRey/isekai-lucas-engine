@@ -143,6 +143,7 @@ Debe devolver un contexto dinamico compacto y estructurado:
 - rutinas activas;
 - memorias relevantes de NPCs involucrados;
 - rumores vivos relevantes;
+- evento diario del dia (`currentDailyEvent`) y su estado `scheduled`/`active`/`resolved`;
 - eventos activos o próximos;
 - stock y comercios relevantes cuando correspondan;
 - misiones relevantes;
@@ -150,6 +151,8 @@ Debe devolver un contexto dinamico compacto y estructurado:
 - alertas de coherencia.
 
 `context/full` queda reservado para modo tecnico/admin/debug, no como lectura normal por turno.
+
+Si `currentDailyEvent` existe pero su `status` es `scheduled`, el GPT debe narrarlo como evento diario programado/proximo, no como evento activo. Si su `status` es `active`, debe tratarlo como evento activo del mundo.
 
 Si `context/compact` no trae la informacion necesaria, el GPT no debe inventar. Debe buscar mas con endpoints profundos:
 

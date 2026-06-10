@@ -73,6 +73,11 @@ function assertEqual(issues, label, actual, expected) {
   if (!ok) issues.push(`${label}: got ${actual}, expected ${expected}`);
 }
 
+function timeToMinutes(time) {
+  const [hours, minutes] = String(time || "00:00").split(":").map(Number);
+  return (Number(hours) || 0) * 60 + (Number(minutes) || 0);
+}
+
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
@@ -190,11 +195,36 @@ async function checkCompactEndpoints(issues) {
   assertEqual(issues, "activity preview energy delta", activityPreview.preview?.totalDelta?.energy, -2);
   assertCondition(issues, "magic techniques has entries", (magicTechniques.techniques || []).length >= 6);
   assertCondition(issues, "weather current exists", Boolean(weather.weather?.weatherId));
+  assertCondition(issues, "context weather is current", context.context?.weather?.staleByCurrentTime !== true);
   assertCondition(issues, "social impact preview suggests patch", Boolean(socialImpact.preview?.suggestedPatch?.npcId));
   assertCondition(issues, "social impact preview is dryRun", socialImpact.dryRun === true);
 
   const gameState = summarizeGameState(context);
   const activeCombatList = activeCombats.encounters || [];
+  const currentDailyEvent = context.context?.currentDailyEvent;
+  const dailyEventRequired = timeToMinutes(gameState.time) >= timeToMinutes("06:00");
+  assertCondition(
+    issues,
+    "current daily event exposed after morning begins",
+    !dailyEventRequired || Boolean(currentDailyEvent?.eventId),
+    currentDailyEvent?.eventId || ""
+  );
+  if (currentDailyEvent?.status === "scheduled") {
+    assertCondition(
+      issues,
+      "scheduled daily event is in scheduledEvents",
+      (context.context?.scheduledEvents || []).some((event) => event.eventId === currentDailyEvent.eventId),
+      currentDailyEvent.eventId
+    );
+  }
+  if (currentDailyEvent?.status === "active") {
+    assertCondition(
+      issues,
+      "active daily event is in activeEvents",
+      (context.context?.activeEvents || []).some((event) => event.eventId === currentDailyEvent.eventId),
+      currentDailyEvent.eventId
+    );
+  }
 
   section("Canon State");
   console.log(

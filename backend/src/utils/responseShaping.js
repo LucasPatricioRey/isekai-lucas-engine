@@ -40,7 +40,7 @@ function isWeatherStale(weather, currentDay, currentTime) {
   if (weather.expectedUntilDay < currentDay) return true;
   if (weather.expectedUntilDay > currentDay) return false;
   if (!weather.expectedUntilTime) return false;
-  return timeToMinutes(currentTime) > timeToMinutes(weather.expectedUntilTime);
+  return timeToMinutes(currentTime) >= timeToMinutes(weather.expectedUntilTime);
 }
 
 function summarizeStat(stat) {

@@ -4,7 +4,9 @@ const EventLog = require("../models/EventLog");
 const GameState = require("../models/GameState");
 const Mission = require("../models/Mission");
 const Npc = require("../models/Npc");
+const WeatherState = require("../models/WeatherState");
 const WorldEvent = require("../models/WorldEvent");
+const { ensureCurrentWeatherForGameState } = require("../services/weatherService");
 const {
   assert,
   assertCanonState,
@@ -20,12 +22,14 @@ let tempGameId = "";
 let tempMissionId = "";
 let tempExpiredMissionId = "";
 let tempNpcId = "";
+let tempWeatherRegionId = "";
 
 async function createIsolatedGameState() {
   tempGameId = `test_turn_hardening_${Date.now()}`;
   tempMissionId = `mission_test_turn_hardening_${Date.now()}`;
   tempExpiredMissionId = `mission_test_turn_hardening_expired_${Date.now()}`;
   tempNpcId = `npc_test_relationship_${Date.now()}`;
+  tempWeatherRegionId = `region_test_turn_hardening_${Date.now()}`;
 
   const base = await GameState.findOne({ gameId: "isekai_lucas_main" }).lean();
   assert.ok(base, "Base GameState is required for isolated API tests.");
@@ -122,6 +126,7 @@ async function cleanupIsolatedState() {
   if (tempGameId) await WorldEvent.deleteMany({ gameId: tempGameId });
   await Mission.deleteMany({ missionId: { $in: [tempMissionId, tempExpiredMissionId].filter(Boolean) } });
   if (tempNpcId) await Npc.deleteOne({ npcId: tempNpcId });
+  if (tempWeatherRegionId) await WeatherState.deleteMany({ regionId: tempWeatherRegionId });
   await EventLog.deleteMany({
     $or: [
       { tags: "test_turn_hardening" },
@@ -155,6 +160,41 @@ describe("turn hardening coverage", () => {
     assert.equal(debugBoard.status, 200);
     assert.equal(debugBoard.data.ok, true);
     assert.equal(debugBoard.data.missions.some((mission) => mission.missionId === tempExpiredMissionId), true);
+  });
+
+  it("refreshes stale weather for the current time block idempotently", async () => {
+    await WeatherState.create({
+      weatherId: `weather_${tempWeatherRegionId}_stale_fixture`,
+      regionId: tempWeatherRegionId,
+      currentCondition: "clear",
+      intensity: 1,
+      startedDay: 10,
+      startedTime: "06:00",
+      expectedUntilDay: 10,
+      expectedUntilTime: "12:00",
+      effects: [],
+      source: "test_turn_hardening",
+      tags: ["test_turn_hardening"],
+    });
+
+    const first = await ensureCurrentWeatherForGameState(
+      { currentDay: 12, time: "06:25" },
+      { regionId: tempWeatherRegionId }
+    );
+    assert.equal(first.changed, true);
+    assert.equal(first.weather.regionId, tempWeatherRegionId);
+    assert.equal(first.weather.currentCondition, "cloudy");
+    assert.equal(first.weather.startedDay, 12);
+    assert.equal(first.weather.startedTime, "06:00");
+    assert.equal(first.weather.expectedUntilDay, 12);
+    assert.equal(first.weather.expectedUntilTime, "12:00");
+
+    const second = await ensureCurrentWeatherForGameState(
+      { currentDay: 12, time: "06:25" },
+      { regionId: tempWeatherRegionId }
+    );
+    assert.equal(second.changed, false);
+    assert.equal(second.weather.weatherId, first.weather.weatherId);
   });
 
   it("applies npc relationship patches through applyTurn", async () => {

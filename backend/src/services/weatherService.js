@@ -1,6 +1,130 @@
 const WeatherState = require("../models/WeatherState");
 
 const EXTERIOR_ROUTE_TYPES = new Set(["town", "road", "wilderness", "regional"]);
+const DEFAULT_REGION_ID = "region_hoshimori";
+const AUTO_REFRESH_SOURCE = "weather_auto_refresh";
+
+function timeToMinutes(time) {
+  const [hours, minutes] = String(time || "00:00").split(":").map(Number);
+  return (Number(hours) || 0) * 60 + (Number(minutes) || 0);
+}
+
+function toAbsoluteMinutes(day, time) {
+  return (Number(day || 1) - 1) * 1440 + timeToMinutes(time);
+}
+
+function sanitizeIdPart(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
+}
+
+function getWeatherBlock(day, time) {
+  const minutes = timeToMinutes(time);
+
+  if (minutes < 360) {
+    return {
+      key: "predawn",
+      label: "Madrugada",
+      startDay: day,
+      startTime: "00:00",
+      endDay: day,
+      endTime: "06:00",
+      currentCondition: "clear",
+      intensity: 1,
+    };
+  }
+
+  if (minutes < 720) {
+    return {
+      key: "morning",
+      label: "Manana",
+      startDay: day,
+      startTime: "06:00",
+      endDay: day,
+      endTime: "12:00",
+      currentCondition: "cloudy",
+      intensity: 1,
+    };
+  }
+
+  if (minutes < 840) {
+    return {
+      key: "midday",
+      label: "Mediodia",
+      startDay: day,
+      startTime: "12:00",
+      endDay: day,
+      endTime: "14:00",
+      currentCondition: "clear",
+      intensity: 1,
+    };
+  }
+
+  if (minutes < 1080) {
+    return {
+      key: "afternoon",
+      label: "Tarde",
+      startDay: day,
+      startTime: "14:00",
+      endDay: day,
+      endTime: "18:00",
+      currentCondition: "cloudy",
+      intensity: 1,
+    };
+  }
+
+  return {
+    key: "night",
+    label: "Noche",
+    startDay: day,
+    startTime: "18:00",
+    endDay: day + 1,
+    endTime: "00:00",
+    currentCondition: "clear",
+    intensity: 1,
+  };
+}
+
+function weatherCoversTime(weather, day, time) {
+  if (!weather?.startedDay || !weather.startedTime || !weather.expectedUntilDay || !weather.expectedUntilTime) {
+    return false;
+  }
+
+  const now = toAbsoluteMinutes(day, time);
+  const start = toAbsoluteMinutes(weather.startedDay, weather.startedTime);
+  const end = toAbsoluteMinutes(weather.expectedUntilDay, weather.expectedUntilTime);
+
+  return now >= start && now < end;
+}
+
+function buildWeatherRefresh(gameState, latestWeather = null, { regionId = DEFAULT_REGION_ID } = {}) {
+  const block = getWeatherBlock(gameState.currentDay, gameState.time);
+  const effectiveRegionId = latestWeather?.regionId || regionId;
+  const weatherId = `weather_${sanitizeIdPart(effectiveRegionId)}_d${block.startDay}_${block.key}_${AUTO_REFRESH_SOURCE}`;
+
+  return {
+    weatherId,
+    regionId: effectiveRegionId,
+    currentCondition: block.currentCondition,
+    intensity: block.intensity,
+    startedDay: block.startDay,
+    startedTime: block.startTime,
+    expectedUntilDay: block.endDay,
+    expectedUntilTime: block.endTime,
+    effects: [],
+    source: AUTO_REFRESH_SOURCE,
+    tags: [
+      "system",
+      "weather_refresh",
+      "auto_weather",
+      `weather_block_${block.key}`,
+      `weather_day_${block.startDay}`,
+    ],
+  };
+}
 
 function terrainMatches(effectTerrain = [], routeTerrain = []) {
   if (!effectTerrain.length) return true;
@@ -29,6 +153,34 @@ async function getCurrentWeather({ regionId = "region_hoshimori" } = {}) {
   }
 
   return weather;
+}
+
+async function ensureCurrentWeatherForGameState(gameState, { regionId = DEFAULT_REGION_ID, session = null } = {}) {
+  const latestWeather = await WeatherState.findOne({ regionId })
+    .sort({ startedDay: -1, startedTime: -1, updatedAt: -1 })
+    .session(session)
+    .lean();
+
+  if (weatherCoversTime(latestWeather, gameState.currentDay, gameState.time)) {
+    return {
+      changed: false,
+      weather: latestWeather,
+      before: latestWeather,
+    };
+  }
+
+  const payload = buildWeatherRefresh(gameState, latestWeather, { regionId });
+  const weather = await WeatherState.findOneAndUpdate(
+    { weatherId: payload.weatherId },
+    { $setOnInsert: payload },
+    { upsert: true, returnDocument: "after", runValidators: true, session }
+  ).lean();
+
+  return {
+    changed: true,
+    before: latestWeather,
+    weather,
+  };
 }
 
 function conditionBaseEffects(weather, routeType) {
@@ -119,6 +271,11 @@ async function previewWeatherEffects({
 }
 
 module.exports = {
+  AUTO_REFRESH_SOURCE,
+  buildWeatherRefresh,
+  ensureCurrentWeatherForGameState,
   getCurrentWeather,
+  getWeatherBlock,
+  weatherCoversTime,
   previewWeatherEffects,
 };

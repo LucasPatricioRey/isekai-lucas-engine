@@ -165,6 +165,12 @@ describe("daily event scheduler", () => {
     assert.equal(compact.status, 200);
     assert.equal(compact.data.ok, true);
     assert.equal(compact.data.context.dailyEvents.length, 1);
+    assert.equal(compact.data.context.currentDailyEvent.eventId, event.eventId);
+    const exposedEvents = [
+      ...(compact.data.context.activeEvents || []),
+      ...(compact.data.context.scheduledEvents || []),
+    ];
+    assert.ok(exposedEvents.some((entry) => entry.eventId === event.eventId));
     assert.equal(
       compact.data.context.alerts.some((alert) => alert.type === "daily_event_missing"),
       false
