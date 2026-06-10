@@ -4,6 +4,7 @@ const Rumor = require("../models/Rumor");
 const EventLog = require("../models/EventLog");
 const RoutineOverride = require("../models/RoutineOverride");
 const NpcRelationship = require("../models/NpcRelationship");
+const NpcSocialLedger = require("../models/NpcSocialLedger");
 const { previewSocialImpact } = require("../services/socialImpactService");
 const responseShaping = require("../utils/responseShaping");
 
@@ -15,6 +16,7 @@ async function getNpcFull(req, res) {
   const logLimit = responseShaping.toIntQuery(req.query.logLimit, 10, 0, 30);
   const routineLimit = responseShaping.toIntQuery(req.query.routineLimit, 10, 0, 20);
   const relationshipLimit = responseShaping.toIntQuery(req.query.relationshipLimit, 20, 0, 50);
+  const socialLedgerLimit = responseShaping.toIntQuery(req.query.socialLedgerLimit, 10, 0, 30);
   const includeMechanicalChanges = responseShaping.queryBoolean(req.query.includeMechanicalChanges, false);
 
   const npc = await Npc.findOne({ npcId }).lean();
@@ -26,7 +28,7 @@ async function getNpcFull(req, res) {
     });
   }
 
-  const [memories, rumors, recentEventLogs, routineOverrides, socialRelationships] = await Promise.all([
+  const [memories, rumors, recentEventLogs, routineOverrides, socialRelationships, socialLedger] = await Promise.all([
     NpcMemory.find({ npcId })
       .sort({ importance: -1, createdDay: -1, createdTime: -1 })
       .limit(memoryLimit)
@@ -58,6 +60,11 @@ async function getNpcFull(req, res) {
       .sort({ familiarity: -1, trust: -1 })
       .limit(relationshipLimit)
       .lean(),
+
+    NpcSocialLedger.find({ gameId, npcId })
+      .sort({ day: -1, time: -1, createdAt: -1 })
+      .limit(socialLedgerLimit)
+      .lean(),
   ]);
 
   return res.json({
@@ -70,6 +77,7 @@ async function getNpcFull(req, res) {
     ),
     routineOverrides,
     socialRelationships,
+    socialLedger: socialLedger.map(responseShaping.summarizeNpcSocialLedger),
   });
 }
 

@@ -1,3 +1,9 @@
+const {
+  SOCIAL_RELATIONSHIP_FIELDS,
+  normalizeRelationship,
+  relationshipBand,
+} = require("../services/socialLedgerService");
+
 function unique(values) {
   return Array.from(new Set((values || []).filter(Boolean)));
 }
@@ -153,6 +159,7 @@ function summarizeLocation(location) {
 
 function summarizeNpc(npc) {
   if (!npc) return null;
+  const relationship = normalizeRelationship(npc.relationshipWithLucas || {});
   return {
     npcId: npc.npcId,
     name: npc.name,
@@ -161,10 +168,46 @@ function summarizeNpc(npc) {
     currentTask: npc.currentTask || "",
     availability: npc.availability || {},
     persistenceLevel: npc.persistenceLevel || "",
-    relationshipWithLucas: npc.relationshipWithLucas || {},
+    relationshipWithLucas: relationship,
+    relationshipBands: {
+      trust: relationshipBand(relationship.trust),
+      familiarity: relationshipBand(relationship.familiarity),
+      affection: relationshipBand(relationship.affection),
+      suspicion: relationshipBand(relationship.suspicion),
+      respect: relationshipBand(relationship.respect),
+      fear: relationshipBand(relationship.fear),
+      jealousy: relationshipBand(relationship.jealousy),
+    },
     factionLinks: npc.factionLinks || [],
     knownPublicFacts: npc.knownPublicFacts || [],
     flags: npc.flags || {},
+  };
+}
+
+function summarizeNonZeroDeltas(deltas = {}) {
+  const summary = {};
+  for (const field of SOCIAL_RELATIONSHIP_FIELDS) {
+    const value = Number(deltas[field]) || 0;
+    if (value !== 0) summary[field] = value;
+  }
+  return summary;
+}
+
+function summarizeNpcSocialLedger(entry) {
+  if (!entry) return null;
+  return {
+    ledgerId: entry.ledgerId,
+    npcId: entry.npcId,
+    day: entry.day,
+    time: entry.time,
+    actionType: entry.actionType || "",
+    reason: truncateText(entry.reason || "", 400),
+    requestedDeltas: summarizeNonZeroDeltas(entry.requestedDeltas),
+    appliedDeltas: summarizeNonZeroDeltas(entry.appliedDeltas),
+    capWarnings: entry.caps?.warnings || [],
+    sourceEventId: entry.sourceEventId || "",
+    sourceMissionId: entry.sourceMissionId || "",
+    tags: entry.tags || [],
   };
 }
 
@@ -355,6 +398,7 @@ module.exports = {
   summarizeGameState,
   summarizeLocation,
   summarizeNpc,
+  summarizeNpcSocialLedger,
   summarizeMission,
   summarizeEventLog,
   summarizeNpcMemory,

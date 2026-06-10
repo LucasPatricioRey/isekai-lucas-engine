@@ -1,8 +1,16 @@
 const GameState = require("../models/GameState");
 const Npc = require("../models/Npc");
 const NpcMemory = require("../models/NpcMemory");
-
-const RELATIONSHIP_FIELDS = ["trust", "affection", "suspicion", "respect", "fear", "jealousy"];
+const {
+  SOCIAL_BANDS,
+  SOCIAL_RELATIONSHIP_FIELDS,
+  applyDailySocialCaps,
+  getDailySocialUsage,
+  normalizeActionType,
+  normalizeRelationship,
+  relationshipBand,
+  summarizeDailySocialUsage,
+} = require("./socialLedgerService");
 
 const IMPORTANCE_SCORE = {
   none: 0,
@@ -25,15 +33,7 @@ const MEMORY_WEIGHT = {
   very_high: 4,
 };
 
-const TRUST_BANDS = [
-  { key: "stranger_cautious", label: "desconocido/cautela", min: 0, max: 9, nextAt: 10 },
-  { key: "basic_familiarity", label: "trato basico", min: 10, max: 24, nextAt: 25 },
-  { key: "comfortable_working", label: "confianza laboral/comoda", min: 25, max: 39, nextAt: 40 },
-  { key: "reliable", label: "fiable para favores menores", min: 40, max: 59, nextAt: 60 },
-  { key: "personal_trust", label: "confianza personal", min: 60, max: 74, nextAt: 75 },
-  { key: "deep_trust", label: "vinculo profundo", min: 75, max: 89, nextAt: 90 },
-  { key: "exceptional", label: "confianza excepcional", min: 90, max: 100, nextAt: null },
-];
+const TRUST_BANDS = SOCIAL_BANDS;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -55,8 +55,7 @@ function importanceScore(value) {
 }
 
 function getTrustBand(trust = 0) {
-  const value = clamp(Number.isFinite(trust) ? trust : 0, 0, 100);
-  return TRUST_BANDS.find((band) => value >= band.min && value <= band.max) || TRUST_BANDS[0];
+  return relationshipBand(trust);
 }
 
 function signed(value) {
@@ -97,7 +96,18 @@ function inferFactors(body) {
     /\b(turno|jornada|contrato|trabajo normal|laboral)\w*/.test(text)
   );
 
+  let actionType = factors.actionType || body.actionType || "";
+  if (!actionType) {
+    if (reliableWork) actionType = "reliable_work";
+    else if (helpedNpc) actionType = "practical_help";
+    else if (respectsBoundaries) actionType = "respect_boundaries";
+    else if (apology) actionType = "apology";
+    else if (emotionalConsequence) actionType = "emotional_support";
+    else actionType = "general_social";
+  }
+
   return {
+    actionType: normalizeActionType(actionType),
     witnessedByNpc: boolFrom(factors.witnessedByNpc ?? factors.npcSawOrKnows, true),
     mattersToNpc: boolFrom(factors.mattersToNpc, helpedNpc || practicalConsequence || emotionalConsequence),
     fitsPersonality: boolFrom(factors.fitsPersonality, true),
@@ -125,7 +135,7 @@ function inferFactors(body) {
 
 function normalizeDeltaObject(deltas, sceneCap) {
   const normalized = {};
-  for (const field of RELATIONSHIP_FIELDS) {
+  for (const field of SOCIAL_RELATIONSHIP_FIELDS) {
     const value = deltas[field] || 0;
     normalized[field] = clamp(value, -3, sceneCap);
   }
@@ -135,7 +145,7 @@ function normalizeDeltaObject(deltas, sceneCap) {
 function buildSuggestedPatch(npcId, deltas, reason, notes) {
   const patch = { npcId, reason };
 
-  for (const field of RELATIONSHIP_FIELDS) {
+  for (const field of SOCIAL_RELATIONSHIP_FIELDS) {
     const value = deltas[field] || 0;
     if (value !== 0) patch[`${field}Delta`] = value;
   }
@@ -148,14 +158,16 @@ function buildSuggestedPatch(npcId, deltas, reason, notes) {
 function summarizeChanges(npcName, deltas) {
   const labels = {
     trust: "Confianza",
+    familiarity: "Familiaridad",
     affection: "Afecto",
     suspicion: "Sospecha",
     respect: "Respeto",
     fear: "Miedo",
     jealousy: "Celos",
+    socialDebt: "Deuda social",
   };
 
-  return RELATIONSHIP_FIELDS
+  return SOCIAL_RELATIONSHIP_FIELDS
     .filter((field) => (deltas[field] || 0) !== 0)
     .map((field) => `${labels[field]} ${npcName}: ${signed(deltas[field])}`);
 }
@@ -198,15 +210,17 @@ function calculateMemorySignal(memories) {
 }
 
 function evaluateSocialImpact({ npc, factors, body, memorySignal }) {
-  const current = npc.relationshipWithLucas || {};
+  const current = normalizeRelationship(npc.relationshipWithLucas || {});
   const sceneCap = clamp(Number.isInteger(body.sceneCap) ? body.sceneCap : 2, 0, 3);
   const deltas = {
     trust: 0,
+    familiarity: 0,
     affection: 0,
     suspicion: 0,
     respect: 0,
     fear: 0,
     jealousy: 0,
+    socialDebt: 0,
   };
   const reasons = [];
   const warnings = [];
@@ -236,6 +250,10 @@ function evaluateSocialImpact({ npc, factors, body, memorySignal }) {
 
   const importance = importanceScore(factors.importance);
 
+  if (importance >= 1 && !factors.repetitiveSocialFarming) {
+    deltas.familiarity += importance >= 3 ? 2 : 1;
+  }
+
   if (negative) {
     const baseLoss = importance >= 3 ? -2 : -1;
     deltas.trust += baseLoss;
@@ -243,6 +261,7 @@ function evaluateSocialImpact({ npc, factors, body, memorySignal }) {
     if (factors.harmedNpc) deltas.fear += 1;
     if (factors.unreliableWork) deltas.respect -= 1;
     if (factors.provokedJealousy) deltas.jealousy += 1;
+    if (factors.harmedNpc || factors.liedOrBrokePromise) deltas.socialDebt -= 1;
     reasons.push("impacto negativo: dano social, presion, mentira, humillacion o incumplimiento");
     return {
       deltas: normalizeDeltaObject(deltas, sceneCap),
@@ -272,6 +291,11 @@ function evaluateSocialImpact({ npc, factors, body, memorySignal }) {
     reasons.push("ayuda relevante, respeto de limites o apoyo emocional");
   }
 
+  if (factors.helpedNpc && factors.practicalConsequence && !factors.withinExpectedDuty) {
+    deltas.socialDebt += importance >= 3 || factors.riskOrCostToLucas ? 2 : 1;
+    reasons.push("favor practico fuera del deber normal crea deuda social leve");
+  }
+
   if (factors.withinExpectedDuty && deltas.trust > 1 && !factors.promiseFulfilled && !factors.riskOrCostToLucas) {
     deltas.trust = 1;
     reasons.push("al ocurrir dentro del deber normal, el impacto principal va a respeto");
@@ -282,7 +306,8 @@ function evaluateSocialImpact({ npc, factors, body, memorySignal }) {
     factors.personalWarmth &&
     factors.personalScene &&
     factors.emotionalConsequence &&
-    (current.trust || 0) >= 25
+    (current.trust || 0) >= 25 &&
+    (current.familiarity || 0) >= 10
   ) {
     deltas.affection += 1;
     reasons.push("calidez personal en escena privada y con confianza suficiente");
@@ -342,14 +367,33 @@ async function previewSocialImpact(body = {}) {
   const memorySignal = calculateMemorySignal(recentPositiveMemories);
   const factors = inferFactors(body);
   const evaluation = evaluateSocialImpact({ npc, factors, body, memorySignal });
-  const currentRelationship = npc.relationshipWithLucas || {};
+  const dailyUsage = gameState?.currentDay
+    ? await getDailySocialUsage({
+        gameId,
+        npcId,
+        day: gameState.currentDay,
+      })
+    : { entries: [], usage: {}, actionTypeCounts: {} };
+  const capEvaluation = applyDailySocialCaps({
+    requestedDeltas: evaluation.deltas,
+    currentUsage: dailyUsage,
+    actionType: factors.actionType,
+    overrideDailyCap: Boolean(body.overrideDailyCap),
+    overrideReason: body.overrideReason || "",
+  });
+  const currentRelationship = normalizeRelationship(npc.relationshipWithLucas || {});
   const reason = evaluation.reasons.join("; ");
   const suggestedPatch = buildSuggestedPatch(
     npc.npcId,
-    evaluation.deltas,
+    capEvaluation.appliedDeltas,
     body.reason || reason,
     body.notes || ""
   );
+  suggestedPatch.actionType = factors.actionType;
+  if (body.overrideDailyCap) {
+    suggestedPatch.overrideDailyCap = true;
+    suggestedPatch.overrideReason = body.overrideReason || "Override solicitado en preview.";
+  }
 
   return {
     npc: {
@@ -358,6 +402,7 @@ async function previewSocialImpact(body = {}) {
       role: npc.role || "",
       relationshipWithLucas: currentRelationship,
       trustBand: getTrustBand(currentRelationship.trust || 0),
+      familiarityBand: relationshipBand(currentRelationship.familiarity || 0),
     },
     gameState: gameState
       ? {
@@ -370,10 +415,13 @@ async function previewSocialImpact(body = {}) {
     factors,
     evaluation: {
       deltas: evaluation.deltas,
+      cappedDeltas: capEvaluation.appliedDeltas,
       reasons: evaluation.reasons,
-      warnings: evaluation.warnings,
+      warnings: [...evaluation.warnings, ...capEvaluation.caps.warnings],
       caps: {
         sceneCap: evaluation.sceneCap,
+        daily: capEvaluation.caps,
+        dailyUsage: summarizeDailySocialUsage(dailyUsage),
         normalDailyCap: 3,
         majorEventException: true,
       },

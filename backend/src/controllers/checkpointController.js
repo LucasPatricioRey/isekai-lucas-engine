@@ -17,6 +17,7 @@ const Faction = require("../models/Faction");
 const RoutineOverride = require("../models/RoutineOverride");
 const CombatEncounter = require("../models/CombatEncounter");
 const NpcRelationship = require("../models/NpcRelationship");
+const NpcSocialLedger = require("../models/NpcSocialLedger");
 const CharacterMagicKnowledge = require("../models/CharacterMagicKnowledge");
 const MagicDiscipline = require("../models/MagicDiscipline");
 const MagicTechnique = require("../models/MagicTechnique");
@@ -39,6 +40,7 @@ const RESTORE_COLLECTIONS = [
   ["routineOverrides", RoutineOverride],
   ["combatEncounters", CombatEncounter],
   ["npcRelationships", NpcRelationship],
+  ["npcSocialLedger", NpcSocialLedger],
   ["characterMagicKnowledge", CharacterMagicKnowledge],
   ["magicDisciplines", MagicDiscipline],
   ["magicTechniques", MagicTechnique],
@@ -76,6 +78,7 @@ async function buildFullSnapshot(gameId) {
     routineOverrides,
     combatEncounters,
     npcRelationships,
+    npcSocialLedger,
     characterMagicKnowledge,
     magicDisciplines,
     magicTechniques,
@@ -97,6 +100,7 @@ async function buildFullSnapshot(gameId) {
     RoutineOverride.find({}).lean(),
     CombatEncounter.find({}).lean(),
     NpcRelationship.find({}).lean(),
+    NpcSocialLedger.find({}).lean(),
     CharacterMagicKnowledge.find({}).lean(),
     MagicDiscipline.find({}).lean(),
     MagicTechnique.find({}).lean(),
@@ -122,6 +126,7 @@ async function buildFullSnapshot(gameId) {
       routineOverrides,
       combatEncounters,
       npcRelationships,
+      npcSocialLedger,
       characterMagicKnowledge,
       magicDisciplines,
       magicTechniques,
@@ -225,6 +230,7 @@ function getSnapshotDocId(collectionKey, doc) {
     doc.overrideId ||
     doc.encounterId ||
     doc.relationshipId ||
+    doc.ledgerId ||
     doc.knowledgeId ||
     doc.disciplineId ||
     doc.techniqueId ||

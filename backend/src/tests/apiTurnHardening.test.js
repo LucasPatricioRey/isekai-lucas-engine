@@ -4,6 +4,7 @@ const EventLog = require("../models/EventLog");
 const GameState = require("../models/GameState");
 const Mission = require("../models/Mission");
 const Npc = require("../models/Npc");
+const NpcSocialLedger = require("../models/NpcSocialLedger");
 const WeatherState = require("../models/WeatherState");
 const WorldEvent = require("../models/WorldEvent");
 const { ensureCurrentWeatherForGameState } = require("../services/weatherService");
@@ -126,6 +127,7 @@ async function cleanupIsolatedState() {
   if (tempGameId) await WorldEvent.deleteMany({ gameId: tempGameId });
   await Mission.deleteMany({ missionId: { $in: [tempMissionId, tempExpiredMissionId].filter(Boolean) } });
   if (tempNpcId) await Npc.deleteOne({ npcId: tempNpcId });
+  if (tempNpcId) await NpcSocialLedger.deleteMany({ npcId: tempNpcId });
   if (tempWeatherRegionId) await WeatherState.deleteMany({ regionId: tempWeatherRegionId });
   await EventLog.deleteMany({
     $or: [
@@ -236,8 +238,11 @@ describe("turn hardening coverage", () => {
           npcId: tempNpcId,
           trustDelta: 2,
           respectDelta: 1,
+          familiarityDelta: 1,
           reason: "Accion social relevante validada por test.",
+          actionType: "test_reliable_help",
           notes: "Fixture temporal actualizado por applyTurn.",
+          tags: ["test_turn_hardening"],
         },
       ],
       eventLogs: [
@@ -255,6 +260,48 @@ describe("turn hardening coverage", () => {
     assert.equal(relationship.data.changes.npcRelationships[0].npcId, tempNpcId);
     assert.equal(relationship.data.changes.npcRelationships[0].after.trust, 12);
     assert.equal(relationship.data.changes.npcRelationships[0].after.respect, 6);
+    assert.equal(relationship.data.changes.npcRelationships[0].after.familiarity, 1);
+    assert.equal(relationship.data.changes.npcRelationships[0].appliedDeltas.trust, 2);
+    assert.ok(relationship.data.changes.npcRelationships[0].ledgerId);
+
+    const firstLedger = await NpcSocialLedger.findOne({
+      ledgerId: relationship.data.changes.npcRelationships[0].ledgerId,
+    }).lean();
+    assert.equal(firstLedger.npcId, tempNpcId);
+    assert.equal(firstLedger.appliedDeltas.trust, 2);
+    assert.equal(firstLedger.appliedDeltas.respect, 1);
+
+    const cappedRelationship = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: cap diario social.",
+      npcRelationshipPatches: [
+        {
+          npcId: tempNpcId,
+          trustDelta: 3,
+          reason: "Accion social repetida que debe respetar cap diario.",
+          actionType: "test_reliable_help",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de cap diario social.",
+          visibility: "hidden",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+    });
+
+    assert.equal(cappedRelationship.status, 200);
+    assert.equal(cappedRelationship.data.ok, true);
+    assert.equal(cappedRelationship.data.changes.npcRelationships[0].requestedDeltas.trust, 3);
+    assert.equal(cappedRelationship.data.changes.npcRelationships[0].appliedDeltas.trust, 1);
+    assert.equal(cappedRelationship.data.changes.npcRelationships[0].after.trust, 13);
+    assert.equal(
+      cappedRelationship.data.changes.npcRelationships[0].caps.fields.trust.reason,
+      "daily_cap_trust"
+    );
   });
 
   it("previews travel biology and applies validated turn mutations atomically", async () => {

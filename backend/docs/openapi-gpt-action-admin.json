@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Admin Read-Only",
-    "version": "0.1.1",
+    "version": "2.3.0",
     "description": "Schema opcional para una segunda Action tecnica segura. Solo incluye endpoints existentes read-only. Sus componentes documentan parches sociales, pero las rutas expuestas no incluyen applyTurn, rollback, reset, delete ni mutadores peligrosos. El backend genera eventos diarios con scheduler de manana y los expira con consecuencias pendientes."
   },
   "servers": [
@@ -375,7 +375,7 @@
       },
       "NpcRelationshipPatchItem": {
         "type": "object",
-        "description": "Delta de relacion Lucas-NPC. No usar para smalltalk ni farmeo social; justificar cada cambio.",
+        "description": "Delta de relacion Lucas-NPC con ledger social diario. No usar para smalltalk ni farmeo social; justificar cada cambio.",
         "properties": {
           "npcId": {
             "type": "string"
@@ -384,6 +384,12 @@
             "type": "integer",
             "minimum": -3,
             "maximum": 3
+          },
+          "familiarityDelta": {
+            "type": "integer",
+            "minimum": -3,
+            "maximum": 3,
+            "description": "Cambio de trato/historia compartida, no necesariamente positivo ni romantico."
           },
           "affectionDelta": {
             "type": "integer",
@@ -410,11 +416,45 @@
             "minimum": -3,
             "maximum": 3
           },
+          "socialDebtDelta": {
+            "type": "integer",
+            "minimum": -3,
+            "maximum": 3,
+            "description": "Favor o deuda social practica. Positivo: el NPC le debe algo a Lucas; negativo: Lucas queda en deuda o danio social."
+          },
           "reason": {
             "type": "string"
           },
           "notes": {
             "type": "string"
+          },
+          "actionType": {
+            "type": "string",
+            "description": "Tipo normalizado de accion social para antifarmeo: reliable_work, practical_help, respect_boundaries, apology, emotional_support, etc."
+          },
+          "overrideDailyCap": {
+            "type": "boolean",
+            "default": false,
+            "description": "Solo true con overrideReason cuando un evento fuerte justifica superar el cap diario."
+          },
+          "overrideReason": {
+            "type": "string",
+            "description": "Motivo explicito para superar caps diarios."
+          },
+          "sourceEventId": {
+            "type": "string"
+          },
+          "sourceMissionId": {
+            "type": "string"
+          },
+          "sourceEventLogId": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [

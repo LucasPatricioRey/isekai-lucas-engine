@@ -31,26 +31,50 @@ const relationshipSchema = new mongoose.Schema(
     trust: {
       type: Number,
       default: 0,
+      min: 0,
+      max: 100,
+    },
+    familiarity: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100,
     },
     affection: {
       type: Number,
       default: 0,
+      min: 0,
+      max: 100,
     },
     suspicion: {
       type: Number,
       default: 0,
+      min: 0,
+      max: 100,
     },
     respect: {
       type: Number,
       default: 0,
+      min: 0,
+      max: 100,
     },
     fear: {
       type: Number,
       default: 0,
+      min: 0,
+      max: 100,
     },
     jealousy: {
       type: Number,
       default: 0,
+      min: 0,
+      max: 100,
+    },
+    socialDebt: {
+      type: Number,
+      default: 0,
+      min: -100,
+      max: 100,
     },
     notes: {
       type: String,

@@ -14,6 +14,17 @@ const { syncNpcRoutines } = require("../services/routineService");
 const { calculateActivityCost, normalizeCategory } = require("../services/biologicalClockService");
 const { reconcileDailyEventsForGameState } = require("../services/dailyEventSchedulerService");
 const { ensureCurrentWeatherForGameState } = require("../services/weatherService");
+const {
+  SOCIAL_FIELD_RANGES,
+  SOCIAL_RELATIONSHIP_FIELDS,
+  applyDailySocialCaps,
+  createSocialLedgerEntry,
+  getDailySocialUsage,
+  hasNonZeroDelta,
+  normalizeActionType,
+  normalizeDeltas,
+  normalizeRelationship,
+} = require("../services/socialLedgerService");
 
 const VALID_EVENT_LOG_SOURCES = new Set([
   "player_action",
@@ -330,7 +341,7 @@ async function applyInventoryPatch(inventory, patch, session = null) {
   };
 }
 
-async function applyNpcRelationshipPatches(patches, session = null) {
+async function applyNpcRelationshipPatches(gameState, patches, session = null) {
   const results = [];
 
   for (const patch of patches) {
@@ -342,6 +353,10 @@ async function applyNpcRelationshipPatches(patches, session = null) {
       throw validationError("npcRelationshipPatch.reason es obligatorio.");
     }
 
+    if (patch.overrideDailyCap && (typeof patch.overrideReason !== "string" || !patch.overrideReason.trim())) {
+      throw validationError("npcRelationshipPatch.overrideReason es obligatorio si overrideDailyCap=true.");
+    }
+
     const npc = await Npc.findOne({ npcId: patch.npcId }).session(session);
 
     if (!npc) {
@@ -349,11 +364,10 @@ async function applyNpcRelationshipPatches(patches, session = null) {
     }
 
     const relationship = npc.relationshipWithLucas;
-    const before = toPlain(relationship);
+    const before = normalizeRelationship(toPlain(relationship));
+    const requestedDeltas = {};
 
-    const allowedDeltas = ["trust", "affection", "suspicion", "respect", "fear", "jealousy"];
-
-    for (const key of allowedDeltas) {
+    for (const key of SOCIAL_RELATIONSHIP_FIELDS) {
       const deltaKey = `${key}Delta`;
 
       if (patch[deltaKey] !== undefined) {
@@ -365,7 +379,32 @@ async function applyNpcRelationshipPatches(patches, session = null) {
           throw validationError(`${deltaKey} debe estar entre -3 y 3.`);
         }
 
-        relationship[key] = clamp((relationship[key] || 0) + patch[deltaKey], 0, 100);
+        requestedDeltas[key] = patch[deltaKey];
+      }
+    }
+
+    const normalizedRequestedDeltas = normalizeDeltas(requestedDeltas);
+    const dailyUsage = await getDailySocialUsage({
+      gameId: gameState.gameId,
+      npcId: patch.npcId,
+      day: gameState.currentDay,
+      session,
+    });
+    const capped = applyDailySocialCaps({
+      requestedDeltas: normalizedRequestedDeltas,
+      currentUsage: dailyUsage,
+      actionType: patch.actionType || "general",
+      overrideDailyCap: Boolean(patch.overrideDailyCap),
+      overrideReason: patch.overrideReason || "",
+    });
+
+    for (const key of SOCIAL_RELATIONSHIP_FIELDS) {
+      const delta = capped.appliedDeltas[key] || 0;
+      if (delta !== 0) {
+        const range = SOCIAL_FIELD_RANGES[key] || { min: 0, max: 100 };
+        relationship[key] = clamp((relationship[key] || 0) + delta, range.min, range.max);
+      } else if (relationship[key] === undefined || relationship[key] === null) {
+        relationship[key] = before[key] || 0;
       }
     }
 
@@ -374,12 +413,37 @@ async function applyNpcRelationshipPatches(patches, session = null) {
     }
 
     await npc.save({ session });
+    const after = normalizeRelationship(toPlain(npc.relationshipWithLucas));
+    const ledgerEntry = await createSocialLedgerEntry({
+      gameId: gameState.gameId,
+      characterId: gameState.characterId,
+      npcId: npc.npcId,
+      day: gameState.currentDay,
+      time: gameState.time,
+      actionType: normalizeActionType(patch.actionType || "general"),
+      reason: patch.reason.trim(),
+      requestedDeltas: capped.requestedDeltas,
+      appliedDeltas: capped.appliedDeltas,
+      before,
+      after,
+      caps: capped.caps,
+      sourceEventId: patch.sourceEventId || "",
+      sourceMissionId: patch.sourceMissionId || "",
+      sourceEventLogId: patch.sourceEventLogId || "",
+      tags: patch.tags || [],
+      session,
+    });
 
     results.push({
       npcId: npc.npcId,
       name: npc.name,
       before,
-      after: toPlain(npc.relationshipWithLucas),
+      after,
+      requestedDeltas: capped.requestedDeltas,
+      appliedDeltas: capped.appliedDeltas,
+      caps: capped.caps,
+      ledgerId: ledgerEntry?.ledgerId || "",
+      skippedByDailyCap: hasNonZeroDelta(capped.requestedDeltas) && !hasNonZeroDelta(capped.appliedDeltas),
       reason: patch.reason || "",
     });
   }
@@ -1517,7 +1581,7 @@ async function applyTurn(req, res) {
       let updatedGameState = gameState.toObject();
 
       if (Array.isArray(body.npcRelationshipPatches)) {
-        const relationshipChanges = await applyNpcRelationshipPatches(body.npcRelationshipPatches, session);
+        const relationshipChanges = await applyNpcRelationshipPatches(gameState, body.npcRelationshipPatches, session);
         if (relationshipChanges.length > 0) changes.npcRelationships = relationshipChanges;
       }
 

@@ -16,6 +16,7 @@ const Faction = require("../models/Faction");
 const RoutineOverride = require("../models/RoutineOverride");
 const CombatEncounter = require("../models/CombatEncounter");
 const NpcRelationship = require("../models/NpcRelationship");
+const NpcSocialLedger = require("../models/NpcSocialLedger");
 const WeatherState = require("../models/WeatherState");
 const JobContract = require("../models/JobContract");
 const responseShaping = require("../utils/responseShaping");
@@ -415,6 +416,7 @@ async function getCompactContext(req, res) {
       activeCombatEncounters,
       weather,
       jobContract,
+      todaySocialLedger,
     ] = await Promise.all([
       inventoryItemIds.length
         ? Item.find({ itemId: { $in: inventoryItemIds } }).sort({ name: 1 }).lean()
@@ -517,6 +519,17 @@ async function getCompactContext(req, res) {
       })
         .sort({ startDay: -1 })
         .lean(),
+
+      nearbyNpcIds.length
+        ? NpcSocialLedger.find({
+            gameId,
+            npcId: { $in: nearbyNpcIds },
+            day: gameState.currentDay,
+          })
+            .sort({ createdAt: -1 })
+            .limit(20)
+            .lean()
+        : Promise.resolve([]),
     ]);
 
     const activeMissionSummaries = activeMissions.map((mission) =>
@@ -658,6 +671,7 @@ async function getCompactContext(req, res) {
         currentDailyEvent: currentDailyEventSummary,
         dailyEvents: dailyEvents.map(responseShaping.summarizeWorldEvent),
         activeRumors: activeRumors.map(responseShaping.summarizeRumor),
+        socialLedgerToday: todaySocialLedger.map(responseShaping.summarizeNpcSocialLedger),
         activeMissions: activeMissionSummaries,
         availableMissionPreview,
         pendingBiology: pendingBiologicalAccumulations,

@@ -226,6 +226,24 @@ function main() {
     "compact WorldEventPatchItem supports expired status",
     compact.components?.schemas?.WorldEventPatchItem?.properties?.status?.enum?.includes("expired")
   );
+  for (const propertyName of [
+    "familiarityDelta",
+    "socialDebtDelta",
+    "actionType",
+    "overrideDailyCap",
+    "overrideReason",
+  ]) {
+    assertCondition(
+      issues,
+      `full NpcRelationshipPatchItem has ${propertyName}`,
+      Boolean(full.components?.schemas?.NpcRelationshipPatchItem?.properties?.[propertyName])
+    );
+    assertCondition(
+      issues,
+      `compact NpcRelationshipPatchItem has ${propertyName}`,
+      Boolean(compact.components?.schemas?.NpcRelationshipPatchItem?.properties?.[propertyName])
+    );
+  }
 
   section("Admin Read-Only Schema");
   const adminMutators = Array.from(adminOps.keys()).filter((operationKey) => operationKey.startsWith("POST "));

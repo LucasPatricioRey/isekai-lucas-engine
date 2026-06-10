@@ -59,6 +59,10 @@ describe("preview and rejection API coverage", () => {
     assert.equal(social.data.preview.mutation.willMutateGameState, false);
     assert.equal(social.data.preview.suggestedPatch.npcId, "npc_yara_mils");
     assert.ok((social.data.preview.suggestedPatch.trustDelta || 0) >= 1);
+    assert.ok((social.data.preview.suggestedPatch.familiarityDelta || 0) >= 1);
+    assert.equal(social.data.preview.suggestedPatch.actionType, "reliable_work");
+    assert.ok(social.data.preview.evaluation.caps.daily);
+    assert.ok(social.data.preview.evaluation.dailyUsage || social.data.preview.evaluation.caps.dailyUsage);
 
     const afterState = await getCanonicalState();
     assertSameState(beforeState, afterState);
