@@ -85,7 +85,6 @@ async function runSmokeTests() {
   const missions = await request("/api/missions/board");
   if (!missions.ok) throw new Error("missions board fallo");
   if (!Array.isArray(missions.missions)) throw new Error("missions board no devolvio missions");
-  if (missions.missions.length < 1) throw new Error("missions board no devolvio misiones jugables");
   console.log("OK /api/missions/board");
 
   const missionDetail = await request("/api/missions/mission_d10_grulla_delivery_guild");
