@@ -6,7 +6,11 @@ const RoutineOverride = require("../models/RoutineOverride");
 const Rumor = require("../models/Rumor");
 const ShopStock = require("../models/ShopStock");
 const WorldEvent = require("../models/WorldEvent");
-const { eventGameFilter, shouldEnsureDailyEvent } = require("./dailyEventSchedulerService");
+const {
+  DAILY_EVENT_TAG,
+  eventGameFilter,
+  shouldEnsureDailyEvent,
+} = require("./dailyEventSchedulerService");
 
 function timeToMinutes(time) {
   const [hours, minutes] = String(time || "00:00").split(":").map(Number);
@@ -237,6 +241,7 @@ async function previewWorldTick({
     activeRumors,
     activeEvents,
     activeCombats,
+    existingDailyEvent,
   ] = await Promise.all([
     previewRoutineSync({ toDay: normalizedToDay, toTime: normalizedToTime }),
     previewMissionExpiry({ fromAbs, toAbs }),
@@ -244,6 +249,12 @@ async function previewWorldTick({
     Rumor.find({ status: "active" }).select("rumorId certainty locationIds knownByNpcIds tags").lean(),
     WorldEvent.find({ ...eventGameFilter(gameId), status: "active" }).lean(),
     CombatEncounter.find({ gameId, status: "active" }).select("encounterId enemyId enemyName").lean(),
+    WorldEvent.findOne({
+      ...eventGameFilter(gameId),
+      tags: { $all: [DAILY_EVENT_TAG, `daily_event_day_${normalizedToDay}`] },
+    })
+      .select("eventId title status startDay startTime endDay endTime severity tags")
+      .lean(),
   ]);
 
   const eventsEnding = activeEvents
@@ -319,7 +330,20 @@ async function previewWorldTick({
     generatedContent: {
       willCreateRumors: false,
       willCreateRomance: false,
-      willCreateDailyEvent: shouldEnsureDailyEvent({ currentDay: normalizedToDay, time: normalizedToTime }),
+      willCreateDailyEvent:
+        shouldEnsureDailyEvent({ currentDay: normalizedToDay, time: normalizedToTime }) && !existingDailyEvent,
+      existingDailyEvent: existingDailyEvent
+        ? {
+            eventId: existingDailyEvent.eventId,
+            title: existingDailyEvent.title,
+            status: existingDailyEvent.status,
+            startDay: existingDailyEvent.startDay,
+            startTime: existingDailyEvent.startTime,
+            endDay: existingDailyEvent.endDay,
+            endTime: existingDailyEvent.endTime,
+            severity: existingDailyEvent.severity,
+          }
+        : null,
       willCreateMajorEvents: false,
       willGrantRewards: false,
     },

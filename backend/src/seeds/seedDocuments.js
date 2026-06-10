@@ -25,6 +25,21 @@ function chunkText(text, maxLength = 1200) {
   return chunks.filter(Boolean);
 }
 
+function normalizeSearchText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractVersion(content) {
+  const match = String(content || "").match(/^Versi(?:o|ó|Ã³)n:\s*(.+)$/imu);
+  return match ? match[1].trim() : "sin_version";
+}
+
 async function seedDocuments() {
   await connectDB();
 
@@ -51,18 +66,21 @@ async function seedDocuments() {
     const fullPath = path.join(docsDir, file.fileName);
     const content = await fs.readFile(fullPath, "utf8");
     const chunks = chunkText(content);
+    const version = extractVersion(content);
 
     chunks.forEach((chunk, index) => {
       const firstLine = chunk.split("\n")[0] || file.fileName;
+      const title = firstLine.replace(/^#+\s*/, "");
 
       docsToInsert.push({
         docId: `${file.source}_${index + 1}`,
         source: file.source,
-        section: firstLine.replace(/^#+\s*/, ""),
-        title: firstLine.replace(/^#+\s*/, ""),
+        section: title,
+        title,
         content: chunk,
+        searchText: normalizeSearchText(`${file.source} ${title} ${chunk}`),
         tags: [file.source, file.fileName.replace(".md", "")],
-        version: "v0.1-local",
+        version,
       });
     });
   }

@@ -242,6 +242,34 @@ function main() {
       compact.components?.schemas?.SkillPatchItem?.required?.includes(propertyName)
     );
   }
+  for (const propertyName of ["skillId", "expDelta", "category", "reason"]) {
+    assertCondition(
+      issues,
+      `compact PreviewSkillProgressionRequest requires ${propertyName}`,
+      compact.components?.schemas?.PreviewSkillProgressionRequest?.required?.includes(propertyName)
+    );
+  }
+  assertCondition(
+    issues,
+    "compact skill preview has request body",
+    Boolean(
+      compactOps.get("POST /api/progression/skills/preview")?.requestBody?.content?.["application/json"]?.schema
+    )
+  );
+  for (const propertyName of ["techniqueId", "minutes"]) {
+    assertCondition(
+      issues,
+      `compact PreviewMagicPracticeRequest requires ${propertyName}`,
+      compact.components?.schemas?.PreviewMagicPracticeRequest?.required?.includes(propertyName)
+    );
+  }
+  assertCondition(
+    issues,
+    "compact magic practice preview has request body",
+    Boolean(
+      compactOps.get("POST /api/magic/practice/preview")?.requestBody?.content?.["application/json"]?.schema
+    )
+  );
   for (const op of ["accept", "report", "verify", "complete", "fail", "expire"]) {
     assertCondition(
       issues,

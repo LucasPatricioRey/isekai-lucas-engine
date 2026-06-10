@@ -31,6 +31,12 @@ const worldDocumentIndexSchema = new mongoose.Schema(
       required: true,
     },
 
+    searchText: {
+      type: String,
+      default: "",
+      index: true,
+    },
+
     tags: {
       type: [String],
       default: [],

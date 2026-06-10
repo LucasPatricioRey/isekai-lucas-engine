@@ -127,6 +127,8 @@ async function checkCompactEndpoints(issues) {
     travelPreview,
     activityPreview,
     magicTechniques,
+    skillPreview,
+    magicPracticePreview,
     weather,
     activeCombats,
     socialImpact,
@@ -157,6 +159,23 @@ async function checkCompactEndpoints(issues) {
       }),
     }),
     request("/api/magic/techniques"),
+    request("/api/progression/skills/preview", {
+      method: "POST",
+      body: JSON.stringify({
+        skillId: "skill_mana",
+        category: "practica_basica_1h_solo",
+        expDelta: 4,
+        currentEnergy: 80,
+        modifiers: { aquaBlessing: true },
+      }),
+    }),
+    request("/api/magic/practice/preview", {
+      method: "POST",
+      body: JSON.stringify({
+        techniqueId: "technique_mana_breathing_basic",
+        minutes: 30,
+      }),
+    }),
     request("/api/weather/current?regionId=region_hoshimori"),
     request("/api/combat/encounters/active"),
     request("/api/npcs/social/impact/preview", {
@@ -207,6 +226,14 @@ async function checkCompactEndpoints(issues) {
   assertEqual(issues, "activity preview satiety delta", activityPreview.preview?.totalDelta?.satiety, -1);
   assertEqual(issues, "activity preview energy delta", activityPreview.preview?.totalDelta?.energy, -2);
   assertCondition(issues, "magic techniques has entries", (magicTechniques.techniques || []).length >= 6);
+  assertCondition(issues, "skill preview is dryRun", skillPreview.dryRun === true);
+  assertEqual(issues, "skill preview applies Aqua to mana", skillPreview.preview?.validation?.effectiveExpDelta, 20);
+  assertCondition(issues, "magic practice preview can practice", magicPracticePreview.preview?.canPractice === true);
+  assertCondition(
+    issues,
+    "magic practice preview is dryRun",
+    magicPracticePreview.preview?.projectedMp?.willMutate === false
+  );
   assertCondition(issues, "weather current exists", Boolean(weather.weather?.weatherId));
   assertCondition(issues, "context weather is current", context.context?.weather?.staleByCurrentTime !== true);
   assertCondition(issues, "social impact preview suggests patch", Boolean(socialImpact.preview?.suggestedPatch?.npcId));
@@ -343,6 +370,26 @@ async function main() {
     "compact skillPatch requires category and reason",
     compact.components?.schemas?.SkillPatchItem?.required?.includes("category") &&
       compact.components?.schemas?.SkillPatchItem?.required?.includes("reason")
+  );
+  assertCondition(
+    issues,
+    "compact skill preview has usable request body",
+    Boolean(
+      compact.paths?.["/api/progression/skills/preview"]?.post?.requestBody?.content?.["application/json"]?.schema
+    ) &&
+      ["skillId", "expDelta", "category"].every((field) =>
+        compact.components?.schemas?.PreviewSkillProgressionRequest?.required?.includes(field)
+      )
+  );
+  assertCondition(
+    issues,
+    "compact magic practice preview has usable request body",
+    Boolean(
+      compact.paths?.["/api/magic/practice/preview"]?.post?.requestBody?.content?.["application/json"]?.schema
+    ) &&
+      ["techniqueId", "minutes"].every((field) =>
+        compact.components?.schemas?.PreviewMagicPracticeRequest?.required?.includes(field)
+      )
   );
   assertCondition(
     issues,

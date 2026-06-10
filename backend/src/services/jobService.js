@@ -45,6 +45,16 @@ function unique(values) {
   return Array.from(new Set((values || []).filter(Boolean)));
 }
 
+function normalizeText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function createLogId() {
   return `log_job_shift_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -84,17 +94,104 @@ function getShiftLedgerForDay(flags, currentDay) {
   return flags.completedShifts[key];
 }
 
-function summarizeMealAvailability({ contract, shift, gameState }) {
+function mealLogMatchesMeal(meal, log) {
+  const mealId = normalizeText(meal.mealId);
+  const mealName = normalizeText(meal.name);
+  const tags = (log.tags || []).map(normalizeText);
+  const summary = normalizeText(log.summary);
+  const changes = normalizeText(JSON.stringify(log.mechanicalChanges || {}));
+  const haystack = `${tags.join(" ")} ${summary} ${changes}`;
+
+  if (mealId.includes("breakfast") || mealName.includes("desayuno")) {
+    return (
+      tags.includes("contract_breakfast") ||
+      haystack.includes("contract breakfast") ||
+      haystack.includes("desayuno de contrato") ||
+      haystack.includes("desayuno")
+    );
+  }
+
+  if (mealId.includes("main_meal") || mealName.includes("comida principal")) {
+    return (
+      tags.includes("contract_main_meal") ||
+      tags.includes("contract_lunch") ||
+      haystack.includes("comida principal") ||
+      haystack.includes("almuerzo de contrato") ||
+      haystack.includes("comida de contrato")
+    );
+  }
+
+  const nameTokens = mealName.split(" ").filter((token) => token.length >= 4);
+  return nameTokens.length > 0 && nameTokens.every((token) => haystack.includes(token));
+}
+
+async function inferConsumedContractMealsFromLogs({ gameId, currentDay, shift, meals, session = null }) {
+  if (!Array.isArray(meals) || meals.length === 0) {
+    return {
+      mealIds: [],
+      evidence: {},
+    };
+  }
+
+  const logs = await EventLog.find({
+    gameId,
+    day: currentDay,
+    timeStart: { $lte: shift.startTime },
+    $or: [
+      { type: "meal" },
+      { tags: { $in: ["meal", "contract_breakfast", "contract_main_meal", "contract_lunch", "quick_meal"] } },
+    ],
+  })
+    .sort({ timeStart: -1 })
+    .limit(20)
+    .session(session)
+    .lean();
+
+  const mealIds = [];
+  const evidence = {};
+
+  for (const meal of meals) {
+    const match = logs.find((log) => mealLogMatchesMeal(meal, log));
+    if (match) {
+      mealIds.push(meal.mealId);
+      evidence[meal.mealId] = {
+        logId: match.logId,
+        timeStart: match.timeStart,
+        timeEnd: match.timeEnd || "",
+        tags: match.tags || [],
+        summary: match.summary || "",
+      };
+    }
+  }
+
+  return {
+    mealIds,
+    evidence,
+  };
+}
+
+async function summarizeMealAvailability({ contract, shift, gameState }) {
   const flags = getContractFlags(contract);
   const mealLedger = getMealLedgerForDay(flags, gameState.currentDay);
   const includedMealIds = new Set(shift.includedMealIds || []);
-  const mealBenefits = (contract.mealBenefits || [])
-    .filter((meal) => includedMealIds.has(meal.mealId))
-    .map((meal) => ({
+  const includedMeals = (contract.mealBenefits || []).filter((meal) => includedMealIds.has(meal.mealId));
+  const inferred = await inferConsumedContractMealsFromLogs({
+    gameId: gameState.gameId,
+    currentDay: gameState.currentDay,
+    shift,
+    meals: includedMeals,
+  });
+  const inferredMealIds = new Set(inferred.mealIds);
+  const mealBenefits = includedMeals.map((meal) => {
+    const ledgerEntry = mealLedger[meal.mealId] || null;
+    const inferredEntry = inferred.evidence[meal.mealId] || null;
+    return {
       ...meal,
-      consumedToday: Boolean(mealLedger[meal.mealId]),
-      consumedEntry: mealLedger[meal.mealId] || null,
-    }));
+      consumedToday: Boolean(ledgerEntry) || inferredMealIds.has(meal.mealId),
+      consumedEntry: ledgerEntry,
+      inferredConsumedEntry: inferredEntry,
+    };
+  });
   const availableMealBenefits = mealBenefits.filter((meal) => !meal.consumedToday);
 
   const grossMealDelta = mealBenefits.reduce(
@@ -117,6 +214,8 @@ function summarizeMealAvailability({ contract, shift, gameState }) {
     availableMealBenefits,
     grossMealDelta,
     directMealDelta,
+    inferredConsumedMealIds: inferred.mealIds,
+    inferredConsumedEvidence: inferred.evidence,
   };
 }
 
@@ -232,7 +331,7 @@ async function previewShift({
     },
   });
 
-  const mealAvailability = summarizeMealAvailability({ contract, shift, gameState });
+  const mealAvailability = await summarizeMealAvailability({ contract, shift, gameState });
 
   return {
     dryRun: true,
@@ -255,6 +354,8 @@ async function previewShift({
     availableMealBenefits: mealAvailability.availableMealBenefits,
     grossMealDelta: mealAvailability.grossMealDelta,
     directMealDelta: mealAvailability.directMealDelta,
+    inferredConsumedMealIds: mealAvailability.inferredConsumedMealIds,
+    inferredConsumedEvidence: mealAvailability.inferredConsumedEvidence,
     biologicalPreview,
     mutation: {
       willMutateGameState: false,
@@ -446,9 +547,20 @@ async function completeShift({
       const skipMeals = new Set(unique(skipMealIds));
       const markConsumedOnly = new Set(unique(alreadyConsumedMealIds));
       const includedMeals = (contract.mealBenefits || []).filter((meal) => includedMealIds.has(meal.mealId));
+      const inferredConsumed = await inferConsumedContractMealsFromLogs({
+        gameId,
+        currentDay: gameState.currentDay,
+        shift,
+        meals: includedMeals,
+        session,
+      });
+      for (const mealId of inferredConsumed.mealIds) {
+        markConsumedOnly.add(mealId);
+      }
       const mealChanges = [];
       const mealAppliedIds = [];
       const mealMarkedConsumedIds = [];
+      const mealInferredConsumedIds = [];
       const mealSkippedIds = [];
 
       for (const meal of includedMeals) {
@@ -463,14 +575,20 @@ async function completeShift({
         }
 
         if (markConsumedOnly.has(meal.mealId)) {
+          const inferredEvidence = inferredConsumed.evidence[meal.mealId] || null;
           mealLedger[meal.mealId] = {
             mealId: meal.mealId,
             day: gameState.currentDay,
             time: gameState.time,
             sourceShiftId: shift.shiftId,
-            status: "already_consumed_before_shift_completion",
+            status: inferredEvidence
+              ? "inferred_consumed_before_shift_completion"
+              : "already_consumed_before_shift_completion",
+            inferredFromEventLogId: inferredEvidence?.logId || "",
+            inferredFromTags: inferredEvidence?.tags || [],
           };
           mealMarkedConsumedIds.push(meal.mealId);
+          if (inferredEvidence) mealInferredConsumedIds.push(meal.mealId);
           continue;
         }
 
@@ -504,6 +622,7 @@ async function completeShift({
         payCopper,
         mealAppliedIds,
         mealMarkedConsumedIds,
+        mealInferredConsumedIds,
         mealSkippedIds,
         activityCategory: shift.activityCategory,
         expectedMinutes: shift.expectedMinutes,
@@ -549,6 +668,7 @@ async function completeShift({
               meals: {
                 applied: mealAppliedIds,
                 markedConsumed: mealMarkedConsumedIds,
+                inferredConsumed: mealInferredConsumedIds,
                 skipped: mealSkippedIds,
                 details: mealChanges,
               },
@@ -584,6 +704,7 @@ async function completeShift({
           meals: {
             applied: mealAppliedIds,
             markedConsumed: mealMarkedConsumedIds,
+            inferredConsumed: mealInferredConsumedIds,
             skipped: mealSkippedIds,
             details: mealChanges,
           },

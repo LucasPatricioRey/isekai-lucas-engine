@@ -198,6 +198,19 @@ describe("daily event scheduler", () => {
       compact.data.context.alerts.some((alert) => alert.type === "daily_event_missing"),
       false
     );
+
+    const tickPreview = await post("/api/world/tick/preview", {
+      gameId: tempGameId,
+      fromDay: 12,
+      fromTime: "06:00",
+      toDay: 12,
+      toTime: "15:00",
+      dryRun: true,
+    });
+    assert.equal(tickPreview.status, 200);
+    assert.equal(tickPreview.data.ok, true);
+    assert.equal(tickPreview.data.preview.generatedContent.willCreateDailyEvent, false);
+    assert.equal(tickPreview.data.preview.generatedContent.existingDailyEvent.eventId, event.eventId);
   });
 
   it("expires unresolved events and marks pending consequences", async () => {

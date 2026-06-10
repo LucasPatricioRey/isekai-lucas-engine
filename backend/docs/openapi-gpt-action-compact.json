@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Compact",
-    "version": "2.8.0",
+    "version": "2.8.1",
     "description": "Schema compacto con hasta 30 operaciones para GPT Builder. Incluye ApplyTurn con missionPatch, activityCost, gameStatePatch y parches de economia/memoria/relacion social. Incluye previewSocialImpact con proyeccion de relationshipState y excluye rollback y mutadores peligrosos directos. El backend genera eventos diarios con scheduler de manana y los expira con consecuencias pendientes."
   },
   "servers": [
@@ -79,6 +79,81 @@
             "description": "Solo true con motivo tecnico si el turno ya empezo y se esta cerrando manualmente."
           }
         },
+        "additionalProperties": false
+      },
+      "PreviewSkillProgressionRequest": {
+        "type": "object",
+        "properties": {
+          "gameId": {
+            "type": "string",
+            "default": "isekai_lucas_main"
+          },
+          "skillId": {
+            "type": "string",
+            "description": "ID de habilidad viva de Lucas, por ejemplo skill_resistencia, skill_percepcion o skill_magia."
+          },
+          "skill": {
+            "type": "object",
+            "description": "Alternativa completa a skillId para previews tecnicos.",
+            "additionalProperties": true
+          },
+          "expDelta": {
+            "type": "integer",
+            "description": "EXP base a previsualizar dentro del rango canonico."
+          },
+          "category": {
+            "type": "string",
+            "description": "Categoria canonica del progreso; debe existir en rules/skillProgressionService."
+          },
+          "reason": {
+            "type": "string"
+          },
+          "modifiers": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "currentEnergy": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "skillId",
+          "expDelta",
+          "category",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "PreviewMagicPracticeRequest": {
+        "type": "object",
+        "properties": {
+          "gameId": {
+            "type": "string",
+            "default": "isekai_lucas_main"
+          },
+          "characterId": {
+            "type": "string",
+            "default": "char_lucas"
+          },
+          "techniqueId": {
+            "type": "string",
+            "description": "ID de tecnica magica listada por listMagicTechniques, por ejemplo technique_mana_breathing_basic."
+          },
+          "minutes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "guidedByNpcId": {
+            "type": "string",
+            "description": "NPC guia si corresponde; vacio si practica solo."
+          }
+        },
+        "required": [
+          "techniqueId",
+          "minutes"
+        ],
         "additionalProperties": false
       },
       "SocialImpactPreviewRequest": {
@@ -1818,6 +1893,16 @@
       "post": {
         "operationId": "previewSkillProgression",
         "summary": "Previsualiza EXP/level-up sin mutar skill real.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewSkillProgressionRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Preview de skill.",
@@ -1900,6 +1985,16 @@
       "post": {
         "operationId": "previewMagicPractice",
         "summary": "Previsualiza practica magica sin gastar MP ni aprender hechizos.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewMagicPracticeRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Preview de practica magica.",

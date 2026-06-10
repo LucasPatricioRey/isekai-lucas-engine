@@ -22,6 +22,60 @@ function buildRegex(query) {
   return new RegExp(escapeRegex(query), "i");
 }
 
+function normalizeSearchText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getSearchTokens(query) {
+  const stopwords = new Set([
+    "con",
+    "del",
+    "para",
+    "por",
+    "que",
+    "los",
+    "las",
+    "una",
+    "uno",
+    "como",
+    "sobre",
+    "esto",
+    "esta",
+    "este",
+    "mensaje",
+  ]);
+
+  return Array.from(new Set(normalizeSearchText(query).split(" ")))
+    .filter((token) => token.length >= 3 && !stopwords.has(token))
+    .slice(0, 8);
+}
+
+function scoreDocSearchResult(doc, rawQuery, tokens) {
+  const exactRegex = buildRegex(rawQuery);
+  const normalized = normalizeSearchText(
+    `${doc.docId} ${doc.source} ${doc.section} ${doc.title} ${doc.content} ${(doc.tags || []).join(" ")}`
+  );
+  let score = 0;
+
+  if (exactRegex.test(doc.title || "")) score += 10;
+  if (exactRegex.test(doc.section || "")) score += 8;
+  if (exactRegex.test(doc.content || "")) score += 5;
+
+  for (const token of tokens) {
+    if (normalizeSearchText(doc.title).includes(token)) score += 4;
+    if (normalizeSearchText(doc.section).includes(token)) score += 3;
+    if (normalized.includes(token)) score += 1;
+  }
+
+  return score;
+}
+
 async function searchDb(req, res) {
   const q = String(req.query.q || "").trim();
   const gameId = req.query.gameId || "isekai_lucas_main";
@@ -222,22 +276,49 @@ async function searchDocs(req, res) {
   }
 
   const regex = buildRegex(q);
+  const tokens = getSearchTokens(q);
+  const tokenRegexes = tokens.map((token) => buildRegex(token));
+  const tokenClauses = tokenRegexes.map((tokenRegex) => ({
+    $or: [
+      { docId: tokenRegex },
+      { source: tokenRegex },
+      { section: tokenRegex },
+      { title: tokenRegex },
+      { content: tokenRegex },
+      { searchText: tokenRegex },
+      { tags: tokenRegex },
+    ],
+  }));
 
-  const docs = await WorldDocumentIndex.find({
+  const query = {
     $or: [
       { docId: regex },
       { source: regex },
       { section: regex },
       { title: regex },
       { content: regex },
+      { searchText: regex },
       { tags: regex },
+      ...(tokenClauses.length > 0 ? [{ $and: tokenClauses.slice(0, 5) }] : []),
+      ...(tokenClauses.length > 0 ? tokenClauses : []),
     ],
-  }).limit(20).lean();
+  };
+
+  const docs = await WorldDocumentIndex.find(query).limit(50).lean();
+  const ranked = docs
+    .map((doc) => ({
+      ...doc,
+      searchScore: scoreDocSearchResult(doc, q, tokens),
+    }))
+    .filter((doc) => doc.searchScore > 0 || docs.length <= 20)
+    .sort((a, b) => b.searchScore - a.searchScore)
+    .slice(0, 20);
 
   return res.json({
     ok: true,
     query: q,
-    results: docs,
+    tokens,
+    results: ranked,
   });
 }
 

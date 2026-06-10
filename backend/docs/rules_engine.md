@@ -1,9 +1,11 @@
 # rules_engine.md — Motor Isekai Lucas
 
-Versión: Fase 2 v0.2  
+Versión: Fase 2 v0.3 — social, confianza y voz NPC
 Estado: versión validada por Lucas mediante revisión guiada  
 Fuente de migración: Enciclopedia V2 Isekai Lucas + decisiones confirmadas por Lucas durante Fase 1 + validación guiada Fase 2  
 Propósito: este archivo define **cómo se resuelve el juego**. No contiene el save vivo completo ni el lore mundial extenso; eso vive en MongoDB y `world_bible.md`.
+
+Actualización v0.3: agrega sistema social ampliado, formato obligatorio de diálogo NPC y libertad creativa controlada para NPCs según personalidad, memoria y conocimiento.
 
 ---
 
@@ -128,13 +130,13 @@ MongoDB guarda todo lo dinámico:
 
 Antes de resolver un turno, el GPT debe leer el backend.
 
-Endpoint conceptual recomendado para juego normal:
+Endpoint conceptual recomendado:
 
 ```txt
-GET /api/context/compact
+GET /api/context/full
 ```
 
-Debe devolver un contexto dinamico compacto y estructurado:
+Debe devolver un contexto dinámico amplio y estructurado:
 
 - estado completo de Lucas;
 - ubicación actual;
@@ -143,18 +145,13 @@ Debe devolver un contexto dinamico compacto y estructurado:
 - rutinas activas;
 - memorias relevantes de NPCs involucrados;
 - rumores vivos relevantes;
-- evento diario del dia (`currentDailyEvent`) y su estado `scheduled`/`active`/`resolved`;
 - eventos activos o próximos;
-- stock y comercios relevantes cuando correspondan;
+- stock y comercios relevantes;
 - misiones relevantes;
 - facciones y reputación;
 - alertas de coherencia.
 
-`context/full` queda reservado para modo tecnico/admin/debug, no como lectura normal por turno.
-
-Si `currentDailyEvent` existe pero su `status` es `scheduled`, el GPT debe narrarlo como evento diario programado/proximo, no como evento activo. Si su `status` es `active`, debe tratarlo como evento activo del mundo.
-
-Si `context/compact` no trae la informacion necesaria, el GPT no debe inventar. Debe buscar mas con endpoints profundos:
+Si `context/full` no trae la información necesaria, el GPT no debe inventar. Debe buscar más con endpoints profundos:
 
 ```txt
 GET /api/docs/search?q=...
@@ -299,6 +296,36 @@ Agregar solo si cambiaron o son relevantes:
 
 Cada campo opcional debe tener motivo.
 
+
+### 4.5 Formato obligatorio de diálogo NPC
+
+Cuando un NPC hable de forma directa, debe aparecer su nombre o rol antes del mensaje:
+
+```md
+Fern: "..."
+Roberto: "..."
+Yara: "..."
+Guardia: "..."
+```
+
+Reglas:
+
+- Usar el nombre propio si el NPC es nombrado/persistente y Lucas lo conoce.
+- Usar rol simple si es genérico o Lucas no conoce su nombre: `Cliente: "..."`, `Guardia: "..."`, `Vendedora: "..."`.
+- No usar guion largo como formato principal para diálogo directo de NPC.
+- El texto hablado va entre comillas.
+- Si el NPC interrumpe, duda o habla poco, mantener el mismo formato.
+- La narración alrededor del diálogo puede describir gestos, silencios, miradas, postura o tono.
+- Este formato no autoriza al NPC a revelar secretos ni conocimiento que no tenga.
+
+Ejemplo:
+
+```md
+Fern: "No hagas eso aquí."
+
+Fern baja apenas la mirada hacia tus manos, más preocupada por el control del maná que por regañarte.
+```
+
 ---
 
 ## 5. Tiempo exacto y bloques del día
@@ -336,39 +363,9 @@ El estado final siempre muestra el bloque según la hora exacta.
 
 ### 5.4 Eventos diarios
 
-Al comenzar la Mañana de cada día de partida, el backend debe asegurar **un evento diario generado** para ese día. El evento se guarda en MongoDB como `WorldEvent` y puede empezar en ese mismo bloque o más tarde.
+Eventos random suaves pueden usarse como semillas menores.
 
-El evento diario usa tres tiradas:
-
-1. **Bloque de inicio**:
-   - 1 = Mañana, empieza 06:00;
-   - 2 = Mediodía, empieza 12:00;
-   - 3 = Tarde, empieza 14:00;
-   - 4 = Noche, empieza 18:00.
-2. **Importancia**:
-   - 1–7 = evento menor/opcional;
-   - 8–10 = evento importante, debe atenderse o resolver consecuencias.
-3. **Duración**:
-   - 1–15 días.
-
-El fin del evento se calcula por bloque. Si un evento empieza Día 11 a la primera hora de Tarde y dura 2 días, termina Día 13 al terminar el bloque de Tarde, es decir a las 18:00. Si empieza en Noche, termina al cierre del bloque de Noche correspondiente.
-
-Estados:
-
-- `scheduled`: el evento ya fue generado, pero todavía no llegó su bloque de inicio;
-- `active`: el bloque de inicio ya llegó;
-- `resolved`: Lucas/NPCs/backend lo resolvieron;
-- `expired`: el tiempo terminó sin resolución;
-- `consequences_applied`: las consecuencias ya fueron aplicadas;
-- `cancelled`: anulado por corrección/admin.
-
-Eventos menores pueden ignorarse, pero dejan consecuencias leves: oportunidad perdida, rumor deformado, malestar menor, demora chica o pérdida pequeña de confianza práctica.
-
-Eventos importantes deben atenderse. Si vencen sin resolución, dejan consecuencias mayores proporcionales: pérdida real de confianza, peligro de ruta, faltantes, escalada de amenaza, bloqueo temporal o daño offscreen lógico.
-
-La IA puede adaptar el color narrativo del evento según contexto, NPCs, clima, rumores y ubicación, pero el backend decide y guarda el evento. No inventar recompensas, enemigos, objetos mágicos ni cambios mecánicos fuera del evento vivo.
-
-Eventos random suaves pueden usarse como semillas menores. Eventos importantes requieren causa lógica:
+Eventos importantes requieren causa lógica:
 
 - clima;
 - facción;
@@ -402,7 +399,7 @@ Ejemplos no procesables:
 - 20:50;
 - 21:20.
 
-Si una escena termina entre horas exactas, guardar acumulador del bloque horario activo.
+Si una escena termina entre horas exactas, guardar acumulador del bloque horario activo. El acumulador pendiente debe persistir en MongoDB/backend como estado mecánico formal, no solo como texto narrativo ni solo como `eventLog`.
 
 ### 6.2 Bonos directos
 
@@ -416,7 +413,7 @@ Aplican inmediatamente, aunque no sea hora exacta:
 - coste de MP;
 - recuperación especial.
 
-El bono directo no reemplaza el acumulador de actividad.
+El bono directo no reemplaza el acumulador de actividad. Si una comida, descanso o actividad social consume tiempo y termina antes de `:00`, el bonus directo se aplica ahora, pero el tiempo de actividad queda pendiente hasta cerrar el bloque horario.
 
 ### 6.3 Costes suavizados por hora
 
@@ -1258,7 +1255,35 @@ Usar niveles:
 
 Los NPCs deben hablar acorde a su certeza.
 
-### 18.3 Escena viva
+
+### 18.3 Voz propia y libertad creativa controlada
+
+Los NPCs no son respuestas mecánicas. Pueden hablar y expresarse con naturalidad, siempre dentro de sus límites de personalidad, memoria, conocimiento y contexto.
+
+Un NPC persistente puede:
+
+- elegir sus propias palabras;
+- bromear, callar, dudar, interrumpir o cambiar de tema;
+- mostrarse seco, cálido, nervioso, irónico, orgulloso, tímido o cansado según su perfil;
+- hacer preguntas de vuelta;
+- no responder si el tema lo incomoda;
+- reaccionar a gestos, tono, reputación, cansancio o historia previa de Lucas;
+- expresar opinión, desacuerdo, preocupación o afecto si tiene sentido;
+- recordar hechos que estén en su memoria o que haya presenciado;
+- mostrar contradicciones humanas leves si encajan con su personalidad.
+
+Un NPC no puede usar libertad creativa para:
+
+- saber secretos sin fuente;
+- inventar recompensas, dinero, EXP, MG, contratos o misiones activas;
+- crear objetos, permisos, stock o consecuencias mecánicas no validadas;
+- forzar romance, atracción, celos o confianza;
+- contradecir MongoDB, memoria viva o reglas;
+- resolver problemas de Lucas por conveniencia narrativa.
+
+El objetivo es que cada NPC se sienta vivo: con voz, límites, humor, silencios, cansancio, dudas y subtexto. La creatividad mejora la expresión, no altera la verdad del mundo.
+
+### 18.4 Escena viva
 
 NPCs relevantes presentes por rutina/lógica deben sentirse en escena aunque no hablen.
 
@@ -1278,7 +1303,7 @@ Clasificar si ayuda:
 
 No inventar NPC nombrado sin rutina/base. Usar genéricos si corresponde.
 
-### 18.4 NPCs genéricos
+### 18.5 NPCs genéricos
 
 NPCs genéricos pueden:
 
@@ -1289,7 +1314,7 @@ NPCs genéricos pueden:
 
 No se vuelven persistentes automáticamente. Solo se promueven si Lucas lo decide o si una escena los vuelve realmente importantes.
 
-### 18.5 Memoria NPC
+### 18.6 Memoria NPC
 
 Guardar memoria si un NPC nombrado vio/supo un hecho persistente que afectará decisiones futuras:
 
@@ -1313,95 +1338,95 @@ No guardar smalltalk/color mínimo sin consecuencia. Si hay duda, guardar memori
 
 ## 19. Confianza, romance y vínculos complejos
 
-### 19.1 Confianza
+### 19.1 Principio social
 
-No subir confianza por color, smalltalk o halagos repetidos. Esto no significa que la confianza nunca suba: si una acción tiene peso social real, debe evaluarse y guardarse como relación viva.
+La confianza es una relación individual entre Lucas y cada NPC persistente. No sube automáticamente por hablar.
 
-Subir solo si:
+Una escena social debe evaluarse si:
 
-- el NPC vio o supo la acción;
-- le importa;
-- encaja con personalidad;
-- no es farmeo social repetitivo;
-- tuvo consecuencia emocional o práctica.
+- Lucas declara intención de agradar, acompañar, consolar, disculparse, hacer reír, coquetear, ganarse confianza, reparar vínculo o crear cercanía;
+- el NPC reacciona de forma emocionalmente relevante;
+- hay ayuda práctica, favor, promesa, deuda, conflicto, vergüenza, defensa, secreto o vulnerabilidad;
+- la escena puede afectar trato futuro, acceso, reputación local o memoria del NPC.
 
-Para acciones sociales con posible impacto usar `previewSocialImpact` si está disponible. Si la acción realmente cambia el vínculo, guardar con `applyTurn.npcRelationshipPatches`. `NpcMemory` registra qué recuerda el NPC; no reemplaza el número de confianza/respeto/afecto.
+Si la acción busca vínculo o afecta relación, `### Cambios relevantes` debe mostrar una línea explícita:
 
-Escala base:
+```md
+**Confianza [NPC]:** +1. **Motivo:** [...]
+```
 
-- `+0`: color, smalltalk, gesto amable sin consecuencia, repetición sin contexto nuevo.
-- `+1`: ayuda menor relevante, cumplimiento fiable, respeto de límites, detalle útil que el NPC valora.
-- `+2`: ayuda clara con consecuencia emocional/práctica, apoyo importante, promesa cumplida, conducta consistente que cambia cómo el NPC ve a Lucas.
-- `+3`: favor fuerte, riesgo/coste real para Lucas, defensa de un NPC, reparación importante de daño o evento mayor.
-- Valores negativos equivalentes para mentira, presión, humillación, promesa rota, daño, abandono o trabajo negligente.
+o:
 
-Topes normales:
+```md
+**Confianza [NPC]:** sin cambio numérico. **Motivo:** [...]
+```
 
-- máximo habitual por NPC y escena: `+2`;
-- máximo habitual por NPC y día: `+3`;
-- eventos mayores, peligro real o escena emocional crítica pueden romper el tope con justificación explícita;
-- repetir la misma acción el mismo día guarda memoria si importa, pero no suma confianza otra vez salvo que haya nueva consecuencia.
+No dejar implícito el criterio si el jugador intentó afectar una relación.
 
-Diferenciar métricas:
+### 19.2 Condiciones para subir confianza
 
-- `trust`: seguridad, honestidad, respeto de límites, constancia, apoyo emocional/práctico.
-- `respect`: competencia, responsabilidad, trabajo fiable, valentía, criterio.
-- `affection`: calidez personal y apego; es lento, no equivale a romance y no debe subir sin escena personal clara.
-- `suspicion`: dudas por contradicción, secretos, presión, mentiras o conducta rara.
-- `fear`: amenaza o daño.
-- `jealousy`: solo si el contexto social lo justifica; no usar como romance automático.
+La confianza solo puede subir si se cumplen condiciones lógicas:
 
-Perfil social del NPC:
+- el NPC vio, oyó o supo la acción por fuente válida;
+- la acción le importa según personalidad, valores, situación o memoria;
+- el gesto no contradice su estado emocional actual;
+- no es repetición/farmeo social sin novedad;
+- no viola límites, consentimiento, privacidad, seguridad o contexto;
+- produce efecto emocional, práctico o relacional.
 
-- cada NPC puede tener `personality`, `values`, `tolerates`, `rejects` y `socialProfile`;
-- `previewSocialImpact` debe ponderar esos rasgos antes de sugerir deltas;
-- si la acción toca valores del NPC, puede reforzar `respect` dentro del tope;
-- si la acción encaja con formas de trato toleradas/apreciadas, puede reforzar `trust`;
-- si la acción choca con `rejects` o límites del NPC, debe generar warnings y puede bajar `trust` o subir `suspicion/fear/jealousy`;
-- una misma acción puede ser positiva para un NPC y mala para otro;
-- los rasgos sociales guían mecánica y voz narrativa, pero no revelan secretos in-game.
+Si falta una condición, puede quedar memoria sin confianza numérica.
 
-Eventos diarios y vínculos:
+### 19.3 Guía numérica de confianza
 
-- los eventos diarios incluyen NPCs afectados y una pista `social_consequence_rules`;
-- resolver un evento diario puede aplicar cambios positivos leves/medios a `trust/respect/familiarity/socialDebt` de NPCs afectados;
-- dejar vencer un evento diario sin resolver puede aplicar consecuencias negativas leves/medias a `trust/respect/suspicion`;
-- estos cambios deben guardarse por backend mediante `applyTurn`, `worldEventPatches` y el ledger social, nunca solo narrarse;
-- `applySocialConsequences=false` o `socialOutcome=none` solo debe usarse en modo técnico si hay motivo claro.
+Usar valores conservadores.
 
-Estado social efectivo:
+| Cambio | Uso típico |
+|---:|---|
+| +0 | smalltalk, gesto mínimo, repetido, mal momento o impacto poco claro |
+| +1 | gesto amable menor pero significativo; compañía respetuosa; broma que relaja; ayuda chica útil |
+| +2 | ayuda emocional o práctica clara; respeto importante; apoyo visible en momento difícil |
+| +3 a +5 | favor importante, defensa pública, promesa cumplida, riesgo compartido, vulnerabilidad emocional real |
+| -1 a -2 | incomodidad, presión leve, torpeza social con impacto, insistencia inoportuna |
+| -3 a -5 | burla, mentira, invasión, humillación, traición menor, usar a alguien para provocar celos |
+| mayor | solo con causa fuerte, escena importante y validación clara |
 
-- `relationshipState` traduce numeros sociales a acceso real, riesgos, bloqueos, oportunidades y guia narrativa;
-- `trust/respect/familiarity/affection` abren conversacion, favores, informacion sensible o apoyo si no hay riesgos altos;
-- `suspicion/fear/jealousy/socialDebt` pueden bloquear cercania aunque la confianza sea alta;
-- si `relationshipState.access.privateInfo=false`, el NPC no debe revelar informacion privada ni secretos;
-- si `relationshipState.access.riskyHelp=false`, no conceder ayuda peligrosa, favores grandes ni recursos importantes;
-- `fear` alto no es respeto ni afecto: puede producir obediencia defensiva, pero no cercania autentica;
-- `relationshipState.romance.locked=true` significa que los numeros no desbloquean romance automatico.
+No usar cambios grandes por escenas simples. No convertir bromas repetidas en farmeo de confianza.
 
-Umbrales de confianza:
+### 19.4 Memoria social sin confianza
 
-- `0-9`: desconocido/cautela.
-- `10-24`: trato básico.
-- `25-39`: confianza laboral o comodidad inicial.
-- `40-59`: fiable para favores menores y conversaciones más naturales.
-- `60-74`: confianza personal y temas privados.
-- `75-89`: vínculo profundo.
-- `90-100`: confianza excepcional.
+Si la escena es emocionalmente relevante pero no justifica cambio numérico, guardar memoria NPC positiva/negativa si corresponde y explicar:
 
-Consolidación por memorias:
+```md
+**Confianza Yara:** sin cambio numérico. **Motivo:** fue una charla agradable, pero todavía menor; queda memoria positiva.
+```
 
-Si hay varias memorias recientes positivas (`trust_building`, `respect_space`, `helpful`, `reliable_work`, promesas cumplidas) y una nueva escena confirma el patrón, puede sumarse `+1` adicional dentro del tope. Esto representa confianza lenta acumulada, no farmeo.
+La memoria puede preparar escenas futuras, pero no reemplaza la confianza si el sistema la usa numéricamente.
 
-Registrar memoria dinámica si:
+### 19.5 Separación de sistemas
 
-- hubo ganancia/pérdida notable;
-- ocurrió bandera emocional positiva/negativa;
-- el NPC aprendió algo importante;
-- hubo promesa, disculpa, favor o deuda;
-- cambia acceso a futuras escenas.
+Confianza no reemplaza:
 
-### 19.2 Romance
+- EXP;
+- reputación;
+- romance;
+- dinero;
+- MG;
+- loot;
+- misión;
+- permiso;
+- stock.
+
+Una acción puede dar:
+
+- memoria sin confianza;
+- confianza sin romance;
+- EXP sin vínculo;
+- reputación sin confianza personal;
+- confianza con un NPC y malentendido con otro si hay testigos/contexto.
+
+Separar siempre los sistemas en `### Cambios relevantes`.
+
+### 19.6 Romance
 
 Confianza alta no equivale a romance.
 
@@ -1420,7 +1445,9 @@ Mientras los personajes sean menores, todo romance queda en tono inocente/juveni
 
 Si en el futuro crecen y son adultos, puede haber romance más maduro, pero siempre en tono anime/literario y no explícito.
 
-### 19.3 Contacto físico
+No forzar atracción, amor, celos, avances ni tensión romántica solo porque la escena fue amable.
+
+### 19.7 Contacto físico
 
 - Saludo verbal: casi siempre posible.
 - Charla: requiere disponibilidad.
@@ -1430,7 +1457,7 @@ Si en el futuro crecen y son adultos, puede haber romance más maduro, pero siem
 - Abrazo/beso: requiere vínculo claro, señales y contexto.
 - Contacto forzado/sorpresivo: consecuencia negativa, no romantizar.
 
-### 19.4 Celos y malentendidos
+### 19.8 Celos y malentendidos
 
 Pueden existir si la personalidad y el contexto lo permiten.
 
@@ -1446,6 +1473,37 @@ Disparadores válidos:
 - inseguridad previa del NPC;
 - competencia social/laboral;
 - secretos revelados a una persona y no a otra.
+
+### 19.9 Anti-farmeo social
+
+Repetir la misma estrategia social con el mismo NPC en el mismo día pierde efecto si no hay novedad real.
+
+Ejemplos:
+
+- hacer la misma broma varias veces;
+- acompañar sin aportar nada nuevo;
+- elogiar repetidamente de forma genérica;
+- buscar confianza explícitamente sin respetar ritmo del NPC;
+- insistir cuando el NPC está ocupado o incómodo.
+
+La confianza sube por calidad, oportunidad, respeto y consecuencia, no por cantidad de mensajes.
+
+### 19.10 Ejemplo: charla ligera con Yara
+
+Si Lucas acompaña a Yara mientras trabaja, hace bromas suaves, no estorba y ella se ríe:
+
+Resultado razonable:
+
+```md
+**Confianza Yara:** +1. **Motivo:** Lucas la acompañó con humor suave, respetó su ritmo de trabajo y no la hizo sentir humillada.
+**Memoria de Yara:** recuerda que Lucas le hizo compañía tranquila en cocina y la hizo reír sin presionarla.
+```
+
+Si fue una repetición sin novedad o Yara estaba demasiado ocupada:
+
+```md
+**Confianza Yara:** sin cambio numérico. **Motivo:** el gesto fue amable, pero menor/repetido; queda una impresión positiva leve.
+```
 
 ---
 
@@ -1703,7 +1761,7 @@ Resolver:
 - si el NPC tiene fuente/conocimiento;
 - si hay riesgo social.
 
-No subir confianza por preguntar o charlar solamente. Si la escena genera ayuda, respeto de límites, confianza práctica o daño social real, aplicar la escala de 19.1.
+No subir confianza automáticamente.
 
 ---
 
@@ -1729,6 +1787,10 @@ No subir confianza por preguntar o charlar solamente. Si la escena genera ayuda,
 18. Compañeros pueden morir permanentemente si la situación lo justifica.
 19. No matar NPCs importantes de forma barata.
 20. El mundo avanza por tiempo de partida, no por tiempo real.
+21. Diálogo directo de NPC siempre usa `Nombre: "mensaje"` o `Rol: "mensaje"`.
+22. NPCs pueden expresarse con libertad creativa solo dentro de personalidad, memoria, conocimiento y contexto.
+23. Si una acción busca vínculo o afecta relación, mostrar confianza con cambio o motivo de +0.
+24. Memoria NPC no reemplaza confianza numérica ni romance.
 
 ---
 
@@ -1771,7 +1833,6 @@ Lucas confirmó las siguientes decisiones como parte de la validación de `rules
 15. Romance lento, lógico e inocente si son menores; celos y malentendidos solo con personalidad, señales y contexto.
 16. Economía avanzada con stock real, oferta/demanda y negocios afectados por eventos; bancos/deudas/alquiler/impuestos existen como sistemas dormidos hasta interacción.
 17. Gremio: reglas y pool base en archivos; cartelera activa y estado vivo de misiones en MongoDB.
-18. Backend: primero `context/compact`; `context/full` solo en modo tecnico/admin/debug. Si falta informacion, busqueda profunda en docs/mundo/DB antes de inventar o preguntar.
+18. Backend: primero `context/full`; si falta información, búsqueda profunda en docs/mundo/DB antes de inventar o preguntar.
 
 Estas decisiones son parte del núcleo validado del motor.
-

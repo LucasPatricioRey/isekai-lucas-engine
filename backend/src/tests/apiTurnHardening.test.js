@@ -417,6 +417,107 @@ describe("turn hardening coverage", () => {
     await JobContract.updateOne({ contractId: tempJobContractId }, { $set: { flags: { testSuite: true } } });
   });
 
+  it("infers already consumed contract meals from formal meal logs", async () => {
+    const originalState = await GameState.findOne({ gameId: tempGameId }).lean();
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: 10,
+          "diegeticDate.day": 10,
+          block: "MaÃ±ana",
+          time: "07:00",
+          moneyCopper: 100,
+          "lucasStatus.satiety.current": 66,
+          "lucasStatus.satiety.label": "hambre leve",
+          "lucasStatus.energy.current": 100,
+          "lucasStatus.energy.label": "rendimiento normal",
+          biologicalClock: {
+            lastProcessedTime: "07:00",
+            currentHourBlock: "07:00-08:00",
+            pendingAccumulation: [],
+            pendingAccumulations: [],
+          },
+        },
+      }
+    );
+    await JobContract.updateOne({ contractId: tempJobContractId }, { $set: { flags: { testSuite: true } } });
+
+    try {
+      const mealLogId = `log_test_contract_breakfast_${Date.now()}`;
+      await EventLog.create({
+        logId: mealLogId,
+        gameId: tempGameId,
+        day: 10,
+        timeStart: "06:55",
+        timeEnd: "07:00",
+        locationId: "loc_hoshimori_grulla_azul",
+        type: "meal",
+        summary: "Lucas comio rapidamente el desayuno de contrato antes de empezar el turno.",
+        involvedCharacterIds: ["char_lucas"],
+        involvedNpcIds: ["npc_roberto_valen"],
+        mechanicalChanges: {
+          mealId: "meal_test_breakfast",
+          satietyDelta: 10,
+        },
+        visibility: "hidden",
+        source: "backend_validation",
+        tags: ["test_turn_hardening", "meal", "contract_breakfast", "quick_meal"],
+      });
+
+      const preview = await post("/api/jobs/shifts/shift_test_morning_0700_1200/preview", {
+        gameId: tempGameId,
+        contractId: tempJobContractId,
+      });
+      assert.equal(preview.status, 200);
+      assert.equal(preview.data.ok, true);
+      assert.deepEqual(preview.data.preview.inferredConsumedMealIds, ["meal_test_breakfast"]);
+      assert.equal(preview.data.preview.mealBenefits[0].consumedToday, true);
+      assert.equal(preview.data.preview.availableMealBenefits.length, 0);
+
+      const completed = await post("/api/jobs/shifts/shift_test_morning_0700_1200/complete", {
+        gameId: tempGameId,
+        contractId: tempJobContractId,
+        completionSummary: "Test controlado: completar turno con desayuno inferido desde log.",
+      });
+
+      assert.equal(completed.status, 200);
+      assert.equal(completed.data.ok, true);
+      assert.equal(completed.data.result.alreadyCompleted, false);
+      assert.deepEqual(completed.data.result.changes.meals.applied, []);
+      assert.deepEqual(completed.data.result.changes.meals.markedConsumed, ["meal_test_breakfast"]);
+      assert.deepEqual(completed.data.result.changes.meals.inferredConsumed, ["meal_test_breakfast"]);
+      assert.equal(completed.data.result.changes.pay.delta, 70);
+      assert.equal(completed.data.result.after.moneyCopper, 170);
+      assert.equal(completed.data.result.after.time, "12:00");
+      assert.equal(completed.data.result.after.satiety, 51);
+      assert.equal(completed.data.result.after.energy, 70);
+      assert.equal(completed.data.result.changes.ledger.mealInferredConsumedIds[0], "meal_test_breakfast");
+
+      const contractAfter = await JobContract.findOne({ contractId: tempJobContractId }).lean();
+      const mealLedger = contractAfter.flags.consumedMeals.day_10.meal_test_breakfast;
+      assert.equal(mealLedger.status, "inferred_consumed_before_shift_completion");
+      assert.equal(mealLedger.inferredFromEventLogId, mealLogId);
+    } finally {
+      await GameState.updateOne(
+        { gameId: tempGameId },
+        {
+          $set: {
+            currentDay: originalState.currentDay,
+            diegeticDate: originalState.diegeticDate,
+            block: originalState.block,
+            time: originalState.time,
+            locationId: originalState.locationId,
+            moneyCopper: originalState.moneyCopper,
+            lucasStatus: originalState.lucasStatus,
+            biologicalClock: originalState.biologicalClock,
+          },
+        }
+      );
+      await JobContract.updateOne({ contractId: tempJobContractId }, { $set: { flags: { testSuite: true } } });
+    }
+  });
+
   it("blocks Cobre mission acceptance while formal guild registration is pending unless overridden", async () => {
     const blocked = await post("/api/turn/apply", {
       gameId: tempGameId,
