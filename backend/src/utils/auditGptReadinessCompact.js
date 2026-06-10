@@ -327,11 +327,30 @@ async function main() {
   assertCondition(issues, "compact excludes context/full", !compactOps.includes("GET /api/context/full"));
   assertCondition(issues, "compact includes character state", compactOps.includes("GET /api/characters/{characterId}/state"));
   assertCondition(issues, "compact has missionPatch", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.missionPatch));
+  assertCondition(issues, "compact has skillPatch", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.skillPatch));
   assertCondition(issues, "compact has shopStockPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.shopStockPatches));
   assertCondition(issues, "compact has npcMemoryPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.npcMemoryPatches));
   assertCondition(issues, "compact has npcRelationshipPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.npcRelationshipPatches));
   assertCondition(issues, "compact includes social impact preview", compactOps.includes("POST /api/npcs/social/impact/preview"));
   assertCondition(issues, "compact applyTurn is consequential", compact.paths?.["/api/turn/apply"]?.post?.["x-openai-isConsequential"] === true);
+  assertCondition(
+    issues,
+    "compact ApplyTurnRequest is strict",
+    compact.components?.schemas?.ApplyTurnRequest?.additionalProperties === false
+  );
+  assertCondition(
+    issues,
+    "compact skillPatch requires category and reason",
+    compact.components?.schemas?.SkillPatchItem?.required?.includes("category") &&
+      compact.components?.schemas?.SkillPatchItem?.required?.includes("reason")
+  );
+  assertCondition(
+    issues,
+    "compact missionPatch supports formal completion",
+    ["verify", "complete", "fail", "expire"].every((op) =>
+      compact.components?.schemas?.MissionPatchItem?.properties?.op?.enum?.includes(op)
+    )
+  );
   assertCondition(issues, "compact excludes checkpoint list", !compact.paths?.["/api/checkpoints"]?.get);
   assertCondition(issues, "compact excludes checkpoint create", !compact.paths?.["/api/checkpoints"]?.post);
   assertCondition(issues, "compact excludes rollback", !compact.paths?.["/api/checkpoints/{checkpointId}/rollback"]);

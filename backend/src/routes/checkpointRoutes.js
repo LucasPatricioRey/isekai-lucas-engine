@@ -10,9 +10,9 @@ const {
 
 const router = express.Router();
 
-router.post("/", requireApiKey, createCheckpoint);
+router.post("/", requireApiKey("admin-write"), createCheckpoint);
 router.get("/", requireApiKey, listCheckpoints);
 router.get("/:checkpointId", requireApiKey, getCheckpoint);
-router.post("/:checkpointId/rollback", requireApiKey, rollbackCheckpoint);
+router.post("/:checkpointId/rollback", requireApiKey("admin-write"), rollbackCheckpoint);
 
 module.exports = router;

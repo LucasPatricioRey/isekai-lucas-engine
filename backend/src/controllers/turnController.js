@@ -14,6 +14,7 @@ const { syncNpcRoutines } = require("../services/routineService");
 const { calculateActivityCost, normalizeCategory } = require("../services/biologicalClockService");
 const { reconcileDailyEventsForGameState } = require("../services/dailyEventSchedulerService");
 const { buildWorldEventSocialConsequencePlan } = require("../services/dailyEventSocialService");
+const { previewSkillProgression } = require("../services/skillProgressionService");
 const { ensureCurrentWeatherForGameState } = require("../services/weatherService");
 const {
   SOCIAL_FIELD_RANGES,
@@ -40,24 +41,6 @@ const VALID_EVENT_LOG_SOURCES = new Set([
 ]);
 
 const VALID_EVENT_LOG_VISIBILITIES = new Set(["hidden", "private", "local", "public"]);
-
-const PHASE_ORDER = [
-  "Principiante",
-  "Novato",
-  "Competente",
-  "Experto",
-  "Maestro",
-  "Legendario",
-];
-
-const EXP_TO_NEXT_BY_PHASE = {
-  Principiante: 100,
-  Novato: 250,
-  Competente: 600,
-  Experto: 1500,
-  Maestro: 4000,
-  Legendario: 10000,
-};
 
 function validationError(message, details = {}) {
   const error = new Error(message);
@@ -188,68 +171,88 @@ function applyStatDelta(stat, delta, statKey) {
   };
 }
 
-function getNextPhase(currentPhase) {
-  const index = PHASE_ORDER.indexOf(currentPhase);
+const ALLOWED_SKILL_PATCH_MODIFIERS = new Set(["aquaBlessing", "hasMaster"]);
 
-  if (index === -1 || index >= PHASE_ORDER.length - 1) {
-    return null;
+function normalizeSkillPatchInput(patch) {
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+    throw validationError("skillPatch debe contener objetos de progreso validables.");
   }
 
-  return PHASE_ORDER[index + 1];
-}
-
-function applySkillExp(skill, expDelta) {
-  if (!Number.isInteger(expDelta) || expDelta < 0) {
-    throw validationError("skillPatch.expDelta debe ser un entero positivo o cero.");
+  const reason = String(patch.reason || "").trim();
+  if (reason.length < 8) {
+    throw validationError("skillPatch.reason es obligatorio y debe explicar la fuente de EXP.");
   }
 
-  const before = {
-    phase: skill.phase,
-    level: skill.level,
-    exp: skill.exp,
-    expToNext: skill.expToNext,
-  };
+  const category = String(patch.category || "").trim();
+  if (!category) {
+    throw validationError("skillPatch.category es obligatorio para validar el rango de EXP.");
+  }
 
-  skill.exp += expDelta;
+  const modifiers = patch.modifiers || {};
+  if (!modifiers || typeof modifiers !== "object" || Array.isArray(modifiers)) {
+    throw validationError("skillPatch.modifiers debe ser un objeto si se envia.");
+  }
 
-  const levelUps = [];
-
-  while (skill.exp >= skill.expToNext) {
-    skill.exp -= skill.expToNext;
-
-    if (skill.level < 10) {
-      skill.level += 1;
-    } else {
-      const nextPhase = getNextPhase(skill.phase);
-
-      if (!nextPhase) {
-        skill.level = 10;
-        skill.exp = 0;
-        break;
-      }
-
-      skill.phase = nextPhase;
-      skill.level = 1;
-      skill.expToNext = EXP_TO_NEXT_BY_PHASE[nextPhase];
-    }
-
-    levelUps.push({
-      phase: skill.phase,
-      level: skill.level,
-      expToNext: skill.expToNext,
+  const unknownModifiers = Object.keys(modifiers).filter((key) => !ALLOWED_SKILL_PATCH_MODIFIERS.has(key));
+  if (unknownModifiers.length > 0) {
+    throw validationError("skillPatch.modifiers contiene claves no permitidas.", {
+      allowed: Array.from(ALLOWED_SKILL_PATCH_MODIFIERS),
+      received: unknownModifiers,
     });
   }
 
-  const after = {
-    phase: skill.phase,
-    level: skill.level,
-    exp: skill.exp,
-    expToNext: skill.expToNext,
-  };
+  for (const [key, value] of Object.entries(modifiers)) {
+    if (typeof value !== "boolean") {
+      throw validationError("skillPatch.modifiers solo acepta valores booleanos.", { key });
+    }
+  }
 
   return {
+    reason,
+    category,
+    modifiers,
+  };
+}
+
+function applyValidatedSkillPatch({ gameState, skill, patch }) {
+  const input = normalizeSkillPatchInput(patch);
+  const preview = previewSkillProgression({
+    skill: toPlain(skill),
+    expDelta: patch.expDelta,
+    reason: input.reason,
+    category: input.category,
+    modifiers: input.modifiers,
+    currentEnergy: gameState.lucasStatus?.energy?.current ?? null,
+  });
+
+  if (!preview.validation.recommendedRange) {
+    throw validationError("skillPatch.category no corresponde a un rango conocido para esta habilidad.", {
+      skillId: patch.skillId,
+      category: input.category,
+      categoryId: preview.validation.categoryId,
+    });
+  }
+
+  const { before, after, levelUps } = preview.progression;
+
+  skill.phase = after.phase;
+  skill.level = after.level;
+  skill.exp = after.exp;
+  skill.expToNext = after.expToNext;
+
+  return {
+    skillId: patch.skillId,
+    name: skill.name,
+    reason: input.reason,
+    category: preview.validation.categoryId,
+    recommendedRange: preview.validation.recommendedRange,
+    baseExpDelta: preview.validation.baseExpDelta,
+    effectiveExpDelta: preview.validation.effectiveExpDelta,
+    expDelta: preview.validation.effectiveExpDelta,
+    multiplier: preview.validation.multiplier,
+    multiplierParts: preview.validation.multiplierParts,
+    antiFarming: preview.validation.antiFarming,
     before,
-    expDelta,
     after,
     levelUps,
   };
@@ -847,6 +850,120 @@ function normalizeMissionPatches(missionPatch) {
   return Array.isArray(missionPatch) ? missionPatch : [missionPatch];
 }
 
+function removeActiveMissionId(gameState, missionId) {
+  gameState.activeMissionIds = (gameState.activeMissionIds || []).filter((id) => id !== missionId);
+}
+
+function getMissionFlags(mission) {
+  return mission.flags && typeof mission.flags === "object" && !Array.isArray(mission.flags)
+    ? toPlain(mission.flags)
+    : {};
+}
+
+function missionRewardAlreadyPaid(flags) {
+  return Boolean(
+    flags.rewardPaid ||
+      flags.rewardAlreadyPaid ||
+      flags.canonRepair?.rewardAlreadyPaid
+  );
+}
+
+function setMissionFlags(mission, flags) {
+  mission.flags = flags;
+  if (typeof mission.markModified === "function") {
+    mission.markModified("flags");
+  }
+}
+
+function updateGuildMg(gameState, mgDelta) {
+  if (!Number.isInteger(mgDelta) || mgDelta <= 0) return null;
+
+  const flags = gameState.flags && typeof gameState.flags === "object" ? toPlain(gameState.flags) : {};
+  const guild = flags.guild && typeof flags.guild === "object" ? { ...flags.guild } : {};
+  const before = Number.isInteger(guild.mg) ? guild.mg : 0;
+  guild.mg = before + mgDelta;
+  flags.guild = guild;
+  gameState.flags = flags;
+
+  if (typeof gameState.markModified === "function") {
+    gameState.markModified("flags");
+  }
+
+  return {
+    before,
+    delta: mgDelta,
+    after: guild.mg,
+  };
+}
+
+async function applyMissionReward({ gameState, mission, session = null }) {
+  const flags = getMissionFlags(mission);
+
+  if (missionRewardAlreadyPaid(flags)) {
+    return {
+      alreadyPaid: true,
+      reason: "mission_reward_already_paid",
+    };
+  }
+
+  const reward = mission.reward || {};
+  const moneyCopper = reward.moneyCopper || 0;
+
+  if (!Number.isInteger(moneyCopper) || moneyCopper < 0) {
+    throw validationError("mission.reward.moneyCopper debe ser un entero mayor o igual a 0.", {
+      missionId: mission.missionId,
+      moneyCopper,
+    });
+  }
+
+  const beforeMoney = gameState.moneyCopper;
+  gameState.moneyCopper += moneyCopper;
+
+  const itemChanges = [];
+  for (const itemId of reward.items || []) {
+    itemChanges.push(
+      await applyInventoryPatch(
+        gameState.inventory,
+        {
+          op: "add",
+          itemId,
+          quantity: 1,
+          notes: `Recompensa de mision ${mission.missionId}.`,
+        },
+        session
+      )
+    );
+  }
+
+  const mgReward = mission.mgReward || 0;
+  if (!Number.isInteger(mgReward) || mgReward < 0) {
+    throw validationError("mission.mgReward debe ser un entero mayor o igual a 0.", {
+      missionId: mission.missionId,
+      mgReward,
+    });
+  }
+
+  const mg = updateGuildMg(gameState, mgReward);
+
+  flags.rewardPaid = true;
+  flags.rewardPaidDay = gameState.currentDay;
+  flags.rewardPaidTime = gameState.time;
+  flags.rewardPaidSource = "applyTurn.missionPatch.complete";
+  setMissionFlags(mission, flags);
+
+  return {
+    alreadyPaid: false,
+    money: {
+      before: beforeMoney,
+      delta: moneyCopper,
+      after: gameState.moneyCopper,
+    },
+    items: itemChanges,
+    mg,
+    other: reward.other || "",
+  };
+}
+
 async function applyMissionPatches(gameState, missionPatch, session = null) {
   const patches = normalizeMissionPatches(missionPatch);
   const results = [];
@@ -856,8 +973,8 @@ async function applyMissionPatches(gameState, missionPatch, session = null) {
     const missionId = patch.missionId;
     const characterId = patch.characterId || "char_lucas";
 
-    if (!["accept", "report"].includes(op)) {
-      throw validationError("missionPatch.op debe ser accept o report.", { op });
+    if (!["accept", "report", "verify", "complete", "fail", "expire"].includes(op)) {
+      throw validationError("missionPatch.op debe ser accept, report, verify, complete, fail o expire.", { op });
     }
 
     if (!missionId) {
@@ -875,8 +992,13 @@ async function applyMissionPatches(gameState, missionPatch, session = null) {
       acceptedByCharacterId: mission.acceptedByCharacterId,
       acceptedDay: mission.acceptedDay,
       proofStatus: mission.proofStatus,
+      completedDay: mission.completedDay,
+      flags: getMissionFlags(mission),
       activeMissionIds: [...(gameState.activeMissionIds || [])],
+      moneyCopper: gameState.moneyCopper,
     };
+
+    let reward = null;
 
     if (op === "accept") {
       if (mission.status !== "available") {
@@ -922,6 +1044,134 @@ async function applyMissionPatches(gameState, missionPatch, session = null) {
       mission.proofStatus = patch.proofStatus || "submitted";
     }
 
+    if (op === "verify") {
+      const nextProofStatus = patch.proofStatus || "verified";
+
+      if (!["verified", "rejected"].includes(nextProofStatus)) {
+        throw validationError("missionPatch.proofStatus para verify debe ser verified o rejected.", {
+          missionId,
+          proofStatus: nextProofStatus,
+        });
+      }
+
+      if (mission.status !== "accepted") {
+        throw validationError(`Solo se puede verificar una misión aceptada. Estado actual: ${mission.status}`, {
+          missionId,
+          status: mission.status,
+        });
+      }
+
+      if (mission.proofRequired && mission.proofStatus !== "submitted" && mission.proofStatus !== "verified") {
+        throw validationError("La misión requiere reporte/prueba submitted antes de verificar.", {
+          missionId,
+          proofStatus: mission.proofStatus,
+        });
+      }
+
+      mission.proofStatus = nextProofStatus;
+      const flags = getMissionFlags(mission);
+      flags.lastVerification = {
+        day: gameState.currentDay,
+        time: gameState.time,
+        status: nextProofStatus,
+        summary: patch.verificationSummary || patch.reportSummary || "",
+      };
+      setMissionFlags(mission, flags);
+    }
+
+    if (op === "complete") {
+      if (mission.status === "completed") {
+        removeActiveMissionId(gameState, mission.missionId);
+        reward = {
+          alreadyPaid: true,
+          reason: "mission_already_completed",
+        };
+      } else {
+        if (mission.status !== "accepted") {
+          throw validationError(`Solo se puede completar una misión aceptada. Estado actual: ${mission.status}`, {
+            missionId,
+            status: mission.status,
+          });
+        }
+
+        if (mission.acceptedByCharacterId && mission.acceptedByCharacterId !== characterId) {
+          throw validationError("La misión fue aceptada por otro personaje.", {
+            missionId,
+            acceptedByCharacterId: mission.acceptedByCharacterId,
+            characterId,
+          });
+        }
+
+        if (mission.proofStatus === "rejected") {
+          throw validationError("No se puede completar una misión con prueba rechazada.", {
+            missionId,
+          });
+        }
+
+        const requiresVerifiedProof = Boolean(mission.proofRequired && mission.proofStatus !== "not_required");
+        if (requiresVerifiedProof && mission.proofStatus !== "verified") {
+          throw validationError("La misión requiere proofStatus verified antes de completar y pagar.", {
+            missionId,
+            proofStatus: mission.proofStatus,
+          });
+        }
+
+        mission.status = "completed";
+        mission.completedDay = gameState.currentDay;
+        removeActiveMissionId(gameState, mission.missionId);
+
+        const flags = getMissionFlags(mission);
+        flags.completedTime = gameState.time;
+        flags.completionSummary = patch.completionSummary || patch.reportSummary || "";
+        setMissionFlags(mission, flags);
+
+        reward = await applyMissionReward({ gameState, mission, session });
+      }
+    }
+
+    if (op === "fail") {
+      if (mission.status === "completed") {
+        throw validationError("No se puede fallar una misión ya completada.", { missionId });
+      }
+
+      if (mission.status !== "failed") {
+        mission.status = "failed";
+        removeActiveMissionId(gameState, mission.missionId);
+        const flags = getMissionFlags(mission);
+        flags.failedDay = gameState.currentDay;
+        flags.failedTime = gameState.time;
+        flags.failureReason = patch.failureReason || patch.reason || "";
+        setMissionFlags(mission, flags);
+      }
+    }
+
+    if (op === "expire") {
+      if (mission.status === "completed") {
+        throw validationError("No se puede expirar una misión ya completada.", { missionId });
+      }
+
+      if (mission.status !== "expired") {
+        const hasValidatedOverride = String(patch.overrideReason || "").trim().length >= 8;
+        if (!isMissionExpired(mission, gameState) && !hasValidatedOverride) {
+          throw validationError("La misión todavía no expiró; usar overrideReason para expiración manual.", {
+            missionId,
+            currentDay: gameState.currentDay,
+            currentTime: gameState.time,
+            expiresDay: mission.expiresDay,
+            expiresTime: mission.expiresTime,
+          });
+        }
+
+        mission.status = "expired";
+        removeActiveMissionId(gameState, mission.missionId);
+        const flags = getMissionFlags(mission);
+        flags.expiredAtDay = gameState.currentDay;
+        flags.expiredAtTime = gameState.time;
+        flags.expireReason = patch.overrideReason || "expired_by_time";
+        setMissionFlags(mission, flags);
+      }
+    }
+
     await mission.save({ session });
 
     results.push({
@@ -935,8 +1185,12 @@ async function applyMissionPatches(gameState, missionPatch, session = null) {
         acceptedByCharacterId: mission.acceptedByCharacterId,
         acceptedDay: mission.acceptedDay,
         proofStatus: mission.proofStatus,
+        completedDay: mission.completedDay,
+        flags: getMissionFlags(mission),
         activeMissionIds: [...(gameState.activeMissionIds || [])],
+        moneyCopper: gameState.moneyCopper,
       },
+      reward,
     });
   }
 
@@ -1639,6 +1893,10 @@ async function applyTurn(req, res) {
         }
       }
 
+      if (body.skillPatch !== undefined && !Array.isArray(body.skillPatch)) {
+        throw validationError("skillPatch debe ser un array.");
+      }
+
       if (Array.isArray(body.skillPatch)) {
         const skillChanges = [];
 
@@ -1650,10 +1908,11 @@ async function applyTurn(req, res) {
           }
 
           skillChanges.push({
-            skillId: patch.skillId,
-            name: skill.name,
-            reason: patch.reason || "",
-            ...applySkillExp(skill, patch.expDelta),
+            ...applyValidatedSkillPatch({
+              gameState,
+              skill,
+              patch,
+            }),
           });
         }
 

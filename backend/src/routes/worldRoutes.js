@@ -12,7 +12,7 @@ const router = express.Router();
 
 router.get("/events", requireApiKey, listWorldEvents);
 router.get("/events/:eventId", requireApiKey, getWorldEvent);
-router.post("/sync-routines", requireApiKey, syncRoutines);
+router.post("/sync-routines", requireApiKey("admin-write"), syncRoutines);
 router.post("/tick/preview", requireApiKey, previewWorldTickController);
 
 module.exports = router;

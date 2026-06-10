@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Compact",
-    "version": "2.6.0",
+    "version": "2.7.0",
     "description": "Schema compacto con hasta 30 operaciones para GPT Builder. Incluye ApplyTurn con missionPatch, activityCost, gameStatePatch y parches de economia/memoria/relacion social. Incluye previewSocialImpact con proyeccion de relationshipState y excluye rollback y mutadores peligrosos directos. El backend genera eventos diarios con scheduler de manana y los expira con consecuencias pendientes."
   },
   "servers": [
@@ -307,7 +307,7 @@
             }
           }
         },
-        "additionalProperties": true
+        "additionalProperties": false
       },
       "MoneyPatch": {
         "type": "object",
@@ -448,6 +448,7 @@
       },
       "SkillPatchItem": {
         "type": "object",
+        "description": "Progreso de habilidad validado por backend. Requiere categoria canonica y motivo; expDelta es EXP base antes de multiplicadores.",
         "properties": {
           "skillId": {
             "type": "string"
@@ -456,13 +457,33 @@
             "type": "integer",
             "minimum": 0
           },
+          "category": {
+            "type": "string",
+            "description": "Categoria canonica de actividad para validar rango, por ejemplo trabajo_normal, buscar_detalles_30min, practica_basica_10_30min."
+          },
           "reason": {
-            "type": "string"
+            "type": "string",
+            "minLength": 8
+          },
+          "modifiers": {
+            "type": "object",
+            "description": "Multiplicadores validos. Aqua solo aplica a habilidades magicas; hasMaster representa practica guiada.",
+            "properties": {
+              "aquaBlessing": {
+                "type": "boolean"
+              },
+              "hasMaster": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
           }
         },
         "required": [
           "skillId",
-          "expDelta"
+          "expDelta",
+          "category",
+          "reason"
         ],
         "additionalProperties": false
       },
@@ -673,7 +694,11 @@
             "type": "string",
             "enum": [
               "accept",
-              "report"
+              "report",
+              "verify",
+              "complete",
+              "fail",
+              "expire"
             ]
           },
           "missionId": {
@@ -686,10 +711,28 @@
           "reportSummary": {
             "type": "string"
           },
+          "verificationSummary": {
+            "type": "string"
+          },
+          "completionSummary": {
+            "type": "string"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "overrideReason": {
+            "type": "string",
+            "description": "Motivo explicito para expirar manualmente una mision antes de su vencimiento formal."
+          },
           "proofStatus": {
             "type": "string",
             "enum": [
-              "submitted"
+              "submitted",
+              "verified",
+              "rejected"
             ]
           }
         },

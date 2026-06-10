@@ -12,10 +12,10 @@ const {
 const router = express.Router();
 
 router.get("/board", requireApiKey, getMissionBoardController);
-router.post("/expire-available", requireApiKey, expireAvailableMissionsController);
+router.post("/expire-available", requireApiKey("admin-write"), expireAvailableMissionsController);
 
 router.get("/:missionId", requireApiKey, getMissionDetailController);
-router.post("/:missionId/accept", requireApiKey, acceptMissionController);
-router.post("/:missionId/report", requireApiKey, submitMissionReportController);
+router.post("/:missionId/accept", requireApiKey("admin-write"), acceptMissionController);
+router.post("/:missionId/report", requireApiKey("admin-write"), submitMissionReportController);
 
 module.exports = router;

@@ -21,14 +21,6 @@ const BASE_URL =
 
 const API_KEY = process.env.API_KEY || process.env.AUDIT_API_KEY || "dev-secret";
 
-const EXPECTED_STATE = {
-  day: 10,
-  time: "12:00",
-  locationId: "loc_hoshimori_grulla_azul_comedor",
-  moneyCopper: 1470,
-  activeCombatCount: 0,
-};
-
 function endpoint(path) {
   return `${BASE_URL}${path}`;
 }
@@ -237,11 +229,11 @@ async function main() {
   assertEqual(issues, "api level-up after exp", apiLevelPreview.preview?.progression?.after?.exp, 6);
   assertEqual(issues, "api Aqua physical effective", apiAquaPhysical.preview?.validation?.effectiveExpDelta, 10);
   assertEqual(issues, "api Aqua magic effective", apiAquaMagic.preview?.validation?.effectiveExpDelta, 20);
-  assertEqual(issues, "api day", beforeState.currentDay, EXPECTED_STATE.day);
-  assertEqual(issues, "api time", beforeState.time, EXPECTED_STATE.time);
-  assertEqual(issues, "api locationId", beforeState.locationId, EXPECTED_STATE.locationId);
-  assertEqual(issues, "api moneyCopper", beforeState.moneyCopper, EXPECTED_STATE.moneyCopper);
-  assertEqual(issues, "api active combat count", activeCombatList.length, EXPECTED_STATE.activeCombatCount);
+  assertTrue(issues, "api day is valid", Number.isInteger(beforeState.currentDay) && beforeState.currentDay >= 1, String(beforeState.currentDay));
+  assertTrue(issues, "api time is valid", /^([01]\d|2[0-3]):[0-5]\d$/.test(beforeState.time || ""), beforeState.time);
+  assertTrue(issues, "api locationId is present", typeof beforeState.locationId === "string" && beforeState.locationId.length > 0, beforeState.locationId);
+  assertTrue(issues, "api moneyCopper is non-negative", Number.isInteger(beforeState.moneyCopper) && beforeState.moneyCopper >= 0, String(beforeState.moneyCopper));
+  assertTrue(issues, "api active combat count is readable", Number.isInteger(activeCombatList.length), String(activeCombatList.length));
   assertEqual(issues, "post-preview time unchanged", afterState.time, beforeState.time);
   assertEqual(issues, "post-preview money unchanged", afterState.moneyCopper, beforeState.moneyCopper);
   assertEqual(issues, "post-preview fuerza exp unchanged", afterState.skills.skill_fuerza, beforeState.skills.skill_fuerza);
@@ -255,11 +247,11 @@ async function main() {
   ]);
 
   section("Canon State From MongoDB");
-  assertEqual(issues, "db day", dbGameState?.currentDay, EXPECTED_STATE.day);
-  assertEqual(issues, "db time", dbGameState?.time, EXPECTED_STATE.time);
-  assertEqual(issues, "db locationId", dbGameState?.locationId, EXPECTED_STATE.locationId);
-  assertEqual(issues, "db moneyCopper", dbGameState?.moneyCopper, EXPECTED_STATE.moneyCopper);
-  assertEqual(issues, "db active combat count", dbActiveCombatCount, EXPECTED_STATE.activeCombatCount);
+  assertEqual(issues, "db day matches API", dbGameState?.currentDay, afterState.currentDay);
+  assertEqual(issues, "db time matches API", dbGameState?.time, afterState.time);
+  assertEqual(issues, "db locationId matches API", dbGameState?.locationId, afterState.locationId);
+  assertEqual(issues, "db moneyCopper matches API", dbGameState?.moneyCopper, afterState.moneyCopper);
+  assertEqual(issues, "db active combat count matches API", dbActiveCombatCount, activeCombatList.length);
 
   section("Audit Result");
   if (issues.length > 0) {

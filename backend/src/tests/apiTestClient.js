@@ -57,6 +57,27 @@ async function request(path, options = {}) {
   };
 }
 
+async function requestWithApiKey(path, apiKey, options = {}) {
+  assert.ok(baseUrl, "API test server is not started.");
+
+  const response = await fetch(`${baseUrl}${path}`, {
+    ...options,
+    headers: {
+      "x-api-key": apiKey,
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+  });
+
+  const data = await response.json().catch(() => null);
+
+  return {
+    status: response.status,
+    ok: response.ok,
+    data,
+  };
+}
+
 async function get(path) {
   return request(path);
 }
@@ -114,6 +135,7 @@ module.exports = {
   get,
   getCanonicalState,
   post,
+  requestWithApiKey,
   startApi,
   stopApi,
 };

@@ -34,7 +34,7 @@ Usar esta rubrica durante pruebas manuales en GPT Builder Preview. Marcar cada i
 | Ubicacion tecnica | Si la narracion mueve a Lucas, actualiza tambien `gameStatePatch.locationId` con una location existente. |
 | Vinculos sociales | Si una accion tiene peso social, usa `previewSocialImpact` y guarda cambios reales con `applyTurn.npcRelationshipPatches`; no deja solo memoria si hubo cambio de confianza/respeto. |
 | Memoria NPC | Guarda `npcMemoryPatches` para hechos que el NPC recordara, pero no usa memoria como sustituto de confianza numerica. |
-| Misiones | Acepta o reporta misiones con `applyTurn.missionPatch`; no inventa aceptacion solo narrativa. |
+| Misiones | Acepta, reporta, verifica, completa, falla o expira misiones con `applyTurn.missionPatch`; no inventa aceptacion ni recompensa solo narrativa. |
 | Canon intacto | Mantiene el estado vivo devuelto por `getFullContext` si no hay mutacion; no restaura ni reinterpreta checkpoints viejos por su cuenta. |
 | Irreversibles ambiguos | Pregunta antes de mutar si la accion es ambigua, irreversible o tiene costo relevante. |
 | Checkpoint | Para pruebas mutadoras controladas, crea o exige checkpoint previo. |

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Admin Read-Only",
-    "version": "2.6.0",
+    "version": "2.7.0",
     "description": "Schema opcional para una segunda Action tecnica segura. Solo incluye endpoints existentes read-only. Sus componentes documentan parches sociales y relationshipState efectivo, pero las rutas expuestas no incluyen applyTurn, rollback, reset, delete ni mutadores peligrosos. El backend genera eventos diarios con scheduler de manana y los expira con consecuencias pendientes."
   },
   "servers": [
@@ -128,7 +128,7 @@
             }
           }
         },
-        "additionalProperties": true
+        "additionalProperties": false
       },
       "MoneyPatch": {
         "type": "object",
@@ -258,6 +258,7 @@
       },
       "SkillPatchItem": {
         "type": "object",
+        "description": "Progreso de habilidad validado por backend. Requiere categoria canonica y motivo; expDelta es EXP base antes de multiplicadores.",
         "properties": {
           "skillId": {
             "type": "string"
@@ -266,13 +267,33 @@
             "type": "integer",
             "minimum": 0
           },
+          "category": {
+            "type": "string",
+            "description": "Categoria canonica de actividad para validar rango, por ejemplo trabajo_normal, buscar_detalles_30min, practica_basica_10_30min."
+          },
           "reason": {
-            "type": "string"
+            "type": "string",
+            "minLength": 8
+          },
+          "modifiers": {
+            "type": "object",
+            "description": "Multiplicadores validos. Aqua solo aplica a habilidades magicas; hasMaster representa practica guiada.",
+            "properties": {
+              "aquaBlessing": {
+                "type": "boolean"
+              },
+              "hasMaster": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
           }
         },
         "required": [
           "skillId",
-          "expDelta"
+          "expDelta",
+          "category",
+          "reason"
         ],
         "additionalProperties": false
       },
@@ -483,7 +504,11 @@
             "type": "string",
             "enum": [
               "accept",
-              "report"
+              "report",
+              "verify",
+              "complete",
+              "fail",
+              "expire"
             ]
           },
           "missionId": {
@@ -496,10 +521,28 @@
           "reportSummary": {
             "type": "string"
           },
+          "verificationSummary": {
+            "type": "string"
+          },
+          "completionSummary": {
+            "type": "string"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "overrideReason": {
+            "type": "string",
+            "description": "Motivo explicito para expirar manualmente una mision antes de su vencimiento formal."
+          },
           "proofStatus": {
             "type": "string",
             "enum": [
-              "submitted"
+              "submitted",
+              "verified",
+              "rejected"
             ]
           }
         },

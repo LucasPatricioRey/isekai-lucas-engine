@@ -15,6 +15,7 @@ const {
   get,
   getCanonicalState,
   post,
+  requestWithApiKey,
   startApi,
   stopApi,
 } = require("./apiTestClient");
@@ -197,6 +198,163 @@ describe("turn hardening coverage", () => {
     );
     assert.equal(second.changed, false);
     assert.equal(second.weather.weatherId, first.weather.weatherId);
+  });
+
+  it("enforces scoped API keys for gameplay and admin-write routes", async () => {
+    const previousGameplay = process.env.GAMEPLAY_API_KEY;
+    const previousAdminReadonly = process.env.ADMIN_READONLY_API_KEY;
+    const previousAdminWrite = process.env.ADMIN_WRITE_API_KEY;
+
+    process.env.GAMEPLAY_API_KEY = "test_gameplay_scope_key";
+    process.env.ADMIN_READONLY_API_KEY = "test_admin_read_scope_key";
+    process.env.ADMIN_WRITE_API_KEY = "test_admin_write_scope_key";
+
+    try {
+      const readWithAdminReadonly = await requestWithApiKey(
+        `/api/context/compact?gameId=${encodeURIComponent(tempGameId)}`,
+        process.env.ADMIN_READONLY_API_KEY
+      );
+      assert.equal(readWithAdminReadonly.status, 200);
+      assert.equal(readWithAdminReadonly.data.ok, true);
+
+      const gameplayAuthPasses = await requestWithApiKey(
+        "/api/turn/apply",
+        process.env.GAMEPLAY_API_KEY,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            gameId: "missing_game_for_scope_test",
+            actionSummary: "Test controlado de scope gameplay.",
+          }),
+        }
+      );
+      assert.equal(gameplayAuthPasses.status, 404);
+
+      const adminReadonlyCannotApplyTurn = await requestWithApiKey(
+        "/api/turn/apply",
+        process.env.ADMIN_READONLY_API_KEY,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            gameId: tempGameId,
+            actionSummary: "Este mutador debe ser bloqueado por scope.",
+          }),
+        }
+      );
+      assert.equal(adminReadonlyCannotApplyTurn.status, 401);
+      assert.equal(adminReadonlyCannotApplyTurn.data.scope, "gameplay");
+
+      const gameplayCannotCallAdminWrite = await requestWithApiKey(
+        "/api/checkpoints/test_checkpoint/rollback",
+        process.env.GAMEPLAY_API_KEY,
+        {
+          method: "POST",
+          body: JSON.stringify({ gameId: tempGameId }),
+        }
+      );
+      assert.equal(gameplayCannotCallAdminWrite.status, 401);
+      assert.equal(gameplayCannotCallAdminWrite.data.scope, "admin-write");
+    } finally {
+      if (previousGameplay === undefined) delete process.env.GAMEPLAY_API_KEY;
+      else process.env.GAMEPLAY_API_KEY = previousGameplay;
+
+      if (previousAdminReadonly === undefined) delete process.env.ADMIN_READONLY_API_KEY;
+      else process.env.ADMIN_READONLY_API_KEY = previousAdminReadonly;
+
+      if (previousAdminWrite === undefined) delete process.env.ADMIN_WRITE_API_KEY;
+      else process.env.ADMIN_WRITE_API_KEY = previousAdminWrite;
+    }
+  });
+
+  it("applies skill patches only through validated progression ranges", async () => {
+    const beforeState = await getCanonicalState(tempGameId);
+    const beforeSkill = await GameState.findOne(
+      { gameId: tempGameId },
+      { skills: { $elemMatch: { skillId: "skill_percepcion" } } }
+    ).lean();
+    const initialPerception = beforeSkill.skills[0];
+
+    const missingCategory = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Intento invalido de test: skillPatch sin categoria.",
+      skillPatch: [
+        {
+          skillId: "skill_percepcion",
+          expDelta: 1,
+          reason: "Revision de detalles sin categoria canonica.",
+        },
+      ],
+    });
+    assert.equal(missingCategory.status, 400);
+    assert.match(missingCategory.data.error, /category es obligatorio/);
+    assertSameState(beforeState, await getCanonicalState(tempGameId));
+
+    const unknownCategory = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Intento invalido de test: skillPatch con categoria inventada.",
+      skillPatch: [
+        {
+          skillId: "skill_percepcion",
+          expDelta: 1,
+          category: "categoria_inventada",
+          reason: "Revision de detalles con categoria inexistente.",
+        },
+      ],
+    });
+    assert.equal(unknownCategory.status, 400);
+    assert.match(unknownCategory.data.error, /rango conocido/);
+    assertSameState(beforeState, await getCanonicalState(tempGameId));
+
+    const oversized = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Intento invalido de test: skillPatch con EXP excesiva.",
+      skillPatch: [
+        {
+          skillId: "skill_percepcion",
+          expDelta: 50,
+          category: "buscar_detalles_30min",
+          reason: "Revision de detalles con EXP excesiva para el rango.",
+        },
+      ],
+    });
+    assert.equal(oversized.status, 400);
+    assert.match(oversized.data.error, /Skill patch invalido/);
+    assert.match(oversized.data.details.issues[0], /supera el rango/);
+    assertSameState(beforeState, await getCanonicalState(tempGameId));
+
+    const valid = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: progreso perceptivo validado.",
+      skillPatch: [
+        {
+          skillId: "skill_percepcion",
+          expDelta: 2,
+          category: "buscar_detalles_30min",
+          reason: "Lucas revisa detalles durante media hora de prueba.",
+        },
+      ],
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de skillPatch validado.",
+          visibility: "hidden",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+    });
+    assert.equal(valid.status, 200);
+    assert.equal(valid.data.ok, true);
+    assert.equal(valid.data.changes.skills[0].skillId, "skill_percepcion");
+    assert.equal(valid.data.changes.skills[0].category, "buscar_detalles_30min");
+    assert.equal(valid.data.changes.skills[0].baseExpDelta, 2);
+    assert.equal(valid.data.changes.skills[0].effectiveExpDelta, 2);
+    assert.equal(valid.data.changes.skills[0].after.exp, initialPerception.exp + 2);
+
+    const afterSkill = await GameState.findOne(
+      { gameId: tempGameId },
+      { skills: { $elemMatch: { skillId: "skill_percepcion" } } }
+    ).lean();
+    assert.equal(afterSkill.skills[0].exp, initialPerception.exp + 2);
   });
 
   it("applies npc relationship patches through applyTurn", async () => {
@@ -424,6 +582,83 @@ describe("turn hardening coverage", () => {
     assert.equal(reportedMission.data.ok, true);
     assert.equal(reportedMission.data.changes.missions[0].op, "report");
     assert.equal(reportedMission.data.changes.missions[0].after.proofStatus, "submitted");
+
+    const completeWithoutVerification = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Intento invalido de test: completar mision sin verificacion.",
+      missionPatch: {
+        op: "complete",
+        missionId: tempMissionId,
+        completionSummary: "Este cierre debe ser rechazado.",
+      },
+    });
+    assert.equal(completeWithoutVerification.status, 400);
+    assert.match(completeWithoutVerification.data.error, /proofStatus verified/);
+
+    const verifiedMission = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: verificacion formal de mision.",
+      missionPatch: {
+        op: "verify",
+        missionId: tempMissionId,
+        proofStatus: "verified",
+        verificationSummary: "Prueba revisada y aceptada por test.",
+      },
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de missionPatch verify.",
+          visibility: "hidden",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+    });
+    assert.equal(verifiedMission.status, 200);
+    assert.equal(verifiedMission.data.ok, true);
+    assert.equal(verifiedMission.data.changes.missions[0].op, "verify");
+    assert.equal(verifiedMission.data.changes.missions[0].after.proofStatus, "verified");
+
+    const beforeComplete = await GameState.findOne({ gameId: tempGameId }).lean();
+    const completedMission = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: completar y pagar mision formalmente.",
+      missionPatch: {
+        op: "complete",
+        missionId: tempMissionId,
+        completionSummary: "Mision temporal completada por test.",
+      },
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de missionPatch complete.",
+          visibility: "hidden",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+    });
+    assert.equal(completedMission.status, 200);
+    assert.equal(completedMission.data.ok, true);
+    assert.equal(completedMission.data.changes.missions[0].op, "complete");
+    assert.equal(completedMission.data.changes.missions[0].after.status, "completed");
+    assert.equal(completedMission.data.changes.missions[0].after.completedDay, 10);
+    assert.equal(completedMission.data.changes.missions[0].reward.money.delta, 1);
+    assert.equal(completedMission.data.changes.missions[0].reward.alreadyPaid, false);
+    assert.equal(completedMission.data.gameState.moneyCopper, beforeComplete.moneyCopper + 1);
+    assert.equal(completedMission.data.gameState.activeMissionIds.includes(tempMissionId), false);
+
+    const repeatedComplete = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: repetir cierre idempotente.",
+      missionPatch: {
+        op: "complete",
+        missionId: tempMissionId,
+        completionSummary: "Reintento idempotente.",
+      },
+    });
+    assert.equal(repeatedComplete.status, 200);
+    assert.equal(repeatedComplete.data.ok, true);
+    assert.equal(repeatedComplete.data.changes.missions[0].reward.alreadyPaid, true);
+    assert.equal(repeatedComplete.data.gameState.moneyCopper, beforeComplete.moneyCopper + 1);
 
     const applied = await post("/api/turn/apply", {
       gameId: tempGameId,

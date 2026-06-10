@@ -165,6 +165,7 @@ function main() {
   for (const propertyName of [
     "moneyPatch",
     "inventoryPatch",
+    "skillPatch",
     "shopStockPatches",
     "npcMemoryPatches",
     "npcRelationshipPatches",
@@ -211,6 +212,42 @@ function main() {
     "compact activityCost supports minutes mismatch override",
     Boolean(compact.components?.schemas?.ActivityCostInput?.properties?.allowMinutesMismatch)
   );
+  assertCondition(
+    issues,
+    "full ApplyTurnRequest rejects unknown top-level properties",
+    full.components?.schemas?.ApplyTurnRequest?.additionalProperties === false
+  );
+  assertCondition(
+    issues,
+    "compact ApplyTurnRequest rejects unknown top-level properties",
+    compact.components?.schemas?.ApplyTurnRequest?.additionalProperties === false
+  );
+  for (const propertyName of ["category", "reason", "modifiers"]) {
+    assertCondition(
+      issues,
+      `full SkillPatchItem has ${propertyName}`,
+      Boolean(full.components?.schemas?.SkillPatchItem?.properties?.[propertyName])
+    );
+    assertCondition(
+      issues,
+      `compact SkillPatchItem has ${propertyName}`,
+      Boolean(compact.components?.schemas?.SkillPatchItem?.properties?.[propertyName])
+    );
+  }
+  for (const propertyName of ["skillId", "expDelta", "category", "reason"]) {
+    assertCondition(
+      issues,
+      `compact SkillPatchItem requires ${propertyName}`,
+      compact.components?.schemas?.SkillPatchItem?.required?.includes(propertyName)
+    );
+  }
+  for (const op of ["accept", "report", "verify", "complete", "fail", "expire"]) {
+    assertCondition(
+      issues,
+      `compact MissionPatchItem supports ${op}`,
+      compact.components?.schemas?.MissionPatchItem?.properties?.op?.enum?.includes(op)
+    );
+  }
   assertCondition(
     issues,
     "compact activityCost documents auto accumulation",

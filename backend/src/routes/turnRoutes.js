@@ -5,6 +5,6 @@ const { applyTurn } = require("../controllers/turnController");
 
 const router = express.Router();
 
-router.post("/apply", requireApiKey, applyTurn);
+router.post("/apply", requireApiKey("gameplay"), applyTurn);
 
 module.exports = router;

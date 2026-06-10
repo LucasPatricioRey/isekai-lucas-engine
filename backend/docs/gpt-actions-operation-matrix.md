@@ -51,7 +51,8 @@ Notas:
 - `getCompactContext` es la lectura principal por turno; `getFullContext` queda fuera del compact y solo debe usarse en debug/admin.
 - `getCharacterState` evita reconstruir HP/MP/inventario/skills desde logs.
 - `previewSocialImpact` pondera perfil social del NPC (`values/tolerates/rejects/socialProfile`) y sugiere deltas capados de confianza/familiaridad/respeto/afecto/etc.; el guardado real se hace con `applyTurn.npcRelationshipPatches` y crea ledger social diario. Tambien proyecta `relationshipState` para mostrar acceso, riesgos y bloqueos antes de mutar.
-- Mutadores directos de misiones, combate, restock y rollback quedan fuera; misiones se gestionan por `applyTurn.missionPatch` y eventos por `applyTurn.worldEventPatches`. Resolver/vencer eventos diarios puede crear consecuencias sociales automaticas sobre NPCs afectados y ledger social.
+- Mutadores directos de misiones, combate, restock y rollback quedan fuera; misiones se gestionan por `applyTurn.missionPatch` (`accept/report/verify/complete/fail/expire`) y eventos por `applyTurn.worldEventPatches`. Resolver/vencer eventos diarios puede crear consecuencias sociales automaticas sobre NPCs afectados y ledger social.
+- El backend puede separar keys por scope: lecturas/previews aceptan keys validas de lectura, `applyTurn` usa scope gameplay y mutadores directos peligrosos usan scope admin-write. `API_KEY` sigue funcionando como fallback legacy mientras existan despliegues antiguos.
 - `applyTurn` esta marcado como consequential para forzar confirmacion antes de mutar estado real.
 - `applyTurn.activityCost` no suma operaciones: acumula automaticamente actividades entre horas y procesa pendientes al llegar a `:00`.
 - El schema `admin-extra` es solo lectura, usa `operationId` prefijados por `admin` y no debe usarse para juego normal.

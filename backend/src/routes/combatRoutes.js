@@ -19,10 +19,10 @@ router.get("/actions", requireApiKey, listCombatActionsController);
 router.get("/enemies", requireApiKey, listEnemiesController);
 router.get("/enemies/:enemyId", requireApiKey, getEnemyController);
 
-router.post("/encounters/start", requireApiKey, startEncounterController);
+router.post("/encounters/start", requireApiKey("admin-write"), startEncounterController);
 router.get("/encounters/active", requireApiKey, listActiveEncountersController);
 router.get("/encounters/:encounterId", requireApiKey, getEncounterController);
 router.post("/encounters/:encounterId/actions/preview", requireApiKey, previewCombatActionController);
-router.post("/encounters/:encounterId/round", requireApiKey, applyCombatRoundController);
+router.post("/encounters/:encounterId/round", requireApiKey("admin-write"), applyCombatRoundController);
 
 module.exports = router;

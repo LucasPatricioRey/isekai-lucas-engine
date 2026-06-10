@@ -13,6 +13,6 @@ const router = express.Router();
 router.get("/shops", requireApiKey, listShopsController);
 router.get("/shops/:shopId/stock", requireApiKey, getShopStockController);
 router.get("/items/:itemId", requireApiKey, getItemController);
-router.post("/restock-daily", requireApiKey, restockDailyController);
+router.post("/restock-daily", requireApiKey("admin-write"), restockDailyController);
 
 module.exports = router;
