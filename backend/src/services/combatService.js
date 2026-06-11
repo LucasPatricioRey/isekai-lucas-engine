@@ -2,6 +2,9 @@
 const EnemyTemplate = require("../models/EnemyTemplate");
 const CombatEncounter = require("../models/CombatEncounter");
 const EventLog = require("../models/EventLog");
+const { createAutomaticCheckpoint } = require("./checkpointService");
+
+const VALID_INJURY_SEVERITIES = new Set(["leve", "moderada", "grave", "critica"]);
 
 function createId(prefix) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -20,6 +23,79 @@ function validateInteger(value, fieldName) {
     const error = new Error(`${fieldName} debe ser un numero entero.`);
     error.statusCode = 400;
     throw error;
+  }
+}
+
+function validationError(message, details = {}) {
+  const error = new Error(message);
+  error.statusCode = 400;
+  error.details = details;
+  return error;
+}
+
+function validateCombatRoundInput({ lucasPatch = {}, addInjuries = [], endStatus = "" }) {
+  if (!lucasPatch || typeof lucasPatch !== "object" || Array.isArray(lucasPatch)) {
+    throw validationError("lucasPatch debe ser un objeto.");
+  }
+
+  const allowedLucasDeltas = {
+    lifeDelta: "life",
+    satietyDelta: "satiety",
+    energyDelta: "energy",
+    mpDelta: "mp",
+  };
+
+  for (const deltaKey of Object.keys(lucasPatch)) {
+    if (!Object.prototype.hasOwnProperty.call(allowedLucasDeltas, deltaKey)) {
+      throw validationError(`Campo no permitido en lucasPatch: ${deltaKey}`, {
+        allowedFields: Object.keys(allowedLucasDeltas),
+      });
+    }
+
+    validateInteger(lucasPatch[deltaKey], `lucasPatch.${deltaKey}`);
+  }
+
+  if (!Array.isArray(addInjuries)) {
+    throw validationError("addInjuries debe ser un array.");
+  }
+
+  const requiredFields = ["injuryId", "location", "severity", "description"];
+  for (const injury of addInjuries) {
+    for (const field of requiredFields) {
+      if (!injury?.[field]) {
+        throw validationError(`Falta campo obligatorio en herida: ${field}`, {
+          requiredFields,
+        });
+      }
+    }
+
+    if (!VALID_INJURY_SEVERITIES.has(injury.severity)) {
+      throw validationError(`severity invalida en herida: ${injury.severity}`, {
+        allowedSeverities: Array.from(VALID_INJURY_SEVERITIES),
+      });
+    }
+  }
+
+  const validEndStatuses = ["won", "lost", "escaped", "cancelled"];
+  if (endStatus && !validEndStatuses.includes(endStatus)) {
+    throw validationError(`endStatus invalido: ${endStatus}`, {
+      allowedEndStatuses: validEndStatuses,
+    });
+  }
+
+  return { allowedLucasDeltas, validEndStatuses };
+}
+
+async function safeCombatCheckpoint(options) {
+  try {
+    return await createAutomaticCheckpoint(options);
+  } catch (error) {
+    return {
+      created: false,
+      skipped: false,
+      error: error.message,
+      checkpoint: null,
+    };
   }
 }
 
@@ -85,6 +161,18 @@ async function startEncounter({
     throw error;
   }
 
+  const beforeCheckpoint = await safeCombatCheckpoint({
+    gameId,
+    title: `Auto checkpoint - antes de combate con ${enemy.name}`,
+    reason: `Checkpoint automatico antes de iniciar combate contra ${enemy.name}.`,
+    triggerKey: `combat_start:${enemy.enemyId}`,
+    metadata: {
+      source: "startEncounter",
+      enemyId: enemy.enemyId,
+      dangerLevel: enemy.dangerLevel,
+    },
+  });
+
   const encounter = await CombatEncounter.create({
     encounterId: createId("combat"),
     gameId,
@@ -134,7 +222,10 @@ async function startEncounter({
     tags: ["combat"],
   });
 
-  return encounter.toObject();
+  return {
+    ...encounter.toObject(),
+    autoCheckpoint: beforeCheckpoint,
+  };
 }
 
 async function listActiveEncounters({ gameId = "isekai_lucas_main" } = {}) {
@@ -211,12 +302,28 @@ async function applyCombatRound({
     injuriesAdded: [],
   };
 
-  const allowedLucasDeltas = {
-    lifeDelta: "life",
-    satietyDelta: "satiety",
-    energyDelta: "energy",
-    mpDelta: "mp",
-  };
+  const { allowedLucasDeltas, validEndStatuses } = validateCombatRoundInput({
+    lucasPatch,
+    addInjuries,
+    endStatus,
+  });
+
+  const beforeCheckpoint = await safeCombatCheckpoint({
+    gameId,
+    title: `Auto checkpoint - antes de ronda ${encounter.currentRound}`,
+    reason: `Checkpoint automatico antes de aplicar ronda ${encounter.currentRound} de combate.`,
+    triggerKey: `combat_round:${encounter.encounterId}:r${encounter.currentRound}`,
+    metadata: {
+      source: "applyCombatRound",
+      encounterId: encounter.encounterId,
+      round: encounter.currentRound,
+      enemyDamage,
+      moraleDamage,
+      lucasPatch,
+      injuryCount: Array.isArray(addInjuries) ? addInjuries.length : 0,
+      endStatus,
+    },
+  });
 
   for (const [deltaKey, statKey] of Object.entries(allowedLucasDeltas)) {
     if (lucasPatch[deltaKey] !== undefined) {
@@ -237,27 +344,15 @@ async function applyCombatRound({
     }
   }
 
-  if (Array.isArray(addInjuries)) {
-    for (const injury of addInjuries) {
-      const requiredFields = ["injuryId", "location", "severity", "description"];
+  for (const injury of addInjuries) {
+    const injuryToAdd = {
+      ...injury,
+      createdDay: injury.createdDay || gameState.currentDay,
+      createdTime: injury.createdTime || gameState.time,
+    };
 
-      for (const field of requiredFields) {
-        if (!injury[field]) {
-          const error = new Error(`Falta campo obligatorio en herida: ${field}`);
-          error.statusCode = 400;
-          throw error;
-        }
-      }
-
-      const injuryToAdd = {
-        ...injury,
-        createdDay: injury.createdDay || gameState.currentDay,
-        createdTime: injury.createdTime || gameState.time,
-      };
-
-      gameState.lucasStatus.injuries.push(injuryToAdd);
-      changes.injuriesAdded.push(injuryToAdd);
-    }
+    gameState.lucasStatus.injuries.push(injuryToAdd);
+    changes.injuriesAdded.push(injuryToAdd);
   }
 
   if (enemyDamage > 0) {
@@ -284,15 +379,7 @@ async function applyCombatRound({
     };
   }
 
-  const validEndStatuses = ["won", "lost", "escaped", "cancelled"];
-
   if (endStatus) {
-    if (!validEndStatuses.includes(endStatus)) {
-      const error = new Error(`endStatus invalido: ${endStatus}`);
-      error.statusCode = 400;
-      throw error;
-    }
-
     encounter.status = endStatus;
     encounter.endedDay = gameState.currentDay;
     encounter.endedTime = gameState.time;
@@ -345,6 +432,7 @@ async function applyCombatRound({
     encounter: encounter.toObject(),
     gameState: gameState.toObject(),
     changes,
+    autoCheckpoint: beforeCheckpoint,
   };
 }
 

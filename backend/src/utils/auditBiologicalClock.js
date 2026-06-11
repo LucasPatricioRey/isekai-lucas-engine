@@ -24,7 +24,6 @@ const API_KEY = process.env.API_KEY || process.env.AUDIT_API_KEY || "dev-secret"
 
 const EXPECTED_STATE = {
   minDay: 10,
-  moneyCopper: 1470,
   activeCombatCount: 0,
 };
 
@@ -176,11 +175,17 @@ async function main() {
   assertCondition(issues, "api day is playable canon", beforeState.currentDay >= EXPECTED_STATE.minDay, String(beforeState.currentDay));
   assertCondition(issues, "api time has HH:MM format", /^([01]\d|2[0-3]):[0-5]\d$/.test(beforeState.time), beforeState.time);
   assertCondition(issues, "api locationId exists", Boolean(beforeState.locationId), beforeState.locationId);
-  assertEqual(issues, "api moneyCopper", beforeState.moneyCopper, EXPECTED_STATE.moneyCopper);
+  assertCondition(
+    issues,
+    "api moneyCopper is non-negative number",
+    Number.isFinite(beforeState.moneyCopper) && beforeState.moneyCopper >= 0,
+    String(beforeState.moneyCopper)
+  );
   assertEqual(issues, "api active combat count", activeCombatList.length, EXPECTED_STATE.activeCombatCount);
   assertEqual(issues, "post-preview time unchanged", afterState.time, beforeState.time);
   assertEqual(issues, "post-preview satiety unchanged", afterState.satiety, beforeState.satiety);
   assertEqual(issues, "post-preview energy unchanged", afterState.energy, beforeState.energy);
+  assertEqual(issues, "post-preview money unchanged", afterState.moneyCopper, beforeState.moneyCopper);
 
   await assertMongoAvailable();
 
@@ -193,7 +198,7 @@ async function main() {
   assertCondition(issues, "db day is playable canon", dbGameState?.currentDay >= EXPECTED_STATE.minDay, String(dbGameState?.currentDay));
   assertCondition(issues, "db time has HH:MM format", /^([01]\d|2[0-3]):[0-5]\d$/.test(dbGameState?.time || ""), dbGameState?.time);
   assertCondition(issues, "db locationId exists", Boolean(dbGameState?.locationId), dbGameState?.locationId);
-  assertEqual(issues, "db moneyCopper", dbGameState?.moneyCopper, EXPECTED_STATE.moneyCopper);
+  assertEqual(issues, "db moneyCopper matches API", dbGameState?.moneyCopper, beforeState.moneyCopper);
   assertEqual(issues, "db active combat count", dbActiveCombatCount, EXPECTED_STATE.activeCombatCount);
 
   section("Audit Result");

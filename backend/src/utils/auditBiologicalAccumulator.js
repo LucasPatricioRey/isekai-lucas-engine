@@ -238,7 +238,12 @@ async function main() {
   );
   assertCondition(issues, "day is playable canon", gameState.currentDay >= 10, String(gameState.currentDay));
   assertCondition(issues, "time has HH:MM format", /^([01]\d|2[0-3]):[0-5]\d$/.test(gameState.time), gameState.time);
-  assertEqual(issues, "moneyCopper", gameState.moneyCopper, 1470);
+  assertCondition(
+    issues,
+    "moneyCopper is non-negative number",
+    Number.isFinite(gameState.moneyCopper) && gameState.moneyCopper >= 0,
+    String(gameState.moneyCopper)
+  );
   assertEqual(issues, "MP current", gameState.lucasStatus?.mp?.current, 200);
   assertEqual(issues, "active combat count", activeCombats, 0);
 

@@ -46,6 +46,8 @@ const RESTORE_COLLECTIONS = [
   ["weatherStates", WeatherState],
 ];
 
+const DEFAULT_AUTO_CHECKPOINT_RETENTION = 40;
+
 function withSession(query, session) {
   return session ? query.session(session) : query;
 }
@@ -68,6 +70,38 @@ function checkpointReference(checkpoint) {
     auto: Boolean(value.auto),
     triggerKey: value.triggerKey || "",
     createdAt: value.createdAt,
+  };
+}
+
+async function pruneAutomaticCheckpoints({
+  gameId = "isekai_lucas_main",
+  keep = DEFAULT_AUTO_CHECKPOINT_RETENTION,
+  session = null,
+} = {}) {
+  const limit = Math.max(1, Number(keep) || DEFAULT_AUTO_CHECKPOINT_RETENTION);
+  const extras = await withSession(
+    Checkpoint.find({ gameId, auto: true })
+      .sort({ createdAt: -1 })
+      .skip(limit)
+      .select("_id checkpointId createdAt")
+      .lean(),
+    session
+  );
+
+  if (extras.length === 0) {
+    return {
+      deletedCount: 0,
+      kept: limit,
+    };
+  }
+
+  const ids = extras.map((checkpoint) => checkpoint._id);
+  const result = await withSession(Checkpoint.deleteMany({ _id: { $in: ids } }), session);
+
+  return {
+    deletedCount: result.deletedCount || 0,
+    kept: limit,
+    deletedCheckpointIds: extras.map((checkpoint) => checkpoint.checkpointId),
   };
 }
 
@@ -187,7 +221,13 @@ async function createCheckpointFromCurrentState({
     session ? { session } : {}
   );
 
-  return docs[0];
+  const pruning = auto
+    ? await pruneAutomaticCheckpoints({ gameId, session })
+    : { deletedCount: 0, kept: DEFAULT_AUTO_CHECKPOINT_RETENTION };
+
+  const checkpoint = docs[0];
+  checkpoint._autoCheckpointPruning = pruning;
+  return checkpoint;
 }
 
 async function createAutomaticCheckpoint({
@@ -242,11 +282,13 @@ async function createAutomaticCheckpoint({
     ],
     session ? { session } : {}
   );
+  const pruning = await pruneAutomaticCheckpoints({ gameId, session });
 
   return {
     created: true,
     skipped: false,
     checkpoint: checkpointReference(docs[0]),
+    pruning,
   };
 }
 
@@ -257,4 +299,5 @@ module.exports = {
   createAutomaticCheckpoint,
   createCheckpointFromCurrentState,
   createCheckpointId,
+  pruneAutomaticCheckpoints,
 };

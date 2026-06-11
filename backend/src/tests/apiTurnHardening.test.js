@@ -1,6 +1,7 @@
 const { after, before, describe, it } = require("node:test");
 
 const Checkpoint = require("../models/Checkpoint");
+const CombatEncounter = require("../models/CombatEncounter");
 const EventLog = require("../models/EventLog");
 const GameState = require("../models/GameState");
 const JobContract = require("../models/JobContract");
@@ -9,6 +10,7 @@ const Npc = require("../models/Npc");
 const NpcSocialLedger = require("../models/NpcSocialLedger");
 const WeatherState = require("../models/WeatherState");
 const WorldEvent = require("../models/WorldEvent");
+const { pruneAutomaticCheckpoints } = require("../services/checkpointService");
 const { ensureCurrentWeatherForGameState } = require("../services/weatherService");
 const {
   assert,
@@ -218,6 +220,7 @@ async function createIsolatedGameState() {
 async function cleanupIsolatedState() {
   if (tempGameId) await GameState.deleteOne({ gameId: tempGameId });
   if (tempGameId) await Checkpoint.deleteMany({ gameId: tempGameId });
+  if (tempGameId) await CombatEncounter.deleteMany({ gameId: tempGameId });
   if (tempGameId) await WorldEvent.deleteMany({ gameId: tempGameId });
   await Mission.deleteMany({
     missionId: { $in: [tempMissionId, tempExpiredMissionId, tempGuildMissionId].filter(Boolean) },
@@ -362,6 +365,49 @@ describe("turn hardening coverage", () => {
       if (previousAdminWrite === undefined) delete process.env.ADMIN_WRITE_API_KEY;
       else process.env.ADMIN_WRITE_API_KEY = previousAdminWrite;
     }
+  });
+
+  it("prunes old automatic checkpoints without touching manual checkpoints", async () => {
+    await Checkpoint.deleteMany({ gameId: tempGameId });
+    const now = Date.now();
+    const autoDocs = Array.from({ length: 45 }, (_, index) => ({
+      checkpointId: `checkpoint_auto_prune_${tempGameId}_${index}`,
+      gameId: tempGameId,
+      title: `Auto checkpoint prune ${index}`,
+      reason: "Fixture temporal para probar retencion de checkpoints automaticos.",
+      day: 10,
+      time: String(index).padStart(2, "0").slice(-2) + ":00",
+      gameStateSnapshot: { gameId: tempGameId, currentDay: 10, time: "12:00" },
+      changedCollectionsSnapshot: {},
+      auto: true,
+      triggerKey: `prune_fixture:${index}`,
+      createdAt: new Date(now + index),
+      updatedAt: new Date(now + index),
+    }));
+    const manualId = `checkpoint_manual_prune_${tempGameId}`;
+
+    await Checkpoint.insertMany([
+      ...autoDocs,
+      {
+        checkpointId: manualId,
+        gameId: tempGameId,
+        title: "Manual checkpoint prune fixture",
+        reason: "Debe conservarse aunque existan muchos checkpoints automaticos.",
+        day: 10,
+        time: "12:00",
+        gameStateSnapshot: { gameId: tempGameId, currentDay: 10, time: "12:00" },
+        changedCollectionsSnapshot: {},
+        auto: false,
+      },
+    ]);
+
+    const result = await pruneAutomaticCheckpoints({ gameId: tempGameId, keep: 40 });
+    assert.equal(result.deletedCount, 5);
+
+    const autoCount = await Checkpoint.countDocuments({ gameId: tempGameId, auto: true });
+    const manual = await Checkpoint.findOne({ checkpointId: manualId }).lean();
+    assert.equal(autoCount, 40);
+    assert.ok(manual);
   });
 
   it("completes job shifts without duplicating consumed meals or pay", async () => {
@@ -838,6 +884,82 @@ describe("turn hardening coverage", () => {
       cappedRelationship.data.changes.npcRelationships[0].caps.fields.trust.reason,
       "daily_cap_trust"
     );
+  });
+
+  it("creates automatic checkpoints before direct combat mutations", async () => {
+    await CombatEncounter.deleteMany({ gameId: tempGameId });
+    await Checkpoint.deleteMany({ gameId: tempGameId, triggerKey: /^combat_/ });
+
+    const started = await post("/api/combat/encounters/start", {
+      gameId: tempGameId,
+      enemyId: "enemy_lobo_borde",
+      reason: "Test controlado: iniciar combate temporal.",
+    });
+
+    assert.equal(started.status, 200);
+    assert.equal(started.data.ok, true);
+    assert.equal(started.data.encounter.autoCheckpoint.created, true);
+    assert.equal(started.data.encounter.autoCheckpoint.checkpoint.triggerKey, "combat_start:enemy_lobo_borde");
+
+    const startCheckpoint = await Checkpoint.findOne({
+      gameId: tempGameId,
+      auto: true,
+      triggerKey: "combat_start:enemy_lobo_borde",
+    }).lean();
+    assert.ok(startCheckpoint);
+
+    const encounterId = started.data.encounter.encounterId;
+    const invalidRound = await post(`/api/combat/encounters/${encodeURIComponent(encounterId)}/round`, {
+      gameId: tempGameId,
+      summary: "Test controlado: herida con severidad invalida.",
+      enemyDamage: 0,
+      addInjuries: [
+        {
+          injuryId: `injury_invalid_${Date.now()}`,
+          location: "antebrazo",
+          severity: "minor",
+          description: "Severidad legacy no permitida.",
+        },
+      ],
+    });
+
+    assert.equal(invalidRound.status, 400);
+    assert.equal(invalidRound.data.ok, false);
+    assert.match(invalidRound.data.error, /severity invalida/);
+
+    const skippedInvalidCheckpoint = await Checkpoint.findOne({
+      gameId: tempGameId,
+      auto: true,
+      triggerKey: `combat_round:${encounterId}:r1`,
+    }).lean();
+    assert.equal(skippedInvalidCheckpoint, null);
+
+    const round = await post(`/api/combat/encounters/${encodeURIComponent(encounterId)}/round`, {
+      gameId: tempGameId,
+      summary: "Test controlado: ronda con rasguno menor.",
+      enemyDamage: 1,
+      lucasPatch: { lifeDelta: -1 },
+      addInjuries: [
+        {
+          injuryId: `injury_test_${Date.now()}`,
+          location: "antebrazo",
+          severity: "leve",
+          description: "Rasguno menor de test.",
+        },
+      ],
+    });
+
+    assert.equal(round.status, 200);
+    assert.equal(round.data.ok, true);
+    assert.equal(round.data.autoCheckpoint.created, true);
+    assert.equal(round.data.autoCheckpoint.checkpoint.triggerKey, `combat_round:${encounterId}:r1`);
+
+    const roundCheckpoint = await Checkpoint.findOne({
+      gameId: tempGameId,
+      auto: true,
+      triggerKey: `combat_round:${encounterId}:r1`,
+    }).lean();
+    assert.ok(roundCheckpoint);
   });
 
   it("blocks remote npc relationship patches unless a valid source links the npc", async () => {

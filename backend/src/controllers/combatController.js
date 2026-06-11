@@ -11,6 +11,14 @@ const {
   previewCombatAction,
 } = require("../services/combatActionService");
 
+function sendCombatError(res, error) {
+  return res.status(error.statusCode || 500).json({
+    ok: false,
+    error: error.message,
+    details: error.details || null,
+  });
+}
+
 async function listCombatActionsController(req, res) {
   try {
     const actions = await listCombatActions();
@@ -20,10 +28,7 @@ async function listCombatActionsController(req, res) {
       actions,
     });
   } catch (error) {
-    return res.status(error.statusCode || 500).json({
-      ok: false,
-      error: error.message,
-    });
+    return sendCombatError(res, error);
   }
 }
 
@@ -39,10 +44,7 @@ async function listEnemiesController(req, res) {
       enemies,
     });
   } catch (error) {
-    return res.status(error.statusCode || 500).json({
-      ok: false,
-      error: error.message,
-    });
+    return sendCombatError(res, error);
   }
 }
 
@@ -55,10 +57,7 @@ async function getEnemyController(req, res) {
       enemy,
     });
   } catch (error) {
-    return res.status(error.statusCode || 500).json({
-      ok: false,
-      error: error.message,
-    });
+    return sendCombatError(res, error);
   }
 }
 
@@ -78,11 +77,7 @@ async function startEncounterController(req, res) {
       encounter,
     });
   } catch (error) {
-    return res.status(error.statusCode || 500).json({
-      ok: false,
-      error: error.message,
-      details: error.details || null,
-    });
+    return sendCombatError(res, error);
   }
 }
 
@@ -97,10 +92,7 @@ async function listActiveEncountersController(req, res) {
       encounters,
     });
   } catch (error) {
-    return res.status(error.statusCode || 500).json({
-      ok: false,
-      error: error.message,
-    });
+    return sendCombatError(res, error);
   }
 }
 
@@ -113,10 +105,7 @@ async function getEncounterController(req, res) {
       encounter,
     });
   } catch (error) {
-    return res.status(error.statusCode || 500).json({
-      ok: false,
-      error: error.message,
-    });
+    return sendCombatError(res, error);
   }
 }
 
@@ -141,10 +130,7 @@ async function applyCombatRoundController(req, res) {
       ...result,
     });
   } catch (error) {
-    return res.status(error.statusCode || 500).json({
-      ok: false,
-      error: error.message,
-    });
+    return sendCombatError(res, error);
   }
 }
 
@@ -164,10 +150,7 @@ async function previewCombatActionController(req, res) {
       preview,
     });
   } catch (error) {
-    return res.status(error.statusCode || 500).json({
-      ok: false,
-      error: error.message,
-    });
+    return sendCombatError(res, error);
   }
 }
 
