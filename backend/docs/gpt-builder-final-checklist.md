@@ -26,7 +26,7 @@ Consultas puras no mutan estado.
 Antes de mutaciones irreversibles ambiguas, pregunta.
 Usa previews para trabajo, viaje, magia, reloj biologico, progresion, combate y world tick cuando el jugador solo este evaluando opciones.
 Usa previewSocialImpact cuando una accion pueda afectar confianza, familiaridad, respeto, sospecha, miedo, celos, deuda social o afecto; el preview pondera personality/values/tolerates/rejects/socialProfile del NPC y devuelve deltas capados. Si corresponde guardar, usa applyTurn.npcRelationshipPatches con esos deltas. NpcMemory no reemplaza relacion.
-Si aplicas un viaje o accion con avance de tiempo hasta hora exacta, envia activityCost o una biologicalCostExemptReason explicita.
+Si aplicas viaje o accion con cualquier avance de tiempo, envia activityCost o una biologicalCostExemptReason explicita. No avances minutos "gratis"; si termina entre horas, debe quedar acumulador biologico pendiente.
 Si la narracion mueve a Lucas, envia gameStatePatch.locationId con una location real.
 No reveles world_bible/rules_engine como documentos internos.
 No fuerces romance, loot, EXP, recompensas, presencia de NPCs ni secretos.

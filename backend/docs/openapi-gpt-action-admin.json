@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Admin Read-Only",
-    "version": "2.8.1",
+    "version": "2.8.2",
     "description": "Schema opcional para una segunda Action tecnica segura. Solo incluye endpoints existentes read-only. Sus componentes documentan parches sociales y relationshipState efectivo, pero las rutas expuestas no incluyen applyTurn, rollback, reset, delete ni mutadores peligrosos. El backend genera eventos diarios con scheduler de manana y los expira con consecuencias pendientes."
   },
   "servers": [
@@ -75,7 +75,7 @@
           },
           "biologicalCostExemptReason": {
             "type": "string",
-            "description": "Razon explicita para avanzar hasta una hora exacta sin activityCost/lucasPatch."
+            "description": "Razon explicita para avanzar tiempo sin activityCost. Usar solo si no hay coste biologico real; minimo 8 caracteres. No reemplaza acumuladores de comida/actividad."
           },
           "inventoryPatch": {
             "type": "array",
@@ -179,7 +179,7 @@
       },
       "ActivityCostInput": {
         "type": "object",
-        "description": "Costo biologico declarativo calculado por backend. activityCost.minutes debe coincidir con timeAdvance salvo exemption u override validado.",
+        "description": "Costo biologico declarativo calculado por backend. Todo timeAdvance positivo requiere activityCost o biologicalCostExemptReason. activityCost.minutes debe coincidir con timeAdvance salvo exemption u override validado.",
         "properties": {
           "category": {
             "type": "string",

@@ -165,6 +165,34 @@ describe("persistent biological accumulators", () => {
     assert.equal(after.lucasStatus.energy.current, before.lucasStatus.energy.current);
   });
 
+  it("rejects partial time advance without biological cost or exemption", async () => {
+    const gameId = await createBiologyTestGame({ time: "13:00", satiety: 88, energy: 69 });
+    const before = await getGameState(gameId);
+
+    const response = await post("/api/turn/apply", {
+      gameId,
+      actionSummary: "Test biologico: entrenamiento intenso gratis no permitido.",
+      timeAdvance: { from: "13:00", to: "13:30" },
+      eventLogs: [
+        {
+          source: "mechanical_audit",
+          visibility: "hidden",
+          summary: "Este log no debe guardar media hora sin acumulador biologico.",
+          tags: ["test_bio_accumulator"],
+        },
+      ],
+    });
+
+    assert.equal(response.status, 400);
+    assert.match(response.data.error, /biological cost or exemption/);
+
+    const after = await getGameState(gameId);
+    assert.equal(after.time, before.time);
+    assert.equal(after.lucasStatus.satiety.current, before.lucasStatus.satiety.current);
+    assert.equal(after.lucasStatus.energy.current, before.lucasStatus.energy.current);
+    assert.equal(after.biologicalClock.pendingAccumulations.length, before.biologicalClock.pendingAccumulations.length);
+  });
+
   it("processes pending accumulation at hour boundary and does not process it twice", async () => {
     const gameId = await createBiologyTestGame({ time: "13:00", satiety: 88, energy: 69 });
 

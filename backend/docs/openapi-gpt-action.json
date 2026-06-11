@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions",
-    "version": "2.10.0",
+    "version": "2.10.1",
     "description": "Schema normal para GPT Actions. Expone endpoints de lectura, busqueda, preview y mutacion central controlada. Incluye previewSocialImpact, relationshipState efectivo y applyTurn.npcRelationshipPatches para vinculos sociales. Incluye lectura read-only de WorldEvents para auditoria tecnica. No expone rollback, admin ni mutadores peligrosos de combate/misiones. El backend separa evento principal unico, rumores menores y eventos de fondo; el scheduler solo genera otro evento principal cuando no hay uno abierto. applyTurn, completeJobShift y context/compact pueden devolver narrativeHints/narrativeContext para variar escenas repetidas sin crear mecanicas nuevas."
   },
   "servers": [
@@ -369,7 +369,7 @@
           },
           "biologicalCostExemptReason": {
             "type": "string",
-            "description": "Razon explicita para avanzar hasta una hora exacta sin activityCost/lucasPatch."
+            "description": "Razon explicita para avanzar tiempo sin activityCost. Usar solo si no hay coste biologico real; minimo 8 caracteres. No reemplaza acumuladores de comida/actividad."
           },
           "inventoryPatch": {
             "type": "array",

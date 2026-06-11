@@ -1668,17 +1668,23 @@ function validateHourBoundaryCost({ timeAdvance, currentTime, body }) {
 
   const minutes = diffAdvanceMinutes({ fromDay, from, toDay, to });
 
-  if (minutes > 0 && getClosedHourBlocks({ fromDay, from, toDay, to }).length > 0) {
-    const hasActivityCost = Boolean(body.activityCost);
-    const hasLucasPatch = Boolean(body.lucasPatch);
-    const hasExemption = Boolean(String(body.biologicalCostExemptReason || "").trim());
+  if (minutes <= 0) return;
 
-    if (!hasActivityCost && !hasLucasPatch && !hasExemption) {
+  const hasActivityCost = Boolean(body.activityCost);
+  const hasExemption = String(body.biologicalCostExemptReason || "").trim().length >= 8;
+
+  if (!hasActivityCost && !hasExemption) {
+    if (getClosedHourBlocks({ fromDay, from, toDay, to }).length > 0) {
       throw validationError(
         "timeAdvance reaches hour boundary but no biological cost or exemption was provided.",
         { from, to, minutes }
       );
     }
+
+    throw validationError(
+      "timeAdvance advances time but no biological cost or exemption was provided.",
+      { from, to, minutes }
+    );
   }
 }
 
