@@ -6,6 +6,7 @@ const {
 const { summarizeNpcSocialProfile } = require("../services/socialProfileService");
 const { buildSocialConsequenceHintEffect } = require("../services/dailyEventSocialService");
 const { evaluateSocialRelationshipState } = require("../services/socialRelationshipStateService");
+const { buildDailyEventNotice, getDailyEventTemplateId } = require("./worldEventPresentation");
 
 function unique(values) {
   return Array.from(new Set((values || []).filter(Boolean)));
@@ -307,8 +308,7 @@ function summarizeRumor(rumor) {
 function summarizeWorldEvent(event) {
   if (!event) return null;
   const storedEffects = event.effects || [];
-  const templateTag = (event.tags || []).find((entry) => String(entry).startsWith("daily_event_template_"));
-  const templateId = event.templateId || (templateTag ? templateTag.replace("daily_event_template_", "") : "");
+  const templateId = getDailyEventTemplateId(event);
   const relevantEffects = storedEffects
     .filter((effect) =>
       [
@@ -344,6 +344,7 @@ function summarizeWorldEvent(event) {
     affectedNpcIds: event.affectedNpcIds || [],
     severity: event.severity,
     visibility: event.visibility,
+    dailyEventNotice: buildDailyEventNotice(event),
     cause: truncateText(event.cause || "", 500),
     effects: relevantEffects.slice(0, 6),
     tags: event.tags || [],

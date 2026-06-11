@@ -1,5 +1,6 @@
 const WorldEvent = require("../models/WorldEvent");
 const { buildSocialConsequenceHintEffect } = require("./dailyEventSocialService");
+const { buildDailyEventNotice } = require("../utils/worldEventPresentation");
 
 const DAILY_EVENT_TAG = "daily_event";
 const DAILY_EVENT_PENDING_CONSEQUENCE_TAG = "consequence_pending";
@@ -885,6 +886,7 @@ async function ensureDailyEventForGameState(gameState, { session = null, rng = M
     event,
     templateId: payload.templateId,
     rolls: payload.rolls,
+    notice: buildDailyEventNotice(event),
     excludedTemplateIds,
   };
 }

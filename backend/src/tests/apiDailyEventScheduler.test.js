@@ -181,6 +181,8 @@ describe("daily event scheduler", () => {
     assert.equal(applied.data.ok, true);
     assert.equal(applied.data.changes.time.after, "06:00");
     assert.ok(applied.data.changes.dailyEvents.generated);
+    assert.ok(applied.data.changes.dailyEvents.generated.notice);
+    assert.match(applied.data.changes.dailyEvents.generated.notice.text, /Evento diario:/);
 
     const events = await WorldEvent.find({
       gameId: tempGameId,
@@ -201,11 +203,16 @@ describe("daily event scheduler", () => {
     assert.equal(compact.data.ok, true);
     assert.equal(compact.data.context.dailyEvents.length, 1);
     assert.equal(compact.data.context.currentDailyEvent.eventId, event.eventId);
+    assert.equal(compact.data.context.currentDailyEvent.dailyEventNotice.title, event.title);
+    assert.ok(compact.data.context.currentDailyEvent.dailyEventNotice.block);
+    assert.ok(compact.data.context.currentDailyEvent.dailyEventNotice.text.includes(event.title));
     const exposedEvents = [
       ...(compact.data.context.activeEvents || []),
       ...(compact.data.context.scheduledEvents || []),
     ];
-    assert.ok(exposedEvents.some((entry) => entry.eventId === event.eventId));
+    const exposedEvent = exposedEvents.find((entry) => entry.eventId === event.eventId);
+    assert.ok(exposedEvent);
+    assert.ok(exposedEvent.dailyEventNotice.text.includes(exposedEvent.title));
     assert.equal(
       compact.data.context.alerts.some((alert) => alert.type === "daily_event_missing"),
       false
@@ -497,6 +504,7 @@ describe("daily event scheduler", () => {
     assert.equal(list.data.ok, true);
     assert.ok(Array.isArray(list.data.events));
     assert.ok(list.data.events.length > 0);
+    assert.ok(list.data.events[0].dailyEventNotice);
 
     const eventId = list.data.events[0].eventId;
     const detail = await get(`/api/world/events/${encodeURIComponent(eventId)}?gameId=${encodeURIComponent(tempGameId)}`);
@@ -504,6 +512,7 @@ describe("daily event scheduler", () => {
     assert.equal(detail.status, 200);
     assert.equal(detail.data.ok, true);
     assert.equal(detail.data.event.eventId, eventId);
+    assert.ok(detail.data.event.dailyEventNotice.text.includes(detail.data.event.title));
     assert.equal(detail.data.raw.eventId, eventId);
   });
 });
