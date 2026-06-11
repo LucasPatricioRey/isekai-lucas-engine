@@ -171,6 +171,10 @@ function unique(values) {
   return Array.from(new Set((values || []).filter(Boolean)));
 }
 
+function toArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 function normalizeText(value) {
   return String(value || "")
     .normalize("NFD")
@@ -218,7 +222,7 @@ function collectTextParts({ actionSummary = "", log = null, changes = null, extr
 }
 
 function inferActionFamily(input = {}) {
-  const tags = new Set((input.tags || input.log?.tags || []).map(normalizeText));
+  const tags = new Set(toArray(input.tags || input.log?.tags).map(normalizeText));
   const type = normalizeText(input.type || input.log?.type || "");
   const text = normalizeText(collectTextParts(input));
   const changes = input.changes || input.log?.mechanicalChanges || {};
@@ -253,8 +257,8 @@ function extractInvolvedNpcIds({ log = null, changes = null, explicitNpcIds = []
   ];
 
   return unique([
-    ...explicitNpcIds,
-    ...(log?.involvedNpcIds || []),
+    ...toArray(explicitNpcIds),
+    ...toArray(log?.involvedNpcIds),
     ...fromChanges,
   ]).sort();
 }
@@ -436,9 +440,9 @@ function buildNarrativeHintsFromRecentLogs({
     log: firstDraft,
   });
   const npcIds = unique([
-    ...involvedNpcIds,
+    ...toArray(involvedNpcIds),
     ...extractInvolvedNpcIds({ log: firstDraft, changes }),
-    ...(logDrafts || []).flatMap((log) => log.involvedNpcIds || []),
+    ...toArray(logDrafts).flatMap((log) => toArray(log.involvedNpcIds)),
   ]).sort();
   const locationId = firstDraft?.locationId || gameState.locationId || "";
   const actionFingerprint = buildActionFingerprint({
@@ -552,7 +556,7 @@ function attachNarrativeTrackingToLogDrafts(logDrafts = [], hints = null) {
         ? log.mechanicalChanges
         : {};
 
-    log.tags = unique([...(log.tags || []), ...tagsToAdd]);
+    log.tags = unique([...toArray(log.tags), ...tagsToAdd]);
     log.mechanicalChanges = {
       ...mechanicalChanges,
       narrativeTracking: hints.tracking,
