@@ -73,4 +73,8 @@ const checkpointSchema = new mongoose.Schema(
   }
 );
 
+checkpointSchema.index({ createdAt: -1 });
+checkpointSchema.index({ gameId: 1, createdAt: -1 });
+checkpointSchema.index({ gameId: 1, auto: 1, createdAt: -1 });
+
 module.exports = mongoose.model("Checkpoint", checkpointSchema);

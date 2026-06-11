@@ -325,6 +325,11 @@ function summarizeWorldEvent(event) {
   if (!event) return null;
   const storedEffects = event.effects || [];
   const templateId = getDailyEventTemplateId(event);
+  const tags = event.tags || [];
+  const countsAsMainEvent =
+    event.countsAsMainEvent === true ||
+    (event.countsAsMainEvent !== false && tags.includes("daily_event") && !event.eventLayer);
+  const eventLayer = event.eventLayer || (countsAsMainEvent ? "main_event" : "background");
   const relevantEffects = storedEffects
     .filter((effect) =>
       [
@@ -337,7 +342,7 @@ function summarizeWorldEvent(event) {
     );
 
   if (
-    (event.tags || []).includes("daily_event") &&
+    countsAsMainEvent &&
     !storedEffects.some((effect) => effect.type === "social_consequence_rules")
   ) {
     relevantEffects.push(buildSocialConsequenceHintEffect(event));
@@ -350,6 +355,9 @@ function summarizeWorldEvent(event) {
     rolls: event.rolls || {},
     title: event.title,
     type: event.type,
+    eventLayer,
+    countsAsMainEvent,
+    blocksMainEventGeneration: event.blocksMainEventGeneration === true || countsAsMainEvent,
     scope: event.scope,
     status: event.status,
     startDay: event.startDay,
@@ -360,10 +368,10 @@ function summarizeWorldEvent(event) {
     affectedNpcIds: event.affectedNpcIds || [],
     severity: event.severity,
     visibility: event.visibility,
-    dailyEventNotice: buildDailyEventNotice(event),
+    dailyEventNotice: countsAsMainEvent ? buildDailyEventNotice(event) : null,
     cause: truncateText(event.cause || "", 500),
     effects: relevantEffects.slice(0, 6),
-    tags: event.tags || [],
+    tags,
   };
 }
 

@@ -258,11 +258,19 @@ async function checkCompactEndpoints(issues) {
 
   const gameState = summarizeGameState(context);
   const activeCombatList = activeCombats.encounters || [];
-  const currentDailyEvent = context.context?.currentDailyEvent;
+  const currentDailyEvent =
+    context.context?.mainEvent ||
+    context.context?.currentDailyEvent ||
+    (context.context?.activeEvents || []).find(
+      (event) =>
+        event.countsAsMainEvent !== false &&
+        (!event.eventLayer || event.eventLayer === "main_event") &&
+        (event.tags || []).includes("daily_event")
+    );
   const dailyEventRequired = timeToMinutes(gameState.time) >= timeToMinutes("06:00");
   assertCondition(
     issues,
-    "current daily event exposed after morning begins",
+    "main daily event exposed after morning begins",
     !dailyEventRequired || Boolean(currentDailyEvent?.eventId),
     currentDailyEvent?.eventId || ""
   );

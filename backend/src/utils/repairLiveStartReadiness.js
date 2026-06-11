@@ -11,7 +11,10 @@ const WorldEvent = require("../models/WorldEvent");
 const {
   DAILY_EVENT_TAG,
   eventGameFilter,
+  findOpenMainEvent,
   getEventStatusAt,
+  isMainEvent,
+  mainEventQuery,
   reconcileDailyEventsForGameState,
   shouldEnsureDailyEvent,
 } = require("../services/dailyEventSchedulerService");
@@ -154,20 +157,24 @@ async function buildRepairPlan() {
   const gameState = await GameState.findOne({ gameId: GAME_ID }).lean();
   if (!gameState) throw new Error(`No existe GameState para gameId: ${GAME_ID}`);
 
-  const [availableMissions, latestWeather, currentDailyEvent, lifecycleCandidates] = await Promise.all([
+  const [availableMissions, latestWeather, currentDailyEvent, openMainEvent, lifecycleCandidates] = await Promise.all([
     Mission.find({ status: "available" }).sort({ expiresDay: 1, expiresTime: 1 }).lean(),
     WeatherState.findOne({ regionId: REGION_ID })
       .sort({ startedDay: -1, startedTime: -1, updatedAt: -1 })
       .lean(),
     WorldEvent.findOne({
       ...eventGameFilter(GAME_ID),
-      tags: { $all: [DAILY_EVENT_TAG, `daily_event_day_${gameState.currentDay}`] },
+      $and: [
+        mainEventQuery(),
+        { tags: `daily_event_day_${gameState.currentDay}` },
+      ],
     }).lean(),
+    findOpenMainEvent({ gameId: GAME_ID }),
     WorldEvent.find({
       ...eventGameFilter(GAME_ID),
       status: { $in: ["scheduled", "active"] },
     })
-      .select("eventId status startDay startTime endDay endTime severity tags")
+      .select("eventId status startDay startTime endDay endTime severity tags eventLayer countsAsMainEvent blocksMainEventGeneration")
       .lean(),
   ]);
 
@@ -218,7 +225,7 @@ async function buildRepairPlan() {
     }
   }
 
-  if (shouldEnsureDailyEvent(gameState) && !currentDailyEvent) {
+  if (shouldEnsureDailyEvent(gameState) && !currentDailyEvent && !openMainEvent) {
     changes.push({
       type: "ensure_daily_event",
       before: null,
@@ -254,7 +261,7 @@ async function buildRepairPlan() {
 
   const expectedActiveEventIds = unique(
     lifecycleCandidates
-      .filter((event) => getEventStatusAt(event, gameState.currentDay, gameState.time) === "active")
+      .filter((event) => isMainEvent(event) && getEventStatusAt(event, gameState.currentDay, gameState.time) === "active")
       .map((event) => event.eventId)
   );
   const currentActiveEventIds = unique(gameState.activeEventIds || []);

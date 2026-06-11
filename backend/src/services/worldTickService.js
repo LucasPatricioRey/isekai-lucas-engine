@@ -7,8 +7,11 @@ const Rumor = require("../models/Rumor");
 const ShopStock = require("../models/ShopStock");
 const WorldEvent = require("../models/WorldEvent");
 const {
-  DAILY_EVENT_TAG,
   eventGameFilter,
+  findOpenMainEvent,
+  getEventStatusAt,
+  MAIN_EVENT_OPEN_STATUSES,
+  mainEventQuery,
   shouldEnsureDailyEvent,
 } = require("./dailyEventSchedulerService");
 
@@ -241,7 +244,8 @@ async function previewWorldTick({
     activeRumors,
     activeEvents,
     activeCombats,
-    existingDailyEvent,
+    currentDayMainEvent,
+    openMainEvent,
   ] = await Promise.all([
     previewRoutineSync({ toDay: normalizedToDay, toTime: normalizedToTime }),
     previewMissionExpiry({ fromAbs, toAbs }),
@@ -251,11 +255,21 @@ async function previewWorldTick({
     CombatEncounter.find({ gameId, status: "active" }).select("encounterId enemyId enemyName").lean(),
     WorldEvent.findOne({
       ...eventGameFilter(gameId),
-      tags: { $all: [DAILY_EVENT_TAG, `daily_event_day_${normalizedToDay}`] },
+      $and: [
+        mainEventQuery(),
+        { tags: `daily_event_day_${normalizedToDay}` },
+      ],
     })
       .select("eventId title status startDay startTime endDay endTime severity tags")
       .lean(),
+    findOpenMainEvent({ gameId }),
   ]);
+  const openMainEventStatusAtTarget = openMainEvent
+    ? getEventStatusAt(openMainEvent, normalizedToDay, normalizedToTime)
+    : "";
+  const openMainEventStillOpenAtTarget =
+    openMainEvent && MAIN_EVENT_OPEN_STATUSES.includes(openMainEventStatusAtTarget);
+  const existingMainEvent = currentDayMainEvent || (openMainEventStillOpenAtTarget ? openMainEvent : null);
 
   const eventsEnding = activeEvents
     .filter((event) => eventEndsWithin(event, fromAbs, toAbs))
@@ -331,17 +345,17 @@ async function previewWorldTick({
       willCreateRumors: false,
       willCreateRomance: false,
       willCreateDailyEvent:
-        shouldEnsureDailyEvent({ currentDay: normalizedToDay, time: normalizedToTime }) && !existingDailyEvent,
-      existingDailyEvent: existingDailyEvent
+        shouldEnsureDailyEvent({ currentDay: normalizedToDay, time: normalizedToTime }) && !existingMainEvent,
+      existingDailyEvent: existingMainEvent
         ? {
-            eventId: existingDailyEvent.eventId,
-            title: existingDailyEvent.title,
-            status: existingDailyEvent.status,
-            startDay: existingDailyEvent.startDay,
-            startTime: existingDailyEvent.startTime,
-            endDay: existingDailyEvent.endDay,
-            endTime: existingDailyEvent.endTime,
-            severity: existingDailyEvent.severity,
+            eventId: existingMainEvent.eventId,
+            title: existingMainEvent.title,
+            status: existingMainEvent.status,
+            startDay: existingMainEvent.startDay,
+            startTime: existingMainEvent.startTime,
+            endDay: existingMainEvent.endDay,
+            endTime: existingMainEvent.endTime,
+            severity: existingMainEvent.severity,
           }
         : null,
       willCreateMajorEvents: false,

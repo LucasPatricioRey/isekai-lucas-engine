@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions",
-    "version": "2.8.1",
-    "description": "Schema normal para GPT Actions. Expone endpoints de lectura, busqueda, preview y mutacion central controlada. Incluye previewSocialImpact, relationshipState efectivo y applyTurn.npcRelationshipPatches para vinculos sociales. Incluye lectura read-only de WorldEvents para auditoria tecnica. No expone rollback, admin ni mutadores peligrosos de combate/misiones. El backend genera eventos diarios con scheduler de manana y los expira con consecuencias pendientes."
+    "version": "2.9.0",
+    "description": "Schema normal para GPT Actions. Expone endpoints de lectura, busqueda, preview y mutacion central controlada. Incluye previewSocialImpact, relationshipState efectivo y applyTurn.npcRelationshipPatches para vinculos sociales. Incluye lectura read-only de WorldEvents para auditoria tecnica. No expone rollback, admin ni mutadores peligrosos de combate/misiones. El backend separa evento principal unico, rumores menores y eventos de fondo; el scheduler solo genera otro evento principal cuando no hay uno abierto."
   },
   "servers": [
     {
@@ -989,6 +989,23 @@
               "consequences_applied",
               "cancelled"
             ]
+          },
+          "eventLayer": {
+            "type": "string",
+            "enum": [
+              "main_event",
+              "minor_rumor",
+              "background"
+            ],
+            "description": "Capa narrativa. main_event es el unico evento principal; minor_rumor y background no deben mostrarse como Evento activo principal."
+          },
+          "countsAsMainEvent": {
+            "type": "boolean",
+            "description": "True solo para el evento principal que bloquea la generacion de otro principal."
+          },
+          "blocksMainEventGeneration": {
+            "type": "boolean",
+            "description": "True si este evento impide generar otro evento principal mientras este scheduled/active."
           },
           "startDay": {
             "type": "integer",

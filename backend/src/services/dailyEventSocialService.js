@@ -12,6 +12,8 @@ function unique(values) {
 }
 
 function isDailyEvent(event = {}) {
+  if (event.countsAsMainEvent === false) return false;
+  if (event.eventLayer && event.eventLayer !== "main_event") return false;
   return (event.tags || []).includes(DAILY_EVENT_TAG);
 }
 

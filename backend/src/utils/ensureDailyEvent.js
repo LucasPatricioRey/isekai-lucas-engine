@@ -11,6 +11,7 @@ const GameState = require("../models/GameState");
 const WorldEvent = require("../models/WorldEvent");
 const {
   ensureDailyEventForGameState,
+  mainEventQuery,
   reconcileDailyEventsForGameState,
 } = require("../services/dailyEventSchedulerService");
 
@@ -48,7 +49,10 @@ async function main() {
   if (!WRITE) {
     const existing = await WorldEvent.find({
       gameId: GAME_ID,
-      tags: { $all: ["daily_event", `daily_event_day_${gameState.currentDay}`] },
+      $and: [
+        mainEventQuery(),
+        { tags: `daily_event_day_${gameState.currentDay}` },
+      ],
     }).lean();
     console.log(
       JSON.stringify(

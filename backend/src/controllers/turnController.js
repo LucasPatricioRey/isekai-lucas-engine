@@ -891,6 +891,12 @@ async function applyWorldEventPatches(gameState, patches, session = null) {
     const baseEffects = Array.isArray(existingEvent?.effects) ? existingEvent.effects : [];
     const patchEffects = Array.isArray(patch.effects) ? patch.effects : [];
     const eventEffects = existingEvent ? [...baseEffects, ...patchEffects] : patchEffects;
+    const existingTags = existingEvent?.tags || [];
+    const existingCountsAsMainEvent =
+      existingEvent &&
+      existingEvent.countsAsMainEvent !== false &&
+      (!existingEvent.eventLayer || existingEvent.eventLayer === "main_event") &&
+      existingTags.includes("daily_event");
 
     const eventPayload = {
       eventId,
@@ -899,6 +905,10 @@ async function applyWorldEventPatches(gameState, patches, session = null) {
       type: patch.type || existingEvent?.type || "general",
       scope: patch.scope || existingEvent?.scope || "local",
       status: patch.status || existingEvent?.status || "active",
+      eventLayer: patch.eventLayer || existingEvent?.eventLayer || (existingCountsAsMainEvent ? "main_event" : "background"),
+      countsAsMainEvent: patch.countsAsMainEvent ?? existingEvent?.countsAsMainEvent ?? Boolean(existingCountsAsMainEvent),
+      blocksMainEventGeneration:
+        patch.blocksMainEventGeneration ?? existingEvent?.blocksMainEventGeneration ?? Boolean(existingCountsAsMainEvent),
       startDay: patch.startDay || existingEvent?.startDay || gameState.currentDay,
       startTime: patch.startTime || existingEvent?.startTime || gameState.time,
       endDay: patch.endDay ?? existingEvent?.endDay ?? null,

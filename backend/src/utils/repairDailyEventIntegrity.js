@@ -6,7 +6,7 @@ const connectDB = require("../config/db");
 const Faction = require("../models/Faction");
 const GameState = require("../models/GameState");
 const WorldEvent = require("../models/WorldEvent");
-const { eventGameFilter } = require("../services/dailyEventSchedulerService");
+const { eventGameFilter, isMainEvent } = require("../services/dailyEventSchedulerService");
 
 const WRITE = process.argv.includes("--write") || process.env.WRITE_DAILY_EVENT_REPAIR === "true";
 
@@ -188,9 +188,9 @@ async function reconcileGameStateActiveEvents() {
       ...eventGameFilter(gameState.gameId),
       status: "active",
     })
-      .select("eventId")
+      .select("eventId tags eventLayer countsAsMainEvent blocksMainEventGeneration")
       .lean();
-    const activeEventIds = unique(activeEvents.map((event) => event.eventId));
+    const activeEventIds = unique(activeEvents.filter(isMainEvent).map((event) => event.eventId));
     const changed = JSON.stringify(activeEventIds) !== JSON.stringify(gameState.activeEventIds || []);
 
     if (changed) {

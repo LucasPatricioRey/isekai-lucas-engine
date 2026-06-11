@@ -22,7 +22,10 @@ const JobContract = require("../models/JobContract");
 const responseShaping = require("../utils/responseShaping");
 const {
   DAILY_EVENT_TAG,
+  EVENT_LAYERS,
   eventGameFilter,
+  isMainEvent,
+  mainEventQuery,
   shouldEnsureDailyEvent,
 } = require("../services/dailyEventSchedulerService");
 
@@ -41,6 +44,17 @@ function uniqueByEventId(events) {
   }
 
   return result;
+}
+
+function isMinorRumorEvent(event = {}) {
+  return (
+    event.eventLayer === EVENT_LAYERS.MINOR_RUMOR ||
+    (event.countsAsMainEvent === false && (event.tags || []).includes("minor_rumor"))
+  );
+}
+
+function isBackgroundEvent(event = {}) {
+  return event.eventLayer === EVENT_LAYERS.BACKGROUND;
 }
 
 function timeToMinutes(time) {
@@ -425,6 +439,7 @@ async function getCompactContext(req, res) {
       relevantNpcMemories,
       activeEvents,
       dailyEvents,
+      layeredWorldEvents,
       activeRumors,
       activeMissions,
       availableMissions,
@@ -464,11 +479,27 @@ async function getCompactContext(req, res) {
       limits.eventLimit > 0
         ? WorldEvent.find({
             ...eventGameFilter(gameId),
-            tags: DAILY_EVENT_TAG,
+            $and: [mainEventQuery()],
             status: { $in: ["scheduled", "active", "resolved", "expired", "consequences_applied"] },
           })
             .sort({ startDay: -1, startTime: 1 })
             .limit(Math.min(limits.eventLimit, 6))
+            .lean()
+        : Promise.resolve([]),
+
+      eventClauses.length && limits.eventLimit > 0
+        ? WorldEvent.find({
+            $and: [
+              eventGameFilter(gameId),
+              {
+                eventLayer: { $in: [EVENT_LAYERS.MINOR_RUMOR, EVENT_LAYERS.BACKGROUND] },
+                status: { $in: ["scheduled", "active"] },
+              },
+              { $or: eventClauses },
+            ],
+          })
+            .sort({ startDay: -1, startTime: 1 })
+            .limit(limits.eventLimit)
             .lean()
         : Promise.resolve([]),
 
@@ -604,11 +635,17 @@ async function getCompactContext(req, res) {
     const currentDayDailyEvent = dailyEvents.find((event) =>
       (event.tags || []).includes(`daily_event_day_${gameState.currentDay}`)
     );
-    if (shouldEnsureDailyEvent(gameState) && !currentDayDailyEvent) {
+    const openMainEvent = [...dailyEvents]
+      .filter((event) => isMainEvent(event) && ["scheduled", "active"].includes(event.status))
+      .sort(
+        (a, b) =>
+          toAbsoluteMinutes(a.startDay, a.startTime) - toAbsoluteMinutes(b.startDay, b.startTime)
+      )[0];
+    if (shouldEnsureDailyEvent(gameState) && !currentDayDailyEvent && !openMainEvent) {
       alerts.push({
         type: "daily_event_missing",
         severity: "warning",
-        message: "Ya comenzo el bloque de manana o posterior y falta generar el evento diario de este dia.",
+        message: "Ya comenzo el bloque de manana o posterior y falta generar un evento principal.",
         day: gameState.currentDay,
         time: gameState.time,
       });
@@ -662,7 +699,8 @@ async function getCompactContext(req, res) {
     }
 
     const eventSummaryCandidates = uniqueByEventId([
-      ...activeEvents,
+      ...activeEvents.filter(isMainEvent),
+      openMainEvent,
       currentDayDailyEvent,
     ]);
     const activeEventSummaries = eventSummaryCandidates
@@ -671,7 +709,16 @@ async function getCompactContext(req, res) {
     const scheduledEventSummaries = eventSummaryCandidates
       .filter((event) => event.status === "scheduled")
       .map(responseShaping.summarizeWorldEvent);
-    const currentDailyEventSummary = responseShaping.summarizeWorldEvent(currentDayDailyEvent);
+    const mainEventSummary = responseShaping.summarizeWorldEvent(openMainEvent || currentDayDailyEvent);
+    const currentDailyEventSummary = mainEventSummary;
+    const minorRumorEventSummaries = uniqueByEventId([
+      ...activeEvents.filter(isMinorRumorEvent),
+      ...layeredWorldEvents.filter(isMinorRumorEvent),
+    ]).map(responseShaping.summarizeWorldEvent);
+    const backgroundEventSummaries = uniqueByEventId([
+      ...activeEvents.filter(isBackgroundEvent),
+      ...layeredWorldEvents.filter(isBackgroundEvent),
+    ]).map(responseShaping.summarizeWorldEvent);
 
     if (pendingBiologicalAccumulations.length > 0) {
       alerts.push({
@@ -728,10 +775,17 @@ async function getCompactContext(req, res) {
           recentEventSummaries: recentEventLogs.map((log) => responseShaping.summarizeEventLog(log)),
         },
         relevantNpcMemories: relevantNpcMemories.map(responseShaping.summarizeNpcMemory),
+        mainEvent: mainEventSummary,
+        eventForStatusLine: mainEventSummary,
         activeEvents: activeEventSummaries,
         scheduledEvents: scheduledEventSummaries,
         currentDailyEvent: currentDailyEventSummary,
         dailyEvents: dailyEvents.map(responseShaping.summarizeWorldEvent),
+        minorRumors: [
+          ...activeRumors.map(responseShaping.summarizeRumor),
+          ...minorRumorEventSummaries,
+        ],
+        backgroundEvents: backgroundEventSummaries,
         activeRumors: activeRumors.map(responseShaping.summarizeRumor),
         socialLedgerToday: todaySocialLedger.map(responseShaping.summarizeNpcSocialLedger),
         activeMissions: activeMissionSummaries,

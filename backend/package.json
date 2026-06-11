@@ -44,6 +44,7 @@
     "migrate:eventlog-gameid": "node src/utils/migrateEventLogGameId.js",
     "migrate:worldevent-gameid": "node src/utils/migrateWorldEventGameId.js",
     "ensure:daily-event": "node src/utils/ensureDailyEvent.js",
+    "repair:event-layers": "node src/utils/repairEventLayers.js",
     "repair:canon-phase3": "node src/utils/repairCanonStatePhase3.js",
     "repair:daily-events": "node src/utils/repairDailyEventIntegrity.js",
     "repair:live-start-readiness": "node src/utils/repairLiveStartReadiness.js",

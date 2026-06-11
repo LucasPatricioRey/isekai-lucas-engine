@@ -6,6 +6,12 @@ const DAILY_EVENT_TAG = "daily_event";
 const DAILY_EVENT_PENDING_CONSEQUENCE_TAG = "consequence_pending";
 const DEFAULT_GAME_ID = "isekai_lucas_main";
 const DAILY_EVENT_TEMPLATE_COOLDOWN_DAYS = 7;
+const EVENT_LAYERS = {
+  MAIN: "main_event",
+  MINOR_RUMOR: "minor_rumor",
+  BACKGROUND: "background",
+};
+const MAIN_EVENT_OPEN_STATUSES = ["scheduled", "active"];
 
 const BLOCK_ROLLS = [
   { roll: 1, key: "morning", block: "Mañana", startTime: "06:00", endTime: "12:00" },
@@ -661,6 +667,30 @@ function eventGameFilter(gameId = DEFAULT_GAME_ID) {
   return { gameId };
 }
 
+function mainEventQuery() {
+  return {
+    tags: DAILY_EVENT_TAG,
+    $or: [
+      { countsAsMainEvent: true },
+      { eventLayer: EVENT_LAYERS.MAIN },
+      {
+        countsAsMainEvent: { $exists: false },
+        eventLayer: { $exists: false },
+      },
+    ],
+  };
+}
+
+function isMainEvent(event = {}) {
+  if (event.countsAsMainEvent === false) return false;
+  if (event.eventLayer && event.eventLayer !== EVENT_LAYERS.MAIN) return false;
+  return (event.tags || []).includes(DAILY_EVENT_TAG);
+}
+
+function isOpenMainEvent(event = {}) {
+  return isMainEvent(event) && MAIN_EVENT_OPEN_STATUSES.includes(event.status);
+}
+
 function unique(values) {
   return Array.from(new Set((values || []).filter(Boolean)));
 }
@@ -771,6 +801,9 @@ function buildDailyEventPayload({ gameState, rolls, excludedTemplateIds = [] }) 
     type: template.type,
     scope: "local",
     status,
+    eventLayer: EVENT_LAYERS.MAIN,
+    countsAsMainEvent: true,
+    blocksMainEventGeneration: true,
     startDay,
     startTime: block.startTime,
     endDay,
@@ -813,6 +846,7 @@ function buildDailyEventPayload({ gameState, rolls, excludedTemplateIds = [] }) 
     createdBy: "world_tick",
     tags: unique([
       DAILY_EVENT_TAG,
+      "main_event",
       `daily_event_day_${startDay}`,
       `daily_event_${rolls.importance}`,
       `daily_event_start_${block.key}`,
@@ -837,8 +871,30 @@ function buildDailyEventPayload({ gameState, rolls, excludedTemplateIds = [] }) 
 async function findDailyEventForDay({ gameId = DEFAULT_GAME_ID, day, session = null }) {
   return WorldEvent.findOne({
     ...eventGameFilter(gameId),
-    tags: { $all: [DAILY_EVENT_TAG, `daily_event_day_${day}`] },
+    $and: [
+      mainEventQuery(),
+      { tags: `daily_event_day_${day}` },
+    ],
   })
+    .session(session)
+    .lean();
+}
+
+async function findOpenMainEvent({ gameId = DEFAULT_GAME_ID, session = null } = {}) {
+  return WorldEvent.findOne({
+    ...eventGameFilter(gameId),
+    $and: [
+      mainEventQuery(),
+      { status: { $in: MAIN_EVENT_OPEN_STATUSES } },
+      {
+        $or: [
+          { blocksMainEventGeneration: true },
+          { blocksMainEventGeneration: { $exists: false } },
+        ],
+      },
+    ],
+  })
+    .sort({ startDay: 1, startTime: 1 })
     .session(session)
     .lean();
 }
@@ -859,6 +915,16 @@ async function ensureDailyEventForGameState(gameState, { session = null, rng = M
       generated: false,
       reason: "daily_event_already_exists_for_day",
       event: existing,
+    };
+  }
+
+  const openMainEvent = await findOpenMainEvent({ gameId, session });
+
+  if (openMainEvent) {
+    return {
+      generated: false,
+      reason: "main_event_already_open",
+      event: openMainEvent,
     };
   }
 
@@ -911,7 +977,9 @@ async function advanceDailyEventLifecycle(gameState, { session = null } = {}) {
     const nextStatus = getEventStatusAt(event, gameState.currentDay, gameState.time);
 
     if (nextStatus === "active") {
-      activeEventIds.push(event.eventId);
+      if (isMainEvent(event)) {
+        activeEventIds.push(event.eventId);
+      }
 
       if (event.status !== "active") {
         const updated = await WorldEvent.findOneAndUpdate(
@@ -978,16 +1046,23 @@ async function reconcileDailyEventsForGameState(gameState, options = {}) {
 module.exports = {
   DAILY_EVENT_TAG,
   DAILY_EVENT_TEMPLATE_COOLDOWN_DAYS,
+  EVENT_LAYERS,
   IMPORTANT_TEMPLATES,
   MINOR_TEMPLATES,
+  MAIN_EVENT_OPEN_STATUSES,
   BLOCK_ROLLS,
   advanceDailyEventLifecycle,
   buildDailyEventPayload,
   ensureDailyEventForGameState,
   eventGameFilter,
   extractDailyEventTemplateId,
+  findDailyEventForDay,
+  findOpenMainEvent,
   getExcludedDailyEventTemplateIds,
   getEventStatusAt,
+  isMainEvent,
+  isOpenMainEvent,
+  mainEventQuery,
   reconcileDailyEventsForGameState,
   rollDailyEventDice,
   shouldEnsureDailyEvent,

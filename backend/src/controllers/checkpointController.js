@@ -41,16 +41,26 @@ async function createCheckpoint(req, res) {
 }
 
 async function listCheckpoints(req, res) {
-  const checkpoints = await Checkpoint.find({})
-    .sort({ createdAt: -1 })
-    .limit(30)
-    .select("checkpointId title reason day time auto triggerKey createdAt")
-    .lean();
+  try {
+    const filter = req.query.gameId ? { gameId: req.query.gameId } : {};
+    const checkpoints = await Checkpoint.find(filter)
+      .sort({ createdAt: -1 })
+      .allowDiskUse(true)
+      .limit(30)
+      .select("checkpointId title reason day time auto triggerKey createdAt")
+      .lean();
 
-  return res.json({
-    ok: true,
-    checkpoints,
-  });
+    return res.json({
+      ok: true,
+      checkpoints,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      ok: false,
+      error: "Error listando checkpoints.",
+      details: error.message,
+    });
+  }
 }
 
 async function getCheckpoint(req, res) {

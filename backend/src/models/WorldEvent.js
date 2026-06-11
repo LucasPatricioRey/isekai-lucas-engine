@@ -73,6 +73,25 @@ const worldEventSchema = new mongoose.Schema(
       index: true,
     },
 
+    eventLayer: {
+      type: String,
+      enum: ["main_event", "minor_rumor", "background"],
+      default: "background",
+      index: true,
+    },
+
+    countsAsMainEvent: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    blocksMainEventGeneration: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
     startDay: {
       type: Number,
       required: true,

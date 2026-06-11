@@ -16,6 +16,7 @@ const {
 } = require("./apiTestClient");
 const {
   buildDailyEventPayload,
+  EVENT_LAYERS,
   IMPORTANT_TEMPLATES,
   MINOR_TEMPLATES,
 } = require("../services/dailyEventSchedulerService");
@@ -193,6 +194,9 @@ describe("daily event scheduler", () => {
     const event = events[0];
     assert.match(event.eventId, /^event_test_daily_event_/);
     assert.ok(["scheduled", "active"].includes(event.status));
+    assert.equal(event.eventLayer, EVENT_LAYERS.MAIN);
+    assert.equal(event.countsAsMainEvent, true);
+    assert.equal(event.blocksMainEventGeneration, true);
     assert.ok(["minor", "major"].includes(event.severity));
     assert.ok(event.effects.some((effect) => effect.type === "daily_event_rolls"));
     assert.ok(event.effects.some((effect) => effect.type === "consequence_if_ignored"));
@@ -202,6 +206,8 @@ describe("daily event scheduler", () => {
     assert.equal(compact.status, 200);
     assert.equal(compact.data.ok, true);
     assert.equal(compact.data.context.dailyEvents.length, 1);
+    assert.equal(compact.data.context.mainEvent.eventId, event.eventId);
+    assert.equal(compact.data.context.eventForStatusLine.eventId, event.eventId);
     assert.equal(compact.data.context.currentDailyEvent.eventId, event.eventId);
     assert.equal(compact.data.context.currentDailyEvent.dailyEventNotice.title, event.title);
     assert.ok(compact.data.context.currentDailyEvent.dailyEventNotice.block);
@@ -232,6 +238,95 @@ describe("daily event scheduler", () => {
     assert.equal(tickPreview.data.preview.generatedContent.existingDailyEvent.eventId, event.eventId);
   });
 
+  it("does not generate a second main event while an earlier main event is still open", async () => {
+    await WorldEvent.updateMany(
+      { gameId: tempGameId, tags: "daily_event" },
+      { $set: { status: "resolved" }, $addToSet: { tags: "test_resolved_for_open_main_blocker" } }
+    );
+
+    const blockingEventId = `event_${tempGameId}_open_main_blocker`;
+    await WorldEvent.create({
+      eventId: blockingEventId,
+      gameId: tempGameId,
+      title: "Fixture de evento principal abierto",
+      type: "test_event",
+      scope: "local",
+      status: "active",
+      eventLayer: EVENT_LAYERS.MAIN,
+      countsAsMainEvent: true,
+      blocksMainEventGeneration: true,
+      startDay: 12,
+      startTime: "14:00",
+      endDay: 14,
+      endTime: "18:00",
+      affectedLocationIds: ["loc_hoshimori_grulla_azul"],
+      affectedNpcIds: [tempSocialNpcId],
+      affectedFactionIds: [],
+      effects: [],
+      visibility: "hidden",
+      cause: "Fixture: evento principal abierto bloquea otro principal.",
+      severity: "minor",
+      createdBy: "world_tick",
+      tags: ["daily_event", "main_event", "daily_event_day_12", "test_daily_event_scheduler"],
+    });
+
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      { $set: { currentDay: 13, time: "06:00", block: "Ma\u00f1ana", activeEventIds: [blockingEventId] } }
+    );
+
+    const applied = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: no generar segundo evento principal.",
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de bloqueo por evento principal abierto.",
+          visibility: "hidden",
+          tags: ["test_daily_event_scheduler"],
+        },
+      ],
+    });
+
+    assert.equal(applied.status, 200);
+    assert.equal(applied.data.ok, true);
+
+    const day13Events = await WorldEvent.find({
+      gameId: tempGameId,
+      $and: [
+        { tags: "daily_event" },
+        { tags: "daily_event_day_13" },
+        {
+          $or: [
+            { countsAsMainEvent: true },
+            { eventLayer: EVENT_LAYERS.MAIN },
+          ],
+        },
+      ],
+    }).lean();
+    assert.equal(day13Events.length, 0);
+
+    const compact = await get(`/api/context/compact?gameId=${encodeURIComponent(tempGameId)}`);
+    assert.equal(compact.status, 200);
+    assert.equal(compact.data.ok, true);
+    assert.equal(compact.data.context.mainEvent.eventId, blockingEventId);
+    assert.equal(compact.data.context.activeEvents.length, 1);
+    assert.equal(compact.data.context.activeEvents[0].eventId, blockingEventId);
+    assert.equal(
+      compact.data.context.alerts.some((alert) => alert.type === "daily_event_missing"),
+      false
+    );
+
+    await WorldEvent.updateMany(
+      { gameId: tempGameId, tags: "daily_event" },
+      { $set: { status: "resolved" }, $addToSet: { tags: "test_resolved_for_followup" } }
+    );
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      { $set: { currentDay: 12, time: "06:00", block: "Ma\u00f1ana", activeEventIds: [] } }
+    );
+  });
+
   it("avoids recently used daily event templates when generating a new day", async () => {
     const gameState = {
       gameId: tempGameId,
@@ -256,6 +351,9 @@ describe("daily event scheduler", () => {
       type: "test_event",
       scope: "local",
       status: "resolved",
+      eventLayer: EVENT_LAYERS.MAIN,
+      countsAsMainEvent: true,
+      blocksMainEventGeneration: true,
       startDay: 19,
       startTime: "06:00",
       endDay: 20,
@@ -321,6 +419,9 @@ describe("daily event scheduler", () => {
       type: "test_event",
       scope: "local",
       status: "active",
+      eventLayer: EVENT_LAYERS.MAIN,
+      countsAsMainEvent: true,
+      blocksMainEventGeneration: true,
       startDay: 11,
       startTime: "06:00",
       endDay: 12,
@@ -389,6 +490,9 @@ describe("daily event scheduler", () => {
       type: "test_event",
       scope: "local",
       status: "active",
+      eventLayer: EVENT_LAYERS.MAIN,
+      countsAsMainEvent: true,
+      blocksMainEventGeneration: true,
       startDay: 12,
       startTime: "06:00",
       endDay: 13,
@@ -467,6 +571,9 @@ describe("daily event scheduler", () => {
       type: "test_event",
       scope: "local",
       status: "resolved",
+      eventLayer: EVENT_LAYERS.MAIN,
+      countsAsMainEvent: true,
+      blocksMainEventGeneration: true,
       startDay: 14,
       startTime: "06:00",
       endDay: 15,
