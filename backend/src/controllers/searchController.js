@@ -149,6 +149,7 @@ async function searchDb(req, res) {
         {
           $or: [
             { eventId: regex },
+            { templateId: regex },
             { title: regex },
             { type: regex },
             { cause: regex },

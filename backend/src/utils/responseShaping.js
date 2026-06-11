@@ -328,6 +328,8 @@ function summarizeWorldEvent(event) {
   return {
     eventId: event.eventId,
     gameId: event.gameId || "isekai_lucas_main",
+    templateId: event.templateId || "",
+    rolls: event.rolls || {},
     title: event.title,
     type: event.type,
     scope: event.scope,

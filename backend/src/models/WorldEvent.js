@@ -49,6 +49,17 @@ const worldEventSchema = new mongoose.Schema(
       index: true,
     },
 
+    templateId: {
+      type: String,
+      default: "",
+      index: true,
+    },
+
+    rolls: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+
     scope: {
       type: String,
       enum: ["local", "regional", "national", "continental"],

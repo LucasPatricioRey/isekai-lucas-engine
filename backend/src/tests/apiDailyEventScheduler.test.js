@@ -121,6 +121,18 @@ describe("daily event scheduler", () => {
     assert.equal(payload.effects[0].value.durationDays, 2);
   });
 
+  it("has broad non-duplicated template pools", () => {
+    const minorIds = MINOR_TEMPLATES.map((template) => template.id);
+    const importantIds = IMPORTANT_TEMPLATES.map((template) => template.id);
+    const allIds = [...minorIds, ...importantIds];
+
+    assert.equal(MINOR_TEMPLATES.length, 30);
+    assert.equal(IMPORTANT_TEMPLATES.length, 20);
+    assert.equal(new Set(minorIds).size, minorIds.length);
+    assert.equal(new Set(importantIds).size, importantIds.length);
+    assert.equal(new Set(allIds).size, allIds.length);
+  });
+
   it("daily event templates reference existing canon entities", async () => {
     const templates = [...MINOR_TEMPLATES, ...IMPORTANT_TEMPLATES];
     const npcIds = Array.from(new Set(templates.flatMap((template) => template.affectedNpcIds || [])));
@@ -211,6 +223,87 @@ describe("daily event scheduler", () => {
     assert.equal(tickPreview.data.ok, true);
     assert.equal(tickPreview.data.preview.generatedContent.willCreateDailyEvent, false);
     assert.equal(tickPreview.data.preview.generatedContent.existingDailyEvent.eventId, event.eventId);
+  });
+
+  it("avoids recently used daily event templates when generating a new day", async () => {
+    const gameState = {
+      gameId: tempGameId,
+      currentDay: 20,
+      time: "06:00",
+      locationId: "loc_hoshimori_grulla_azul",
+    };
+    const rolls = {
+      blockRoll: 1,
+      importanceRoll: 2,
+      durationRoll: 1,
+      importance: "minor",
+    };
+    const baseline = buildDailyEventPayload({ gameState, rolls });
+
+    await WorldEvent.create({
+      eventId: `event_${tempGameId}_recent_${baseline.templateId}`,
+      gameId: tempGameId,
+      templateId: baseline.templateId,
+      rolls,
+      title: "Fixture de template reciente",
+      type: "test_event",
+      scope: "local",
+      status: "resolved",
+      startDay: 19,
+      startTime: "06:00",
+      endDay: 20,
+      endTime: "06:00",
+      affectedLocationIds: ["loc_hoshimori_grulla_azul"],
+      affectedNpcIds: [tempSocialNpcId],
+      affectedFactionIds: [],
+      effects: [],
+      visibility: "hidden",
+      cause: "Fixture de cooldown.",
+      severity: "minor",
+      createdBy: "world_tick",
+      tags: ["daily_event", "daily_event_day_19", `daily_event_template_${baseline.templateId}`, "test_daily_event_scheduler"],
+    });
+
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      { $set: { currentDay: 20, time: "06:00", block: "Ma\u00f1ana", activeEventIds: [] } }
+    );
+
+    const applied = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: generar evento con cooldown de template.",
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de cooldown de templates diarios.",
+          visibility: "hidden",
+          tags: ["test_daily_event_scheduler"],
+        },
+      ],
+    });
+
+    assert.equal(applied.status, 200);
+    assert.equal(applied.data.ok, true);
+    assert.ok(applied.data.changes.dailyEvents.generated);
+    assert.ok(applied.data.changes.dailyEvents.generated.excludedTemplateIds.includes(baseline.templateId));
+    assert.notEqual(applied.data.changes.dailyEvents.generated.templateId, baseline.templateId);
+
+    const generated = await WorldEvent.findOne({
+      gameId: tempGameId,
+      tags: { $all: ["daily_event", "daily_event_day_20"] },
+    }).lean();
+    assert.ok(generated);
+    assert.equal(generated.templateId, applied.data.changes.dailyEvents.generated.templateId);
+    assert.notEqual(generated.templateId, baseline.templateId);
+
+    await WorldEvent.updateMany(
+      { gameId: tempGameId, tags: "daily_event" },
+      { $set: { status: "resolved" }, $addToSet: { tags: "test_resolved_for_followup" } }
+    );
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      { $set: { currentDay: 12, time: "06:00", block: "Ma\u00f1ana", activeEventIds: [] } }
+    );
   });
 
   it("expires unresolved events and marks pending consequences", async () => {
