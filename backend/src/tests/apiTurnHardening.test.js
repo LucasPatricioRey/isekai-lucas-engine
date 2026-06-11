@@ -763,6 +763,23 @@ describe("turn hardening coverage", () => {
     assert.equal(relationship.data.changes.npcRelationships[0].after.respect, 6);
     assert.equal(relationship.data.changes.npcRelationships[0].after.familiarity, 1);
     assert.equal(relationship.data.changes.npcRelationships[0].appliedDeltas.trust, 2);
+    assert.deepEqual(
+      relationship.data.changes.npcRelationships[0].fieldChanges
+        .filter((entry) => ["trust", "respect", "familiarity"].includes(entry.field))
+        .map((entry) => ({
+          field: entry.field,
+          before: entry.before,
+          after: entry.after,
+          appliedDelta: entry.appliedDelta,
+          display: entry.display,
+        })),
+      [
+        { field: "trust", before: 10, after: 12, appliedDelta: 2, display: "Confianza: 10->12 (+2)" },
+        { field: "familiarity", before: 0, after: 1, appliedDelta: 1, display: "Familiaridad: 0->1 (+1)" },
+        { field: "respect", before: 5, after: 6, appliedDelta: 1, display: "Respeto: 5->6 (+1)" },
+      ]
+    );
+    assert.ok(relationship.data.changes.npcRelationships[0].displayLines.includes("Confianza: 10->12 (+2)"));
     assert.ok(relationship.data.changes.npcRelationships[0].ledgerId);
 
     const firstLedger = await NpcSocialLedger.findOne({
@@ -799,6 +816,9 @@ describe("turn hardening coverage", () => {
     assert.equal(cappedRelationship.data.changes.npcRelationships[0].requestedDeltas.trust, 3);
     assert.equal(cappedRelationship.data.changes.npcRelationships[0].appliedDeltas.trust, 1);
     assert.equal(cappedRelationship.data.changes.npcRelationships[0].after.trust, 13);
+    assert.equal(cappedRelationship.data.changes.npcRelationships[0].fieldChanges[0].before, 12);
+    assert.equal(cappedRelationship.data.changes.npcRelationships[0].fieldChanges[0].after, 13);
+    assert.equal(cappedRelationship.data.changes.npcRelationships[0].fieldChanges[0].display, "Confianza: 12->13 (+1)");
     assert.equal(
       cappedRelationship.data.changes.npcRelationships[0].caps.fields.trust.reason,
       "daily_cap_trust"

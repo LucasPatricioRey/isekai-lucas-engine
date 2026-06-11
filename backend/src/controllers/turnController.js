@@ -27,7 +27,9 @@ const {
   normalizeActionType,
   normalizeDeltas,
   normalizeRelationship,
+  relationshipBand,
 } = require("../services/socialLedgerService");
+const { socialDebtBand } = require("../services/socialRelationshipStateService");
 
 const VALID_EVENT_LOG_SOURCES = new Set([
   "player_action",
@@ -126,6 +128,49 @@ function clamp(value, min, max) {
 
 function unique(values) {
   return Array.from(new Set((values || []).filter(Boolean)));
+}
+
+const SOCIAL_FIELD_LABELS = {
+  trust: "Confianza",
+  familiarity: "Familiaridad",
+  affection: "Afecto",
+  suspicion: "Sospecha",
+  respect: "Respeto",
+  fear: "Miedo",
+  jealousy: "Celos",
+  socialDebt: "Deuda social",
+};
+
+function formatSignedDelta(delta = 0) {
+  return delta > 0 ? `+${delta}` : String(delta);
+}
+
+function buildSocialFieldChanges({ before = {}, after = {}, requestedDeltas = {}, appliedDeltas = {} } = {}) {
+  return SOCIAL_RELATIONSHIP_FIELDS
+    .filter((field) => (requestedDeltas[field] || 0) !== 0 || (appliedDeltas[field] || 0) !== 0)
+    .map((field) => {
+      const beforeValue = Number(before[field]) || 0;
+      const afterValue = Number(after[field]) || 0;
+      const requestedDelta = Number(requestedDeltas[field]) || 0;
+      const appliedDelta = Number(appliedDeltas[field]) || 0;
+      const beforeBand = field === "socialDebt" ? socialDebtBand(beforeValue) : relationshipBand(beforeValue);
+      const afterBand = field === "socialDebt" ? socialDebtBand(afterValue) : relationshipBand(afterValue);
+      const label = SOCIAL_FIELD_LABELS[field] || field;
+
+      return {
+        field,
+        label,
+        before: beforeValue,
+        after: afterValue,
+        requestedDelta,
+        appliedDelta,
+        beforeBand: beforeBand.label,
+        beforeBandKey: beforeBand.key,
+        afterBand: afterBand.label,
+        afterBandKey: afterBand.key,
+        display: `${label}: ${beforeValue}->${afterValue} (${formatSignedDelta(appliedDelta)})`,
+      };
+    });
 }
 
 function toPlain(value) {
@@ -585,6 +630,12 @@ async function applyNpcRelationshipPatches(gameState, patches, session = null) {
 
     await npc.save({ session });
     const after = normalizeRelationship(toPlain(npc.relationshipWithLucas));
+    const fieldChanges = buildSocialFieldChanges({
+      before,
+      after,
+      requestedDeltas: capped.requestedDeltas,
+      appliedDeltas: capped.appliedDeltas,
+    });
     const ledgerEntry = await createSocialLedgerEntry({
       gameId: gameState.gameId,
       characterId: gameState.characterId,
@@ -612,6 +663,8 @@ async function applyNpcRelationshipPatches(gameState, patches, session = null) {
       after,
       requestedDeltas: capped.requestedDeltas,
       appliedDeltas: capped.appliedDeltas,
+      fieldChanges,
+      displayLines: fieldChanges.map((entry) => entry.display),
       caps: capped.caps,
       ledgerId: ledgerEntry?.ledgerId || "",
       skippedByDailyCap: hasNonZeroDelta(capped.requestedDeltas) && !hasNonZeroDelta(capped.appliedDeltas),
