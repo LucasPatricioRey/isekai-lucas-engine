@@ -2,139 +2,11 @@
 
 const Checkpoint = require("../models/Checkpoint");
 const GameState = require("../models/GameState");
-const Character = require("../models/Character");
-const Npc = require("../models/Npc");
-const NpcMemory = require("../models/NpcMemory");
-const Rumor = require("../models/Rumor");
-const Location = require("../models/Location");
-const WorldEvent = require("../models/WorldEvent");
-const Mission = require("../models/Mission");
-const EventLog = require("../models/EventLog");
-const Shop = require("../models/Shop");
-const ShopStock = require("../models/ShopStock");
-const Item = require("../models/Item");
-const Faction = require("../models/Faction");
-const RoutineOverride = require("../models/RoutineOverride");
-const CombatEncounter = require("../models/CombatEncounter");
-const NpcRelationship = require("../models/NpcRelationship");
-const NpcSocialLedger = require("../models/NpcSocialLedger");
-const CharacterMagicKnowledge = require("../models/CharacterMagicKnowledge");
-const MagicDiscipline = require("../models/MagicDiscipline");
-const MagicTechnique = require("../models/MagicTechnique");
-const TravelRoute = require("../models/TravelRoute");
-const WeatherState = require("../models/WeatherState");
-
-const RESTORE_COLLECTIONS = [
-  ["characters", Character],
-  ["npcs", Npc],
-  ["npcMemories", NpcMemory],
-  ["rumors", Rumor],
-  ["locations", Location],
-  ["worldEvents", WorldEvent],
-  ["missions", Mission],
-  ["eventLogs", EventLog],
-  ["shops", Shop],
-  ["shopStocks", ShopStock],
-  ["items", Item],
-  ["factions", Faction],
-  ["routineOverrides", RoutineOverride],
-  ["combatEncounters", CombatEncounter],
-  ["npcRelationships", NpcRelationship],
-  ["npcSocialLedger", NpcSocialLedger],
-  ["characterMagicKnowledge", CharacterMagicKnowledge],
-  ["magicDisciplines", MagicDiscipline],
-  ["magicTechniques", MagicTechnique],
-  ["travelRoutes", TravelRoute],
-  ["weatherStates", WeatherState],
-];
-
-function createCheckpointId(gameState) {
-  const safeTime = String(gameState.time || "0000").replace(":", "");
-  return `checkpoint_d${gameState.currentDay}_${safeTime}_${Date.now()}`;
-}
-
-async function buildFullSnapshot(gameId) {
-  const gameState = await GameState.findOne({ gameId }).lean();
-
-  if (!gameState) {
-    const error = new Error(`No existe GameState para gameId: ${gameId}`);
-    error.statusCode = 404;
-    throw error;
-  }
-
-  const [
-    characters,
-    npcs,
-    npcMemories,
-    rumors,
-    locations,
-    worldEvents,
-    missions,
-    eventLogs,
-    shops,
-    shopStocks,
-    items,
-    factions,
-    routineOverrides,
-    combatEncounters,
-    npcRelationships,
-    npcSocialLedger,
-    characterMagicKnowledge,
-    magicDisciplines,
-    magicTechniques,
-    travelRoutes,
-    weatherStates,
-  ] = await Promise.all([
-    Character.find({}).lean(),
-    Npc.find({}).lean(),
-    NpcMemory.find({}).lean(),
-    Rumor.find({}).lean(),
-    Location.find({}).lean(),
-    WorldEvent.find({}).lean(),
-    Mission.find({}).lean(),
-    EventLog.find({}).lean(),
-    Shop.find({}).lean(),
-    ShopStock.find({}).lean(),
-    Item.find({}).lean(),
-    Faction.find({}).lean(),
-    RoutineOverride.find({}).lean(),
-    CombatEncounter.find({}).lean(),
-    NpcRelationship.find({}).lean(),
-    NpcSocialLedger.find({}).lean(),
-    CharacterMagicKnowledge.find({}).lean(),
-    MagicDiscipline.find({}).lean(),
-    MagicTechnique.find({}).lean(),
-    TravelRoute.find({}).lean(),
-    WeatherState.find({}).lean(),
-  ]);
-
-  return {
-    gameState,
-    collections: {
-      characters,
-      npcs,
-      npcMemories,
-      rumors,
-      locations,
-      worldEvents,
-      missions,
-      eventLogs,
-      shops,
-      shopStocks,
-      items,
-      factions,
-      routineOverrides,
-      combatEncounters,
-      npcRelationships,
-      npcSocialLedger,
-      characterMagicKnowledge,
-      magicDisciplines,
-      magicTechniques,
-      travelRoutes,
-      weatherStates,
-    },
-  };
-}
+const {
+  RESTORE_COLLECTIONS,
+  checkpointReference,
+  createCheckpointFromCurrentState,
+} = require("../services/checkpointService");
 
 async function createCheckpoint(req, res) {
   try {
@@ -146,32 +18,19 @@ async function createCheckpoint(req, res) {
     }
 
     const gameId = req.body.gameId || "isekai_lucas_main";
-    const snapshot = await buildFullSnapshot(gameId);
-    const gameState = snapshot.gameState;
-
-    const checkpoint = await Checkpoint.create({
-      checkpointId: req.body.checkpointId || createCheckpointId(gameState),
+    const checkpoint = await createCheckpointFromCurrentState({
+      checkpointId: req.body.checkpointId || "",
       gameId,
-      title: req.body.title || `Checkpoint Día ${gameState.currentDay} ${gameState.time}`,
+      title: req.body.title || "",
       reason: req.body.reason || "Checkpoint manual.",
-      day: gameState.currentDay,
-      time: gameState.time,
-      gameStateSnapshot: snapshot.gameState,
-      changedCollectionsSnapshot: snapshot.collections,
       notes: req.body.notes || "",
+      metadata: req.body.metadata || {},
     });
 
     return res.json({
       ok: true,
       message: "Checkpoint creado correctamente.",
-      checkpoint: {
-        checkpointId: checkpoint.checkpointId,
-        title: checkpoint.title,
-        reason: checkpoint.reason,
-        day: checkpoint.day,
-        time: checkpoint.time,
-        createdAt: checkpoint.createdAt,
-      },
+      checkpoint: checkpointReference(checkpoint),
     });
   } catch (error) {
     return res.status(error.statusCode || 500).json({
@@ -185,7 +44,7 @@ async function listCheckpoints(req, res) {
   const checkpoints = await Checkpoint.find({})
     .sort({ createdAt: -1 })
     .limit(30)
-    .select("checkpointId title reason day time createdAt")
+    .select("checkpointId title reason day time auto triggerKey createdAt")
     .lean();
 
   return res.json({

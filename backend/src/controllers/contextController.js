@@ -577,24 +577,25 @@ async function getCompactContext(req, res) {
     };
 
     for (const npc of nearbyNpcSummaries) {
+      const npcPresenceRef = responseShaping.summarizeNpcPresenceRef(npc);
       const actuallyPresent = directPresentNpcIds.has(npc.npcId);
       const staticallyVisible = directVisibleNpcIdSet.has(npc.npcId);
       const sameBuilding = sameBuildingLocationIds.has(npc.currentLocationId);
       const probable = probableNpcIdSet.has(npc.npcId);
 
       if (actuallyPresent) {
-        npcPresence.visible.push(npc);
-        npcPresence.sameRoom.push(npc);
+        npcPresence.visible.push(npcPresenceRef);
+        npcPresence.sameRoom.push(npcPresenceRef);
       } else if (sameBuilding) {
-        npcPresence.sameBuilding.push(npc);
+        npcPresence.sameBuilding.push(npcPresenceRef);
       } else if (probable) {
-        npcPresence.probable.push(npc);
+        npcPresence.probable.push(npcPresenceRef);
       } else {
-        npcPresence.relevant.push(npc);
+        npcPresence.relevant.push(npcPresenceRef);
       }
 
       if (staticallyVisible && !actuallyPresent) {
-        npcPresence.staticVisibleButNotHere.push(npc);
+        npcPresence.staticVisibleButNotHere.push(npcPresenceRef);
       }
     }
     const npcById = new Map(nearbyNpcs.map((npc) => [npc.npcId, npc]));

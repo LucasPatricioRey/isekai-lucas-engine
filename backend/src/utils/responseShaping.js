@@ -190,6 +190,22 @@ function summarizeNpc(npc) {
   };
 }
 
+function summarizeNpcPresenceRef(npc) {
+  if (!npc) return null;
+  const availability = npc.availability || {};
+
+  return {
+    npcId: npc.npcId,
+    name: npc.name,
+    currentLocationId: npc.currentLocationId || "",
+    currentTask: truncateText(npc.currentTask || "", 160),
+    availability: {
+      status: availability.status || "",
+      reason: truncateText(availability.reason || "", 160),
+    },
+  };
+}
+
 function summarizeNonZeroDeltas(deltas = {}) {
   const summary = {};
   for (const field of SOCIAL_RELATIONSHIP_FIELDS) {
@@ -421,6 +437,7 @@ module.exports = {
   summarizeGameState,
   summarizeLocation,
   summarizeNpc,
+  summarizeNpcPresenceRef,
   summarizeNpcSocialLedger,
   summarizeMission,
   summarizeEventLog,

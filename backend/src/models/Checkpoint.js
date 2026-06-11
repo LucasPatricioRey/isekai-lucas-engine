@@ -50,6 +50,23 @@ const checkpointSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+
+    auto: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    triggerKey: {
+      type: String,
+      default: "",
+      index: true,
+    },
+
+    metadata: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
   },
   {
     timestamps: true,

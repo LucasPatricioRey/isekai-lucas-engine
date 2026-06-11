@@ -1,5 +1,6 @@
 const { after, before, describe, it } = require("node:test");
 
+const Checkpoint = require("../models/Checkpoint");
 const EventLog = require("../models/EventLog");
 const GameState = require("../models/GameState");
 const JobContract = require("../models/JobContract");
@@ -216,6 +217,7 @@ async function createIsolatedGameState() {
 
 async function cleanupIsolatedState() {
   if (tempGameId) await GameState.deleteOne({ gameId: tempGameId });
+  if (tempGameId) await Checkpoint.deleteMany({ gameId: tempGameId });
   if (tempGameId) await WorldEvent.deleteMany({ gameId: tempGameId });
   await Mission.deleteMany({
     missionId: { $in: [tempMissionId, tempExpiredMissionId, tempGuildMissionId].filter(Boolean) },
@@ -414,6 +416,11 @@ describe("turn hardening coverage", () => {
     assert.deepEqual(completed.data.result.changes.meals.applied, []);
     assert.deepEqual(completed.data.result.changes.meals.markedConsumed, ["meal_test_breakfast"]);
     assert.equal(completed.data.result.changes.pay.delta, 70);
+    assert.equal(completed.data.result.changes.autoCheckpoint.created, true);
+    assert.equal(
+      completed.data.result.changes.autoCheckpoint.checkpoint.triggerKey,
+      "complete_job_shift:shift_test_morning_0700_1200"
+    );
     assert.equal(completed.data.result.after.moneyCopper, 170);
     assert.equal(completed.data.result.after.time, "12:00");
     assert.equal(completed.data.result.after.satiety, 51);
@@ -436,6 +443,14 @@ describe("turn hardening coverage", () => {
     assert.equal(coveredAccumulation.processedMode, "covered_by_complete_job_shift");
     const expiredMission = await Mission.findOne({ missionId: tempExpiredMissionId }).lean();
     assert.equal(expiredMission.status, "expired");
+    const shiftCheckpoint = await Checkpoint.findOne({
+      gameId: tempGameId,
+      auto: true,
+      triggerKey: "complete_job_shift:shift_test_morning_0700_1200",
+      day: 10,
+      time: "12:00",
+    }).lean();
+    assert.ok(shiftCheckpoint);
 
     const repeated = await post("/api/jobs/shifts/shift_test_morning_0700_1200/complete", {
       gameId: tempGameId,
@@ -1183,12 +1198,22 @@ describe("turn hardening coverage", () => {
     assert.equal(overnightSleep.data.changes.time.elapsedMinutes, 420);
     assert.equal(overnightSleep.data.changes.time.crossesMidnight, true);
     assert.equal(overnightSleep.data.changes.biologicalClock.processedBlocks.length, 7);
+    assert.equal(overnightSleep.data.changes.autoCheckpoint.created, true);
+    assert.equal(overnightSleep.data.changes.autoCheckpoint.checkpoint.triggerKey, "apply_turn:day_change");
     assert.equal(overnightSleep.data.gameState.currentDay, 11);
     assert.equal(overnightSleep.data.gameState.diegeticDate.day, 11);
     assert.equal(overnightSleep.data.gameState.time, "06:00");
     assert.equal(overnightSleep.data.gameState.block, "Mañana");
     assert.equal(overnightSleep.data.gameState.lucasStatus.satiety.current, 69);
     assert.equal(overnightSleep.data.gameState.lucasStatus.energy.current, 100);
+    const sleepCheckpoint = await Checkpoint.findOne({
+      gameId: tempGameId,
+      auto: true,
+      triggerKey: "apply_turn:day_change",
+      day: 11,
+      time: "06:00",
+    }).lean();
+    assert.ok(sleepCheckpoint);
 
     const mainState = await getCanonicalState();
     assertCanonState(mainState);

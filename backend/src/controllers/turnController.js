@@ -17,6 +17,7 @@ const { buildWorldEventSocialConsequencePlan } = require("../services/dailyEvent
 const { expireAvailableMissionsForGameState } = require("../services/missionService");
 const { previewSkillProgression } = require("../services/skillProgressionService");
 const { ensureCurrentWeatherForGameState } = require("../services/weatherService");
+const { createAutomaticCheckpoint } = require("../services/checkpointService");
 const {
   SOCIAL_FIELD_RANGES,
   SOCIAL_RELATIONSHIP_FIELDS,
@@ -171,6 +172,107 @@ function buildSocialFieldChanges({ before = {}, after = {}, requestedDeltas = {}
         display: `${label}: ${beforeValue}->${afterValue} (${formatSignedDelta(appliedDelta)})`,
       };
     });
+}
+
+function numericDeltaMagnitude(value) {
+  return Math.abs(Number(value) || 0);
+}
+
+function relationshipDeltaMagnitude(npcRelationships = []) {
+  return npcRelationships.reduce((total, entry) => {
+    const applied = entry?.appliedDeltas || {};
+    return (
+      total +
+      SOCIAL_RELATIONSHIP_FIELDS.reduce((fieldTotal, field) => fieldTotal + numericDeltaMagnitude(applied[field]), 0)
+    );
+  }, 0);
+}
+
+function addAutoCheckpointTrigger(triggers, key, label) {
+  if (!triggers.some((trigger) => trigger.key === key)) {
+    triggers.push({ key, label });
+  }
+}
+
+function buildApplyTurnAutoCheckpointPlan(changes = {}) {
+  const triggers = [];
+  const elapsedMinutes = Number(changes.time?.elapsedMinutes) || 0;
+  const moneyDelta = numericDeltaMagnitude(changes.money?.delta);
+  const socialDelta = relationshipDeltaMagnitude(changes.npcRelationships || []);
+  const injuryCount =
+    (Array.isArray(changes.lucasStatus?.addInjuries) ? changes.lucasStatus.addInjuries.length : 0) +
+    (Array.isArray(changes.lucasStatus?.addConditions) ? changes.lucasStatus.addConditions.length : 0);
+  const lifeDelta = Number(changes.lucasStatus?.life?.delta) || 0;
+
+  if (changes.time?.crossesMidnight) {
+    addAutoCheckpointTrigger(triggers, "day_change", "cambio de día");
+  }
+
+  if (injuryCount > 0 || lifeDelta < 0) {
+    addAutoCheckpointTrigger(triggers, "injury", "herida o condición física importante");
+  }
+
+  if (Array.isArray(changes.missions) && changes.missions.length > 0) {
+    addAutoCheckpointTrigger(triggers, "mission", "cambio formal de misión");
+  }
+
+  if (
+    (Array.isArray(changes.worldEvents) && changes.worldEvents.length > 0) ||
+    (Array.isArray(changes.worldEventSocialConsequences) && changes.worldEventSocialConsequences.length > 0) ||
+    (Array.isArray(changes.dailyEvents?.expired) && changes.dailyEvents.expired.length > 0)
+  ) {
+    addAutoCheckpointTrigger(triggers, "world_event", "evento de mundo modificado");
+  }
+
+  if (socialDelta >= 5) {
+    addAutoCheckpointTrigger(triggers, "major_social", "avance social significativo");
+  }
+
+  if (elapsedMinutes >= 120) {
+    addAutoCheckpointTrigger(triggers, "long_scene", "escena larga");
+  }
+
+  if (Array.isArray(changes.skills) && changes.skills.length > 0) {
+    addAutoCheckpointTrigger(triggers, "progression", "progreso de habilidades");
+  }
+
+  if (moneyDelta >= 100 || changes.inventory || changes.shopStocks) {
+    addAutoCheckpointTrigger(triggers, "economy", "cambio económico o de inventario");
+  }
+
+  if (changes.location && elapsedMinutes >= 30) {
+    addAutoCheckpointTrigger(triggers, "major_travel", "viaje o cambio de ubicación importante");
+  }
+
+  if (triggers.length === 0) return null;
+
+  const priority = [
+    "injury",
+    "day_change",
+    "mission",
+    "world_event",
+    "major_social",
+    "long_scene",
+    "progression",
+    "economy",
+    "major_travel",
+  ];
+  const primary = triggers
+    .slice()
+    .sort((left, right) => priority.indexOf(left.key) - priority.indexOf(right.key))[0];
+
+  return {
+    triggerKey: `apply_turn:${primary.key}`,
+    title: `Auto checkpoint - ${primary.label}`,
+    reason: `Checkpoint automático tras ${triggers.map((trigger) => trigger.label).join(", ")}.`,
+    metadata: {
+      source: "applyTurn",
+      triggers: triggers.map((trigger) => trigger.key),
+      elapsedMinutes,
+      moneyDelta,
+      socialDelta,
+    },
+  };
 }
 
 function toPlain(value) {
@@ -2371,6 +2473,18 @@ async function applyTurn(req, res) {
 
       if (logsToCreate.length > 0) {
         await EventLog.insertMany(logsToCreate, { session });
+      }
+
+      const autoCheckpointPlan = buildApplyTurnAutoCheckpointPlan(changes);
+      if (autoCheckpointPlan) {
+        changes.autoCheckpoint = await createAutomaticCheckpoint({
+          gameId,
+          title: autoCheckpointPlan.title,
+          reason: autoCheckpointPlan.reason,
+          triggerKey: autoCheckpointPlan.triggerKey,
+          metadata: autoCheckpointPlan.metadata,
+          session,
+        });
       }
 
       updatedGameState = gameState.toObject();

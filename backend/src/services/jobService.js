@@ -10,6 +10,7 @@ const {
   previewBiologicalClockBlock,
 } = require("./biologicalClockService");
 const { expireAvailableMissionsForGameState } = require("./missionService");
+const { createAutomaticCheckpoint } = require("./checkpointService");
 
 function timeToMinutes(time) {
   const [hours, minutes] = String(time || "00:00").split(":").map(Number);
@@ -766,6 +767,21 @@ async function completeShift({
         { session }
       );
 
+      const autoCheckpoint = await createAutomaticCheckpoint({
+        gameId,
+        title: `Auto checkpoint - turno laboral ${shift.name}`,
+        reason: `Checkpoint automático tras completar turno laboral: ${shift.name}.`,
+        triggerKey: `complete_job_shift:${shift.shiftId}`,
+        metadata: {
+          source: "completeJobShift",
+          contractId: contract.contractId,
+          shiftId: shift.shiftId,
+          elapsedMinutes: endMinutes - startMinutes,
+          payCopper,
+        },
+        session,
+      });
+
       result = {
         alreadyCompleted: false,
         gameId,
@@ -799,6 +815,7 @@ async function completeShift({
           missionExpiry,
           ledger: shiftLedger[shift.shiftId],
           eventLogId: log[0].logId,
+          autoCheckpoint,
         },
         skillProgressionSuggestions: [
           {
