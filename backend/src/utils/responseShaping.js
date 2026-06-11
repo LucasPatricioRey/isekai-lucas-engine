@@ -307,6 +307,8 @@ function summarizeRumor(rumor) {
 function summarizeWorldEvent(event) {
   if (!event) return null;
   const storedEffects = event.effects || [];
+  const templateTag = (event.tags || []).find((entry) => String(entry).startsWith("daily_event_template_"));
+  const templateId = event.templateId || (templateTag ? templateTag.replace("daily_event_template_", "") : "");
   const relevantEffects = storedEffects
     .filter((effect) =>
       [
@@ -328,7 +330,7 @@ function summarizeWorldEvent(event) {
   return {
     eventId: event.eventId,
     gameId: event.gameId || "isekai_lucas_main",
-    templateId: event.templateId || "",
+    templateId,
     rolls: event.rolls || {},
     title: event.title,
     type: event.type,
