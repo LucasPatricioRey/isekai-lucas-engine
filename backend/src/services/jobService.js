@@ -11,6 +11,11 @@ const {
 } = require("./biologicalClockService");
 const { expireAvailableMissionsForGameState } = require("./missionService");
 const { createAutomaticCheckpoint } = require("./checkpointService");
+const {
+  ACTION_FAMILIES,
+  attachNarrativeTrackingToLogDrafts,
+  buildNarrativeHints,
+} = require("./narrativeVariationService");
 
 function timeToMinutes(time) {
   const [hours, minutes] = String(time || "00:00").split(":").map(Number);
@@ -723,45 +728,74 @@ async function completeShift({
         satiety: gameState.lucasStatus.satiety.current,
         energy: gameState.lucasStatus.energy.current,
       };
+      const baseChanges = {
+        time: {
+          before: before.time,
+          after: after.time,
+          elapsedMinutes: endMinutes - startMinutes,
+        },
+        pay: {
+          before: beforeMoney,
+          delta: payCopper,
+          after: gameState.moneyCopper,
+        },
+        meals: {
+          applied: mealAppliedIds,
+          markedConsumed: mealMarkedConsumedIds,
+          inferredConsumed: mealInferredConsumedIds,
+          skipped: mealSkippedIds,
+          details: mealChanges,
+        },
+        activityCost,
+        biologicalClock: {
+          coveredPendingAccumulations,
+        },
+        missionExpiry,
+        ledger: shiftLedger[shift.shiftId],
+      };
+      const logDraft = {
+        logId: createLogId(),
+        gameId,
+        day: before.day,
+        timeStart: before.time,
+        timeEnd: after.time,
+        locationId: contract.locationId,
+        type: "job_shift_completed",
+        summary: completionSummary || `Turno laboral completado: ${shift.name}.`,
+        involvedCharacterIds: [characterId],
+        involvedNpcIds: unique([contract.employerNpcId]),
+        mechanicalChanges: {
+          contractId: contract.contractId,
+          shiftId: shift.shiftId,
+          before,
+          after,
+          pay: baseChanges.pay,
+          meals: baseChanges.meals,
+          activityCost,
+          biologicalClock: baseChanges.biologicalClock,
+          missionExpiry,
+        },
+        visibility: "hidden",
+        source: "backend_validation",
+        tags: ["job_shift", "complete_shift"],
+      };
+      const narrativeHints = await buildNarrativeHints({
+        gameId,
+        gameState: gameState.toObject(),
+        actionSummary: logDraft.summary,
+        changes: baseChanges,
+        logDrafts: [logDraft],
+        actionFamily: ACTION_FAMILIES.JOB_SHIFT,
+        involvedNpcIds: logDraft.involvedNpcIds,
+        session,
+        seed: shift.shiftId,
+      });
+      attachNarrativeTrackingToLogDrafts([logDraft], narrativeHints);
+
       const log = await EventLog.create(
         [
           {
-            logId: createLogId(),
-            gameId,
-            day: before.day,
-            timeStart: before.time,
-            timeEnd: after.time,
-            locationId: contract.locationId,
-            type: "job_shift_completed",
-            summary: completionSummary || `Turno laboral completado: ${shift.name}.`,
-            involvedCharacterIds: [characterId],
-            involvedNpcIds: unique([contract.employerNpcId]),
-            mechanicalChanges: {
-              contractId: contract.contractId,
-              shiftId: shift.shiftId,
-              before,
-              after,
-              pay: {
-                before: beforeMoney,
-                delta: payCopper,
-                after: gameState.moneyCopper,
-              },
-              meals: {
-                applied: mealAppliedIds,
-                markedConsumed: mealMarkedConsumedIds,
-                inferredConsumed: mealInferredConsumedIds,
-                skipped: mealSkippedIds,
-                details: mealChanges,
-              },
-              activityCost,
-              biologicalClock: {
-                coveredPendingAccumulations,
-              },
-              missionExpiry,
-            },
-            visibility: "hidden",
-            source: "backend_validation",
-            tags: ["job_shift", "complete_shift"],
+            ...logDraft,
           },
         ],
         { session }
@@ -791,31 +825,10 @@ async function completeShift({
         before,
         after,
         changes: {
-          time: {
-            before: before.time,
-            after: after.time,
-            elapsedMinutes: endMinutes - startMinutes,
-          },
-          pay: {
-            before: beforeMoney,
-            delta: payCopper,
-            after: gameState.moneyCopper,
-          },
-          meals: {
-            applied: mealAppliedIds,
-            markedConsumed: mealMarkedConsumedIds,
-            inferredConsumed: mealInferredConsumedIds,
-            skipped: mealSkippedIds,
-            details: mealChanges,
-          },
-          activityCost,
-          biologicalClock: {
-            coveredPendingAccumulations,
-          },
-          missionExpiry,
-          ledger: shiftLedger[shift.shiftId],
+          ...baseChanges,
           eventLogId: log[0].logId,
           autoCheckpoint,
+          narrativeHints,
         },
         skillProgressionSuggestions: [
           {

@@ -19,6 +19,10 @@ const { previewSkillProgression } = require("../services/skillProgressionService
 const { ensureCurrentWeatherForGameState } = require("../services/weatherService");
 const { createAutomaticCheckpoint } = require("../services/checkpointService");
 const {
+  attachNarrativeTrackingToLogDrafts,
+  buildNarrativeHints,
+} = require("../services/narrativeVariationService");
+const {
   SOCIAL_FIELD_RANGES,
   SOCIAL_RELATIONSHIP_FIELDS,
   applyDailySocialCaps,
@@ -2459,6 +2463,19 @@ async function applyTurn(req, res) {
         });
       }
 
+      let narrativeHints = null;
+      if (logsToCreate.length > 0 || body.actionSummary || Object.keys(changes).length > 0) {
+        narrativeHints = await buildNarrativeHints({
+          gameId,
+          gameState: gameState.toObject(),
+          actionSummary: body.actionSummary || "",
+          changes,
+          logDrafts: logsToCreate,
+          session,
+        });
+        attachNarrativeTrackingToLogDrafts(logsToCreate, narrativeHints);
+      }
+
       await validateEventLogsForInsert(logsToCreate, session);
       normalizePendingAccumulationIdentities(gameState);
       await gameState.save({ session });
@@ -2495,6 +2512,10 @@ async function applyTurn(req, res) {
           metadata: autoCheckpointPlan.metadata,
           session,
         });
+      }
+
+      if (narrativeHints) {
+        changes.narrativeHints = narrativeHints;
       }
 
       updatedGameState = gameState.toObject();

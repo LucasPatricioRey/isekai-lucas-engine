@@ -20,6 +20,7 @@ const NpcSocialLedger = require("../models/NpcSocialLedger");
 const WeatherState = require("../models/WeatherState");
 const JobContract = require("../models/JobContract");
 const responseShaping = require("../utils/responseShaping");
+const { buildNarrativeContextSummary } = require("../services/narrativeVariationService");
 const {
   DAILY_EVENT_TAG,
   EVENT_LAYERS,
@@ -755,6 +756,12 @@ async function getCompactContext(req, res) {
       }
     }
 
+    const narrativeContext = await buildNarrativeContextSummary({
+      gameId,
+      gameState,
+      limit: 30,
+    });
+
     return res.json({
       ok: true,
       compact: true,
@@ -792,6 +799,7 @@ async function getCompactContext(req, res) {
         availableMissionPreview,
         pendingBiology: pendingBiologicalAccumulations,
         pendingBiologicalAccumulations,
+        narrativeContext,
         weather: weatherSummary,
         jobContract: responseShaping.summarizeJobContract(jobContract),
         activeCombatEncounters: activeCombatEncounters.map(responseShaping.summarizeCombatEncounter),
