@@ -100,6 +100,33 @@ test("private NPC knowledge does not leak to unrelated NPCs", () => {
   assert.equal(yaraEntry.exactSchedule.canStateAsFact, true);
 });
 
+test("confirmed npc memory can carry prior schedule knowledge without a KnowledgeRecord", () => {
+  const context = buildNpcKnowledgeContext({
+    nearbyNpcs: [yara],
+    relevantNpcMemories: [
+      {
+        memoryId: "memory_yara_schedule_change",
+        npcId: "npc_yara_mils",
+        fact: "Lucas told Yara he will stop working morning shifts and keep afternoon work.",
+        summary: "Lucas explained his schedule change to Yara.",
+        sourceType: "told_by_lucas",
+        certainty: "confirmed",
+        tags: ["job_schedule_change"],
+        createdDay: 15,
+        createdTime: "13:10",
+      },
+    ],
+    knowledgeRecords: [],
+    jobContract: { contractId: "job_grulla_lucas", title: "Ayudante de posada" },
+    guildState: { factionId: "faction_hoshimori_guild" },
+  });
+
+  const entry = context.perNpc[0].jobAvailability;
+  assert.equal(entry.exactSchedule.canStateAsFact, true);
+  assert.equal(entry.exactSchedule.memoryId, "memory_yara_schedule_change");
+  assert.deepEqual(context.scheduleUnconfirmedNpcIds, []);
+});
+
 test("mechanical-only knowledge never becomes NPC certainty", () => {
   const context = buildNpcKnowledgeContext({
     nearbyNpcs: [mara],

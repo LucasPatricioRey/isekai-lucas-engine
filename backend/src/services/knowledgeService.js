@@ -54,6 +54,25 @@ function canStateAsCertainty(record = {}) {
   );
 }
 
+function isJobScheduleMemory(memory = {}) {
+  const tags = toArray(memory.tags);
+  const text = `${memory.fact || ""} ${memory.summary || ""}`.toLowerCase();
+  return Boolean(
+    tags.some((tag) =>
+      ["job", "job_schedule", "job_schedule_change", "availability", "work", "fact_lucas_job_schedule"].includes(tag)
+    ) ||
+      /turno|horario|trabaj|disponibilidad|manana|tarde/.test(text)
+  );
+}
+
+function canStateMemoryAsCertainty(memory = {}) {
+  return Boolean(
+    memory &&
+      ["confirmed", "probable"].includes(memory.certainty) &&
+      memory.sourceType !== "inference"
+  );
+}
+
 function summarizeKnowledgeRecord(record = {}) {
   return {
     knowledgeId: record.knowledgeId,
@@ -109,13 +128,33 @@ function chooseBestJobScheduleRecord(records = [], npc = {}) {
   })[0] || null;
 }
 
+function chooseBestJobScheduleMemory(memories = [], npc = {}) {
+  const visibleMemories = memories
+    .filter((memory) => memory.npcId === npc.npcId)
+    .filter(isJobScheduleMemory);
+
+  const score = {
+    confirmed: 4,
+    probable: 3,
+    rumor: 2,
+    doubtful: 1,
+  };
+
+  return visibleMemories.sort((left, right) => {
+    const scoreDiff = (score[right.certainty] || 0) - (score[left.certainty] || 0);
+    if (scoreDiff !== 0) return scoreDiff;
+    return (right.createdDay || 0) - (left.createdDay || 0);
+  })[0] || null;
+}
+
 function buildJobKnowledgeEntry({ npc, records = [], memories = [], jobContract = null, guildState = null }) {
   const bestRecord = chooseBestJobScheduleRecord(records, npc);
+  const bestMemory = chooseBestJobScheduleMemory(memories, npc);
   const npcFactionIds = listNpcFactionIds(npc);
   const isGuildStaff = Boolean(guildState?.factionId && npcFactionIds.includes(guildState.factionId));
   const publicWorkKnown = Boolean(jobContract && jobContract.flags?.publicWorkKnown !== false);
-  const exactScheduleConfirmed = canStateAsCertainty(bestRecord);
-  const exactScheduleInferred = bestRecord?.sourceType === "inference";
+  const exactScheduleConfirmed = canStateAsCertainty(bestRecord) || canStateMemoryAsCertainty(bestMemory);
+  const exactScheduleInferred = bestRecord?.sourceType === "inference" || bestMemory?.sourceType === "inference";
 
   let recommendedWording = "No afirmar horario exacto; si hace falta, preguntar o hablar como suposicion.";
   if (exactScheduleConfirmed) {
@@ -134,17 +173,14 @@ function buildJobKnowledgeEntry({ npc, records = [], memories = [], jobContract 
     exactSchedule: {
       canStateAsFact: exactScheduleConfirmed,
       canInfer: Boolean(exactScheduleInferred || isGuildStaff || publicWorkKnown),
-      certainty: bestRecord?.certainty || "not_established",
-      sourceType: bestRecord?.sourceType || "",
+      certainty: bestRecord?.certainty || bestMemory?.certainty || "not_established",
+      sourceType: bestRecord?.sourceType || bestMemory?.sourceType || "",
       knowledgeId: bestRecord?.knowledgeId || "",
+      memoryId: bestMemory?.memoryId || "",
     },
     matchingMemories: memories
       .filter((memory) => memory.npcId === npc.npcId)
-      .filter((memory) =>
-        toArray(memory.tags).some((tag) =>
-          ["job", "job_schedule", "availability", "work", "fact_lucas_job_schedule"].includes(tag)
-        )
-      )
+      .filter(isJobScheduleMemory)
       .slice(0, 3)
       .map(summarizeNpcMemoryAsKnowledge),
     recommendedWording,
