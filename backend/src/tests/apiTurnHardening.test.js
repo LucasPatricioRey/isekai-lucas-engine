@@ -1278,10 +1278,51 @@ describe("turn hardening coverage", () => {
     assert.equal(attendanceChange.attendance.status, "late");
     assert.equal(attendanceChange.attendance.minutesLate, 12);
     assert.equal(attendanceChange.attendance.excused, true);
+    assert.equal(attendanceChange.attendance.consequenceLevel, "none");
+    assert.equal(attendanceChange.attendance.requiresFollowUp, false);
+
+    const recordedAbsence = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: registrar ausencia laboral injustificada.",
+      jobContractPatch: {
+        op: "record_shift_absence",
+        contractId: tempCreatedJobContractId,
+        shiftId: "shift_test_market_0800_1000",
+        day: 12,
+        time: "08:00",
+        excused: false,
+        consequenceApplied: false,
+        sourceCommitmentId: "commitment_test_market_shift",
+        reason: "Fixture: Lucas falto sin avisar al turno temporal.",
+      },
+      biologicalCostExemptReason: "Registro administrativo sin actividad fisica.",
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de ausencia laboral.",
+          visibility: "hidden",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+    });
+
+    assert.equal(recordedAbsence.status, 200);
+    assert.equal(recordedAbsence.data.ok, true);
+    const absenceChange = recordedAbsence.data.changes.jobContracts[0];
+    assert.equal(absenceChange.op, "record_shift_absence");
+    assert.equal(absenceChange.attendance.status, "absent");
+    assert.equal(absenceChange.attendance.consequenceLevel, "moderate");
+    assert.equal(absenceChange.attendance.requiresFollowUp, true);
+    assert.equal(absenceChange.attendance.sourceCommitmentId, "commitment_test_market_shift");
+    assert.equal(absenceChange.consequencePlan.suggestedRelationshipPatch.npcId, "npc_irma");
+    assert.equal(absenceChange.consequencePlan.suggestedRelationshipPatch.trustDelta, -2);
 
     const contract = await JobContract.findOne({ contractId: tempCreatedJobContractId }).lean();
     assert.equal(contract.flags.attendance.day_11.shift_test_market_0800_1000.status, "late");
     assert.equal(contract.flags.attendance.day_11.shift_test_market_0800_1000.minutesLate, 12);
+    assert.equal(contract.flags.attendance.day_12.shift_test_market_0800_1000.status, "absent");
+    assert.equal(contract.flags.attendance.day_12.shift_test_market_0800_1000.consequenceLevel, "moderate");
+    assert.equal(contract.flags.attendance.day_12.shift_test_market_0800_1000.requiresFollowUp, true);
   });
 
   it("applies skill patches only through validated progression ranges", async () => {

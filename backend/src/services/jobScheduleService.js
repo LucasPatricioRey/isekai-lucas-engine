@@ -1,5 +1,7 @@
 const JobContract = require("../models/JobContract");
 
+const CONSEQUENCE_LEVELS = ["none", "minor", "moderate", "major", "critical"];
+
 function validationError(message, details = {}) {
   const error = new Error(message);
   error.statusCode = 400;
@@ -57,6 +59,102 @@ function getEffectiveShiftSchedule(contract, shift) {
     scheduleNotes: override.scheduleNotes || plainShift.scheduleNotes || [],
     lateGraceMinutes: override.lateGraceMinutes ?? plainShift.lateGraceMinutes ?? 0,
     absenceConsequences: override.absenceConsequences || plainShift.absenceConsequences || [],
+  };
+}
+
+function normalizeConsequenceLevel(value) {
+  return CONSEQUENCE_LEVELS.includes(value) ? value : "";
+}
+
+function inferAttendanceConsequenceLevel({ status, minutesLate = 0, excused = false, schedule = {} }) {
+  if (status === "absent") {
+    return excused ? "minor" : "moderate";
+  }
+
+  const graceMinutes = Number(schedule.lateGraceMinutes) || 0;
+  const lateBeyondGrace = Math.max(0, Number(minutesLate) - graceMinutes);
+  if (lateBeyondGrace <= 0) return "none";
+
+  if (excused) {
+    if (lateBeyondGrace <= 15) return "none";
+    if (lateBeyondGrace <= 60) return "minor";
+    return "moderate";
+  }
+
+  if (lateBeyondGrace <= 15) return "minor";
+  if (lateBeyondGrace <= 60) return "moderate";
+  return "major";
+}
+
+function relationshipDeltasForAttendance(level) {
+  if (level === "minor") {
+    return { trustDelta: -1, respectDelta: -1 };
+  }
+  if (level === "moderate") {
+    return { trustDelta: -2, respectDelta: -2, socialDebtDelta: -1 };
+  }
+  if (level === "major") {
+    return { trustDelta: -3, respectDelta: -3, socialDebtDelta: -2, suspicionDelta: 1 };
+  }
+  if (level === "critical") {
+    return { trustDelta: -3, respectDelta: -3, socialDebtDelta: -3, suspicionDelta: 2 };
+  }
+  return {};
+}
+
+function compactObject(value) {
+  return Object.fromEntries(
+    Object.entries(value || {}).filter(([, entryValue]) => entryValue !== undefined && entryValue !== null && entryValue !== "")
+  );
+}
+
+function buildAttendanceConsequencePlan({ contract, shift, patch, status, minutesLate, excused }) {
+  const schedule = getEffectiveShiftSchedule(contract, shift);
+  const level =
+    normalizeConsequenceLevel(patch.consequenceLevel) ||
+    inferAttendanceConsequenceLevel({ status, minutesLate, excused, schedule });
+  const consequenceApplied = Boolean(patch.consequenceApplied);
+  const requiresFollowUp = level !== "none" && !consequenceApplied;
+  const actionType = status === "late" ? "job_late" : "job_absence";
+  const summary =
+    patch.consequenceSummary ||
+    (level === "none"
+      ? "Sin consecuencia laboral pendiente."
+      : status === "late"
+        ? `Llegada tarde registrada para ${shift.name}.`
+        : `Ausencia registrada para ${shift.name}.`);
+  const employerNpcId = schedule.employerNpcId || toPlain(contract)?.employerNpcId || "";
+  const deltas = relationshipDeltasForAttendance(level);
+  const suggestedRelationshipPatch =
+    requiresFollowUp && employerNpcId
+      ? compactObject({
+          npcId: employerNpcId,
+          ...deltas,
+          reason:
+            status === "late"
+              ? `Consecuencia laboral por llegada tarde a ${shift.name}: ${patch.reason}`
+              : `Consecuencia laboral por ausencia en ${shift.name}: ${patch.reason}`,
+          notes: summary,
+          actionType,
+        })
+      : null;
+
+  return {
+    level,
+    requiresFollowUp,
+    consequenceApplied,
+    summary,
+    recommendedAction: requiresFollowUp
+      ? "Cerrar el seguimiento con npcRelationshipPatches, commitmentPatches o una decision narrativa explicita."
+      : "",
+    suggestedRelationshipPatch,
+    sourceCommitmentId: patch.sourceCommitmentId || "",
+    followUpCommitmentId: patch.followUpCommitmentId || "",
+    displayLines: [
+      level === "none"
+        ? "Asistencia laboral: sin consecuencia pendiente."
+        : `Consecuencia laboral pendiente (${level}): ${summary}`,
+    ],
   };
 }
 
@@ -164,6 +262,9 @@ function getShiftAvailability(shift, gameState, contract = null) {
 function summarizeContractSchedule(contract, gameState = null) {
   if (!contract) return null;
   const day = Number(gameState?.currentDay || 1);
+  const attendanceEntries = summarizeAttendanceEntries(contract);
+  const todayAttendance = attendanceEntries.filter((entry) => entry.day === day);
+  const attendanceByShiftToday = new Map(todayAttendance.map((entry) => [entry.shiftId, entry]));
   const shifts = (toPlain(contract).shifts || []).map((shift) => {
     const scheduleStatus = getShiftScheduleStatus(contract, shift, day);
     return {
@@ -178,6 +279,7 @@ function summarizeContractSchedule(contract, gameState = null) {
       activeUntilDay: scheduleStatus.schedule.activeUntilDay,
       inactiveFromDay: scheduleStatus.schedule.inactiveFromDay,
       inactiveReason: scheduleStatus.schedule.inactiveReason || scheduleStatus.schedule.reason || "",
+      attendanceToday: attendanceByShiftToday.get(shift.shiftId) || null,
     };
   });
 
@@ -196,6 +298,11 @@ function summarizeContractSchedule(contract, gameState = null) {
     shifts,
     nextShift,
     futureChanges: shifts.filter((shift) => shift.inactiveFromDay && shift.inactiveFromDay > day),
+    attendance: {
+      today: todayAttendance,
+      recent: attendanceEntries.slice(0, 6),
+      unresolved: attendanceEntries.filter((entry) => entry.requiresFollowUp && !entry.consequenceApplied),
+    },
   };
 }
 
@@ -227,6 +334,48 @@ function ensureAttendanceLedger(flags, day) {
     flags.attendance[key] = {};
   }
   return flags.attendance[key];
+}
+
+function summarizeAttendanceEntries(contract) {
+  const plainContract = toPlain(contract) || {};
+  const flags = plainContract.flags || {};
+  const attendanceLedger = flags.attendance || {};
+  const shiftById = new Map((plainContract.shifts || []).map((shift) => [shift.shiftId, shift]));
+  const entries = [];
+
+  for (const [rawDayKey, dayEntries] of Object.entries(attendanceLedger)) {
+    if (!dayEntries || typeof dayEntries !== "object") continue;
+    const ledgerDay = Number(String(rawDayKey).replace(/^day_/, "")) || null;
+
+    for (const [shiftId, entry] of Object.entries(dayEntries)) {
+      if (!entry || typeof entry !== "object") continue;
+      const shift = shiftById.get(entry.shiftId || shiftId) || {};
+      entries.push({
+        shiftId: entry.shiftId || shiftId,
+        shiftName: shift.name || entry.shiftName || entry.shiftId || shiftId,
+        status: entry.status || "",
+        day: Number(entry.day || ledgerDay || 1),
+        time: entry.time || "",
+        minutesLate: Number(entry.minutesLate) || 0,
+        excused: Boolean(entry.excused),
+        consequenceLevel: entry.consequenceLevel || "none",
+        requiresFollowUp: Boolean(entry.requiresFollowUp),
+        consequenceApplied: Boolean(entry.consequenceApplied),
+        consequenceSummary: entry.consequenceSummary || "",
+        recommendedAction: entry.recommendedAction || "",
+        suggestedRelationshipPatch: entry.suggestedRelationshipPatch || null,
+        sourceCommitmentId: entry.sourceCommitmentId || "",
+        followUpCommitmentId: entry.followUpCommitmentId || "",
+        reason: entry.reason || "",
+      });
+    }
+  }
+
+  return entries.sort((a, b) => {
+    const dayDiff = b.day - a.day;
+    if (dayDiff !== 0) return dayDiff;
+    return timeToMinutes(b.time) - timeToMinutes(a.time);
+  });
 }
 
 function toShiftPayload(shift = {}) {
@@ -412,15 +561,32 @@ async function recordShiftAttendance(gameState, patch, session = null) {
   const flags = ensureFlags(contract);
   const attendance = ensureAttendanceLedger(flags, patch.day || gameState.currentDay);
   const status = op === "record_shift_late" ? "late" : "absent";
+  const minutesLate = op === "record_shift_late" ? Math.max(0, Number(patch.minutesLate) || 0) : 0;
+  const excused = Boolean(patch.excused);
+  const consequencePlan = buildAttendanceConsequencePlan({
+    contract,
+    shift,
+    patch,
+    status,
+    minutesLate,
+    excused,
+  });
   attendance[patch.shiftId] = {
     shiftId: patch.shiftId,
+    shiftName: shift.name,
     status,
     day: patch.day || gameState.currentDay,
     time: patch.time || gameState.time,
-    minutesLate: op === "record_shift_late" ? Math.max(0, Number(patch.minutesLate) || 0) : 0,
-    excused: Boolean(patch.excused),
-    consequenceApplied: Boolean(patch.consequenceApplied),
-    consequenceSummary: patch.consequenceSummary || "",
+    minutesLate,
+    excused,
+    consequenceLevel: consequencePlan.level,
+    requiresFollowUp: consequencePlan.requiresFollowUp,
+    consequenceApplied: consequencePlan.consequenceApplied,
+    consequenceSummary: consequencePlan.summary,
+    recommendedAction: consequencePlan.recommendedAction,
+    suggestedRelationshipPatch: consequencePlan.suggestedRelationshipPatch,
+    sourceCommitmentId: consequencePlan.sourceCommitmentId,
+    followUpCommitmentId: consequencePlan.followUpCommitmentId,
     reason: patch.reason,
   };
   contract.markModified("flags");
@@ -431,11 +597,13 @@ async function recordShiftAttendance(gameState, patch, session = null) {
     contractId: contract.contractId,
     shiftId: patch.shiftId,
     attendance: attendance[patch.shiftId],
+    consequencePlan,
     reason: patch.reason,
     displayLines: [
       status === "late"
         ? `Asistencia laboral: llegada tarde registrada para ${shift.name}.`
         : `Asistencia laboral: ausencia registrada para ${shift.name}.`,
+      ...consequencePlan.displayLines,
     ],
   };
 }
@@ -509,8 +677,10 @@ async function applyJobContractPatches(gameState, patches, session = null) {
 
 module.exports = {
   applyJobContractPatches,
+  buildAttendanceConsequencePlan,
   getEffectiveShiftSchedule,
   getShiftAvailability,
   getShiftScheduleStatus,
   summarizeContractSchedule,
+  summarizeAttendanceEntries,
 };

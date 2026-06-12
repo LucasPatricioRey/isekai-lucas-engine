@@ -1730,6 +1730,16 @@ Si el compromiso puede tener costo al incumplirse, guardar `failureSeverity`, `f
 
 El backend no debe aplicar castigos sociales automaticamente solo por vencer una hora. El vencimiento abre una consecuencia pendiente; el narrador debe cerrarla con el resultado correcto y, si corresponde, aplicar `npcRelationshipPatches`, `jobContractPatch`, `missionPatch` o `worldEventPatches` en el mismo turno.
 
+### P8. Asistencia laboral y consecuencias
+
+Los trabajos formales no deben vivir solo como logs narrativos. Cada contrato debe guardar tipo de trabajo, jefe/NPC responsable, ubicacion, turnos, paga, comidas incluidas, reglas de ausencia/tardanza y cambios de horario.
+
+Si Lucas llega tarde o falta a un turno, usar `jobContractPatch` con `record_shift_late` o `record_shift_absence`. El registro debe incluir dia, hora, excusa si existe, motivo y, si corresponde, compromiso relacionado.
+
+El backend puede inferir `consequenceLevel` y dejar `requiresFollowUp`, `consequenceSummary` y una sugerencia de `npcRelationshipPatch`. Esa sugerencia no se aplica automaticamente: el narrador debe decidir si corresponde cerrar la consecuencia con `npcRelationshipPatches`, `commitmentPatches`, disculpa, reparacion, aviso previo, perdida de turno o solo memoria laboral.
+
+Una tardanza leve y justificada puede quedar sin consecuencia numerica. Una falta injustificada, repetida o que perjudica a otros debe dejar seguimiento pendiente hasta resolverse. `getCompactContext` debe mostrar estas asistencias pendientes para no depender de memoria del GPT.
+
 ---
 
 ## 24. Ejemplos de resolución

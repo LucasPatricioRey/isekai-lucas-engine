@@ -134,6 +134,14 @@ function summarizeTechnicalReadiness({
           contractId: jobContractSummary.contractId,
           title: jobContractSummary.title,
           nextShiftId: nextShift?.shiftId || "",
+          unresolvedAttendance: (jobContractSummary.schedule?.attendance?.unresolved || []).map((entry) => ({
+            shiftId: entry.shiftId,
+            status: entry.status,
+            day: entry.day,
+            time: entry.time,
+            consequenceLevel: entry.consequenceLevel,
+            consequenceSummary: entry.consequenceSummary,
+          })),
           futureShiftChanges: (jobContractSummary.schedule?.futureChanges || []).map((shift) => ({
             shiftId: shift.shiftId,
             inactiveFromDay: shift.inactiveFromDay,
@@ -175,6 +183,9 @@ function summarizeTechnicalReadiness({
         : "",
       (socialRhythm?.saturatedNpcIds || []).length > 0
         ? "Evitar nuevos deltas sociales por rutina con NPCs saturados hoy; usar textura o memoria."
+        : "",
+      (jobContractSummary?.schedule?.attendance?.unresolved || []).length > 0
+        ? "Cerrar seguimientos laborales pendientes con consecuencia explicita o marcar consecuenciaApplied."
         : "",
     ].filter(Boolean),
   };
@@ -969,6 +980,7 @@ async function getCompactContext(req, res) {
     const jobContractSummary = responseShaping.summarizeJobContract(jobContract, gameState);
     const inactiveJobShifts = jobContractSummary?.schedule?.inactiveShiftIds || [];
     const futureJobChanges = jobContractSummary?.schedule?.futureChanges || [];
+    const unresolvedJobAttendance = jobContractSummary?.schedule?.attendance?.unresolved || [];
     if (inactiveJobShifts.length > 0 || futureJobChanges.length > 0) {
       alerts.push({
         type: "job_schedule_notice",
@@ -976,6 +988,22 @@ async function getCompactContext(req, res) {
         message: "El contrato laboral tiene turnos inactivos o cambios futuros que deben respetarse.",
         inactiveShiftIds: inactiveJobShifts,
         futureShiftIds: futureJobChanges.map((shift) => shift.shiftId),
+      });
+    }
+    if (unresolvedJobAttendance.length > 0) {
+      alerts.push({
+        type: "job_attendance_followup_pending",
+        severity: "warning",
+        message: "Hay tardanzas o ausencias laborales registradas con seguimiento pendiente.",
+        attendance: unresolvedJobAttendance.map((entry) => ({
+          shiftId: entry.shiftId,
+          status: entry.status,
+          day: entry.day,
+          time: entry.time,
+          consequenceLevel: entry.consequenceLevel,
+        })),
+        recommendedAction:
+          "Resolver la consecuencia con npcRelationshipPatches/commitmentPatches o marcar consequenceApplied si ya fue cerrada.",
       });
     }
 
