@@ -1347,7 +1347,7 @@ async function getCompactContext(req, res) {
           locationScope: locationIds,
           staticVisibleNpcIds: directVisibleNpcIds,
           probableNpcIds,
-          npcsPresent: nearbyNpcSummaries.filter((npc) => directPresentNpcIds.has(npc.npcId)),
+          npcsPresent: npcPresence.visible,
           nearbyNpcs: nearbyNpcSummaries,
           npcPresence,
           routineOverrides,
