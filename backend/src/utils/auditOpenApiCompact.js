@@ -235,6 +235,24 @@ function main() {
     "compact has CommitmentPatchItem",
     Boolean(compact.components?.schemas?.CommitmentPatchItem)
   );
+  for (const propertyName of [
+    "failureSeverity",
+    "failureConsequence",
+    "successConsequence",
+    "graceMinutes",
+    "requiresExplicitResolution",
+  ]) {
+    assertCondition(
+      issues,
+      `full CommitmentPatchItem has ${propertyName}`,
+      Boolean(full.components?.schemas?.CommitmentPatchItem?.properties?.[propertyName])
+    );
+    assertCondition(
+      issues,
+      `compact CommitmentPatchItem has ${propertyName}`,
+      Boolean(compact.components?.schemas?.CommitmentPatchItem?.properties?.[propertyName])
+    );
+  }
   assertCondition(
     issues,
     "full CompleteJobShiftRequest supports explicit contract meal consumption",

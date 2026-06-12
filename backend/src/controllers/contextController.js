@@ -121,6 +121,12 @@ function summarizeTechnicalReadiness({
       dueNowOrOverdueIds: (pendingCommitmentSummaries || [])
         .filter((commitment) => ["due_now", "overdue"].includes(commitment.dueStatus))
         .map((commitment) => commitment.commitmentId),
+      consequenceReadyIds: (pendingCommitmentSummaries || [])
+        .filter((commitment) => commitment.consequencePreview?.pastGrace)
+        .map((commitment) => commitment.commitmentId),
+      needsResolutionIds: (pendingCommitmentSummaries || [])
+        .filter((commitment) => commitment.consequencePreview?.requiresExplicitResolution)
+        .map((commitment) => commitment.commitmentId),
     },
     jobState: jobContractSummary
       ? {
@@ -156,6 +162,9 @@ function summarizeTechnicalReadiness({
       weatherSummary?.staleByCurrentTime ? "Actualizar clima antes de viajes o escenas exteriores." : "",
       (pendingBiologicalAccumulations || []).length > 0 ? "Cerrar acumuladores biologicos al cruzar la proxima hora exacta." : "",
       mainEventSummary?.status === "active" ? "Si el evento principal se atiende, cerrarlo con worldEventPatches y resolutionSummary." : "",
+      (pendingCommitmentSummaries || []).some((commitment) => commitment.consequencePreview?.pastGrace)
+        ? "Cerrar compromisos vencidos con fulfill/fail/cancel/expire antes de saltar mas tiempo."
+        : "",
     ].filter(Boolean),
   };
 }
@@ -208,6 +217,25 @@ function getStalePendingAccumulations(gameState) {
 
     return toAbsoluteMinutes(entry.day, entry.blockEnd) < now;
   });
+}
+
+function buildCommitmentAgenda(commitments = []) {
+  const byUrgency = (urgency) => commitments.filter((commitment) => commitment.urgency === urgency);
+  const consequenceReady = commitments.filter((commitment) => commitment.consequencePreview?.pastGrace);
+  const needsResolution = commitments.filter((commitment) => commitment.consequencePreview?.requiresExplicitResolution);
+
+  return {
+    consequenceReady,
+    overdue: byUrgency("consequence_ready").concat(byUrgency("overdue_in_grace")),
+    dueNow: byUrgency("due_now"),
+    dueSoon: byUrgency("due_soon").concat(byUrgency("upcoming")),
+    unscheduledImportant: commitments.filter(
+      (commitment) =>
+        commitment.dueStatus === "unscheduled" && ["critical", "high"].includes(commitment.priority)
+    ),
+    needsResolution,
+    next: commitments.slice(0, 5),
+  };
 }
 
 async function getFullContext(req, res) {
@@ -711,6 +739,7 @@ async function getCompactContext(req, res) {
         return (priorityWeight[right.priority] || 0) - (priorityWeight[left.priority] || 0);
       })
       .slice(0, limits.commitmentLimit);
+    const commitmentAgenda = buildCommitmentAgenda(pendingCommitmentSummaries);
     const availableMissionSummaries = availableMissions.map((mission) =>
       responseShaping.summarizeMission(mission, gameState.currentDay, gameState.time)
     );
@@ -850,6 +879,16 @@ async function getCompactContext(req, res) {
       });
     }
 
+    if (commitmentAgenda.consequenceReady.length > 0) {
+      alerts.push({
+        type: "commitments_consequence_ready",
+        severity: "warning",
+        message: "Hay compromisos vencidos fuera del margen de gracia; deben cerrarse formalmente con resultado y consecuencia.",
+        commitmentIds: commitmentAgenda.consequenceReady.map((commitment) => commitment.commitmentId),
+        recommendedAction: "Usar commitmentPatches con fulfill/fail/cancel/expire antes de avanzar escenas largas.",
+      });
+    }
+
     const dueNowCommitments = pendingCommitmentSummaries.filter((commitment) => commitment.dueStatus === "due_now");
     if (dueNowCommitments.length > 0) {
       alerts.push({
@@ -857,6 +896,16 @@ async function getCompactContext(req, res) {
         severity: "info",
         message: "Hay compromisos/promesas que vencen en este momento.",
         commitmentIds: dueNowCommitments.map((commitment) => commitment.commitmentId),
+      });
+    }
+
+    const dueSoonCommitments = commitmentAgenda.dueSoon.filter((commitment) => commitment.dueStatus !== "future");
+    if (dueSoonCommitments.length > 0) {
+      alerts.push({
+        type: "commitments_due_soon",
+        severity: "info",
+        message: "Hay compromisos cercanos; conviene no saltar tiempo largo sin atenderlos o reprogramarlos.",
+        commitmentIds: dueSoonCommitments.map((commitment) => commitment.commitmentId),
       });
     }
 
@@ -974,6 +1023,7 @@ async function getCompactContext(req, res) {
         activeRumors: activeRumors.map(responseShaping.summarizeRumor),
         socialLedgerToday: todaySocialLedger.map(responseShaping.summarizeNpcSocialLedger),
         pendingCommitments: pendingCommitmentSummaries,
+        commitmentAgenda,
         activeMissions: activeMissionSummaries,
         availableMissionPreview,
         pendingBiology: pendingBiologicalAccumulations,

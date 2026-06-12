@@ -66,6 +66,7 @@ const VALID_COMMITMENT_TYPES = new Set([
 ]);
 const VALID_COMMITMENT_STATUSES = new Set(["pending", "active", "fulfilled", "failed", "cancelled", "expired"]);
 const VALID_COMMITMENT_PRIORITIES = new Set(["low", "normal", "high", "critical"]);
+const VALID_COMMITMENT_FAILURE_SEVERITIES = new Set(["none", "minor", "moderate", "major", "critical"]);
 const VALID_COMMITMENT_VISIBILITIES = new Set(["hidden", "private", "local", "public"]);
 
 function validationError(message, details = {}) {
@@ -1634,6 +1635,29 @@ function validateCommitmentPatchShape(patch = {}) {
     });
   }
 
+  if (patch.failureSeverity && !VALID_COMMITMENT_FAILURE_SEVERITIES.has(patch.failureSeverity)) {
+    throw validationError("commitmentPatches.failureSeverity invalido.", {
+      failureSeverity: patch.failureSeverity,
+      allowed: Array.from(VALID_COMMITMENT_FAILURE_SEVERITIES),
+    });
+  }
+
+  if (
+    patch.graceMinutes !== undefined &&
+    (!Number.isInteger(patch.graceMinutes) || patch.graceMinutes < 0 || patch.graceMinutes > 1440)
+  ) {
+    throw validationError("commitmentPatches.graceMinutes debe ser entero entre 0 y 1440.", {
+      graceMinutes: patch.graceMinutes,
+    });
+  }
+
+  if (
+    patch.requiresExplicitResolution !== undefined &&
+    typeof patch.requiresExplicitResolution !== "boolean"
+  ) {
+    throw validationError("commitmentPatches.requiresExplicitResolution debe ser boolean.");
+  }
+
   if (patch.visibility && !VALID_COMMITMENT_VISIBILITIES.has(patch.visibility)) {
     throw validationError("commitmentPatches.visibility invalida.", {
       visibility: patch.visibility,
@@ -1655,6 +1679,11 @@ function commitmentSnapshot(commitment) {
     type: commitment.type,
     status: commitment.status,
     priority: commitment.priority,
+    failureSeverity: commitment.failureSeverity || "",
+    failureConsequence: commitment.failureConsequence || "",
+    successConsequence: commitment.successConsequence || "",
+    graceMinutes: commitment.graceMinutes || 0,
+    requiresExplicitResolution: Boolean(commitment.requiresExplicitResolution),
     visibility: commitment.visibility,
     createdDay: commitment.createdDay,
     createdTime: commitment.createdTime,
@@ -1681,6 +1710,11 @@ function applyCommitmentPatchFields(commitment, patch = {}) {
     "type",
     "status",
     "priority",
+    "failureSeverity",
+    "failureConsequence",
+    "successConsequence",
+    "graceMinutes",
+    "requiresExplicitResolution",
     "visibility",
     "dueDay",
     "dueTime",
@@ -1745,6 +1779,14 @@ function buildCommitmentDisplayLines({ op, before, after }) {
     lines.push(`Objetivo: Dia ${after.dueDay}${after.dueTime ? ` ${after.dueTime}` : ""}.`);
   }
 
+  if (["fail", "expire"].includes(op) && after?.failureConsequence) {
+    lines.push(`Consecuencia prevista: ${after.failureConsequence}`);
+  }
+
+  if (op === "fulfill" && after?.successConsequence) {
+    lines.push(`Resultado positivo previsto: ${after.successConsequence}`);
+  }
+
   return lines;
 }
 
@@ -1783,6 +1825,11 @@ async function applyCommitmentPatches(gameState, commitmentPatches, session = nu
         type: patch.type || "plan",
         status: patch.status || "pending",
         priority: patch.priority || "normal",
+        failureSeverity: patch.failureSeverity || undefined,
+        failureConsequence: patch.failureConsequence || "",
+        successConsequence: patch.successConsequence || "",
+        graceMinutes: patch.graceMinutes || 0,
+        requiresExplicitResolution: Boolean(patch.requiresExplicitResolution),
         visibility: patch.visibility || "private",
         createdDay: patch.createdDay || gameState.currentDay,
         createdTime: patch.createdTime || gameState.time,

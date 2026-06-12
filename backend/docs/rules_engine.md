@@ -1722,6 +1722,10 @@ No dejar promesas, citas, planes importantes u obligaciones futuras solo como Ev
 
 Cerrar el compromiso con `op:fulfill`, `op:fail`, `op:cancel` u `op:expire` cuando se cumpla, falle, se cancele o venza. No crear compromiso por cada frase casual: usarlo para continuidad real, consecuencias sociales, trabajo, misiones, secretos, citas, planes de viaje o decisiones diferidas.
 
+Si el compromiso puede tener costo al incumplirse, guardar `failureSeverity`, `failureConsequence`, `graceMinutes` y `requiresExplicitResolution`. `getCompactContext` expone `pendingCommitments` y `commitmentAgenda`: si aparece `urgency:"consequence_ready"` o alerta `commitments_consequence_ready`, no saltar escenas largas sin resolverlo, reprogramarlo o cerrarlo formalmente.
+
+El backend no debe aplicar castigos sociales automaticamente solo por vencer una hora. El vencimiento abre una consecuencia pendiente; el narrador debe cerrarla con el resultado correcto y, si corresponde, aplicar `npcRelationshipPatches`, `jobContractPatch`, `missionPatch` o `worldEventPatches` en el mismo turno.
+
 ---
 
 ## 24. Ejemplos de resolución
@@ -1790,7 +1794,7 @@ No subir confianza automáticamente.
 13. Cartelera activa de misiones vive en MongoDB; reglas/pool base viven en archivos/seed.
 14. No loot/recompensa automática.
 15. Comida de contrato no consume raciones ni se aplica automaticamente; requiere decision explicita de comer.
-16. Promesas, citas, planes importantes y obligaciones futuras usan `commitmentPatches`; no quedan solo en logs.
+16. Promesas, citas, planes importantes y obligaciones futuras usan `commitmentPatches`; si vencen con `consequence_ready`, se cierran formalmente antes de saltar escenas largas.
 17. Acciones relevantes de 10+ minutos deben evaluarse para EXP, pero no toda acción da EXP.
 18. Cansancio extremo no es farmeo eficiente.
 19. Compañeros pueden morir permanentemente si la situación lo justifica.

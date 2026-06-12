@@ -91,6 +91,36 @@ const commitmentSchema = new mongoose.Schema(
       index: true,
     },
 
+    failureSeverity: {
+      type: String,
+      enum: ["none", "minor", "moderate", "major", "critical"],
+      default: undefined,
+      index: true,
+    },
+
+    failureConsequence: {
+      type: String,
+      default: "",
+    },
+
+    successConsequence: {
+      type: String,
+      default: "",
+    },
+
+    graceMinutes: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 1440,
+    },
+
+    requiresExplicitResolution: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
     visibility: {
       type: String,
       enum: ["hidden", "private", "local", "public"],

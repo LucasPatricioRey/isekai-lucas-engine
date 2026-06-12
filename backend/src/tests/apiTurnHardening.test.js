@@ -840,6 +840,80 @@ describe("turn hardening coverage", () => {
     );
   });
 
+  it("surfaces overdue commitment consequences in compact context agenda", async () => {
+    const originalState = await GameState.findOne({ gameId: tempGameId }).lean();
+    const commitmentId = `commitment_consequence_test_${Date.now()}`;
+
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: 10,
+          time: "12:00",
+          block: "Mediodia",
+        },
+      }
+    );
+
+    const created = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: Lucas fijo una cita que ya vencio.",
+      biologicalCostExemptReason: "Creacion de compromiso de prueba sin actividad fisica.",
+      commitmentPatches: {
+        op: "create",
+        commitmentId,
+        title: "Encontrarse con Roberto antes del mediodia",
+        summary: "Compromiso de prueba para verificar alertas de consecuencia.",
+        type: "appointment",
+        priority: "high",
+        failureSeverity: "moderate",
+        failureConsequence: "Roberto podria considerar que Lucas no respeta los horarios acordados.",
+        successConsequence: "Roberto confirma que Lucas cumple con avisos importantes.",
+        graceMinutes: 15,
+        requiresExplicitResolution: true,
+        dueDay: 10,
+        dueTime: "11:00",
+        targetNpcIds: [tempNpcId],
+        tags: ["test_turn_hardening", "commitment_consequence"],
+      },
+    });
+
+    assert.equal(created.status, 200, JSON.stringify(created.data));
+    assert.equal(created.data.ok, true);
+    assert.equal(created.data.changes.commitments[0].after.failureSeverity, "moderate");
+
+    const compact = await get(`/api/context/compact?gameId=${encodeURIComponent(tempGameId)}`);
+    assert.equal(compact.status, 200);
+
+    const commitment = compact.data.context.pendingCommitments.find((entry) => entry.commitmentId === commitmentId);
+    assert.ok(commitment, "Expected overdue commitment in compact context.");
+    assert.equal(commitment.urgency, "consequence_ready");
+    assert.equal(commitment.consequencePreview.pastGrace, true);
+    assert.equal(commitment.consequencePreview.severity, "moderate");
+    assert.equal(commitment.consequencePreview.requiresExplicitResolution, true);
+    assert.ok(
+      compact.data.context.commitmentAgenda.consequenceReady.some((entry) => entry.commitmentId === commitmentId)
+    );
+    assert.ok(
+      compact.data.context.alerts.some(
+        (alert) =>
+          alert.type === "commitments_consequence_ready" &&
+          alert.commitmentIds.includes(commitmentId)
+      )
+    );
+
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: originalState.currentDay,
+          time: originalState.time,
+          block: originalState.block,
+        },
+      }
+    );
+  });
+
   it("infers already consumed contract meals from formal meal logs", async () => {
     const originalState = await GameState.findOne({ gameId: tempGameId }).lean();
     await GameState.updateOne(

@@ -65,6 +65,85 @@ function commitmentDueStatus(commitment, currentDay, currentTime) {
   return "future";
 }
 
+function commitmentOverdueMinutes(commitment, currentDay, currentTime) {
+  if (!commitment?.dueDay) return 0;
+  const currentAbs = (Number(currentDay || 1) - 1) * 1440 + timeToMinutes(currentTime);
+  const dueAbs = (Number(commitment.dueDay || 1) - 1) * 1440 + timeToMinutes(commitment.dueTime || "23:59");
+  return Math.max(0, currentAbs - dueAbs);
+}
+
+function defaultCommitmentFailureSeverity(commitment = {}) {
+  if (commitment.failureSeverity) return commitment.failureSeverity;
+  if (commitment.priority === "critical") return "major";
+  if (commitment.priority === "high") return "moderate";
+  if (["job", "obligation", "appointment", "promise", "mission_intention"].includes(commitment.type)) return "minor";
+  return "none";
+}
+
+function defaultCommitmentFailureConsequence(commitment = {}) {
+  if (commitment.failureConsequence) return commitment.failureConsequence;
+  if (commitment.type === "job") return "Puede afectar la confianza laboral, la paga futura o la estabilidad del contrato.";
+  if (commitment.type === "promise") return "Puede bajar confianza o familiaridad con los NPCs afectados si se incumple sin explicacion.";
+  if (commitment.type === "obligation") return "Puede generar deuda social, molestia o perdida de fiabilidad.";
+  if (commitment.type === "appointment") return "Puede hacer perder la oportunidad o exigir disculpa/reprogramacion.";
+  if (commitment.type === "mission_intention") return "Puede dejar pasar una oportunidad del gremio o cambiar la disponibilidad del encargo.";
+  if (commitment.type === "secret") return "Puede exponer informacion privada si no se maneja con cuidado.";
+  return "";
+}
+
+function commitmentUrgency(commitment, currentDay, currentTime) {
+  if (!commitment || ["fulfilled", "failed", "cancelled", "expired"].includes(commitment.status)) return "closed";
+  if (!commitment.dueDay) return commitment.priority === "critical" || commitment.priority === "high" ? "tracked" : "open";
+
+  const currentAbs = (Number(currentDay || 1) - 1) * 1440 + timeToMinutes(currentTime);
+  const dueAbs = (Number(commitment.dueDay || 1) - 1) * 1440 + timeToMinutes(commitment.dueTime || "23:59");
+  const graceMinutes = Math.max(0, Number(commitment.graceMinutes || 0));
+  const minutesUntilDue = dueAbs - currentAbs;
+
+  if (currentAbs > dueAbs + graceMinutes) return "consequence_ready";
+  if (currentAbs > dueAbs) return "overdue_in_grace";
+  if (currentAbs === dueAbs) return "due_now";
+  if (minutesUntilDue <= 60) return "due_soon";
+  if (minutesUntilDue <= 180) return "upcoming";
+  return "future";
+}
+
+function buildCommitmentRecommendedAction({ urgency, type, requiresExplicitResolution }) {
+  if (urgency === "consequence_ready") return "Cerrar con fulfill/fail/cancel/expire antes de avanzar escenas largas.";
+  if (urgency === "overdue_in_grace") return "Resolver o reprogramar pronto; todavia esta dentro del margen de gracia.";
+  if (urgency === "due_now") return "Atender ahora, cumplirlo o reprogramarlo formalmente.";
+  if (urgency === "due_soon" || urgency === "upcoming") return "Tenerlo presente en la narracion y evitar saltos largos que lo ignoren.";
+  if (requiresExplicitResolution) return "No dejarlo solo en logs; cerrarlo formalmente cuando cambie su estado.";
+  if (type === "secret") return "Respetar privacidad y conocimiento NPC.";
+  return "Mantener como pendiente hasta que Lucas lo atienda o lo descarte.";
+}
+
+function buildCommitmentConsequencePreview(commitment, currentDay, currentTime) {
+  const urgency = commitmentUrgency(commitment, currentDay, currentTime);
+  const severity = defaultCommitmentFailureSeverity(commitment);
+  const graceMinutes = Math.max(0, Number(commitment?.graceMinutes || 0));
+  const overdueMinutes = commitmentOverdueMinutes(commitment, currentDay, currentTime);
+  const pastGrace = urgency === "consequence_ready";
+  const requiresExplicitResolution = Boolean(
+    commitment?.requiresExplicitResolution || severity !== "none" || (commitment?.targetNpcIds || []).length > 0
+  );
+
+  return {
+    severity,
+    summary: truncateText(defaultCommitmentFailureConsequence(commitment), 350),
+    successSummary: truncateText(commitment?.successConsequence || "", 350),
+    graceMinutes,
+    overdueMinutes,
+    pastGrace,
+    requiresExplicitResolution,
+    recommendedAction: buildCommitmentRecommendedAction({
+      urgency,
+      type: commitment?.type || "plan",
+      requiresExplicitResolution,
+    }),
+  };
+}
+
 function summarizeStat(stat) {
   if (!stat) return null;
   return {
@@ -393,6 +472,8 @@ function summarizeWorldEvent(event) {
 
 function summarizeCommitment(commitment, currentDay, currentTime) {
   if (!commitment) return null;
+  const dueStatus = commitmentDueStatus(commitment, currentDay, currentTime);
+  const urgency = commitmentUrgency(commitment, currentDay, currentTime);
   return {
     commitmentId: commitment.commitmentId,
     gameId: commitment.gameId || "isekai_lucas_main",
@@ -402,12 +483,18 @@ function summarizeCommitment(commitment, currentDay, currentTime) {
     type: commitment.type || "plan",
     status: commitment.status || "pending",
     priority: commitment.priority || "normal",
+    failureSeverity: defaultCommitmentFailureSeverity(commitment),
+    failureConsequence: truncateText(commitment.failureConsequence || "", 350),
+    successConsequence: truncateText(commitment.successConsequence || "", 350),
+    graceMinutes: Math.max(0, Number(commitment.graceMinutes || 0)),
+    requiresExplicitResolution: Boolean(commitment.requiresExplicitResolution),
     visibility: commitment.visibility || "private",
     createdDay: commitment.createdDay,
     createdTime: commitment.createdTime,
     dueDay: commitment.dueDay,
     dueTime: commitment.dueTime || "",
-    dueStatus: commitmentDueStatus(commitment, currentDay, currentTime),
+    dueStatus,
+    urgency,
     windowStartDay: commitment.windowStartDay,
     windowStartTime: commitment.windowStartTime || "",
     windowEndDay: commitment.windowEndDay,
@@ -420,6 +507,7 @@ function summarizeCommitment(commitment, currentDay, currentTime) {
     resolution: commitment.resolution || {},
     sourceEventLogId: commitment.sourceEventLogId || "",
     tags: commitment.tags || [],
+    consequencePreview: buildCommitmentConsequencePreview(commitment, currentDay, currentTime),
   };
 }
 

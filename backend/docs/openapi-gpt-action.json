@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions",
-    "version": "2.14.0",
-    "description": "Schema normal para GPT Actions. Expone endpoints de lectura, busqueda, preview y mutacion central controlada. Incluye previewSocialImpact, relationshipState efectivo y applyTurn.npcRelationshipPatches para vinculos sociales. Incluye lectura read-only de WorldEvents para auditoria tecnica. No expone rollback, admin ni mutadores peligrosos de combate/misiones. El backend separa evento principal unico, rumores menores y eventos de fondo; el scheduler solo genera otro evento principal cuando no hay uno abierto. applyTurn, completeJobShift y context/compact pueden devolver narrativeHints/narrativeContext para variar escenas repetidas sin crear mecanicas nuevas. Las comidas de contrato en completeJobShift son explicitas: solo se aplican si se envian en consumeIncludedMealIds. applyTurn.commitmentPatches guarda promesas, planes y obligaciones pendientes como estado formal."
+    "version": "2.15.0",
+    "description": "Schema normal para GPT Actions. Expone endpoints de lectura, busqueda, preview y mutacion central controlada. Incluye previewSocialImpact, relationshipState efectivo y applyTurn.npcRelationshipPatches para vinculos sociales. Incluye lectura read-only de WorldEvents para auditoria tecnica. No expone rollback, admin ni mutadores peligrosos de combate/misiones. El backend separa evento principal unico, rumores menores y eventos de fondo; el scheduler solo genera otro evento principal cuando no hay uno abierto. applyTurn, completeJobShift y context/compact pueden devolver narrativeHints/narrativeContext para variar escenas repetidas sin crear mecanicas nuevas. Las comidas de contrato en completeJobShift son explicitas: solo se aplican si se envian en consumeIncludedMealIds. applyTurn.commitmentPatches guarda promesas, planes y obligaciones pendientes como estado formal con agenda, urgencia y consecuencias previstas."
   },
   "servers": [
     {
@@ -519,6 +519,35 @@
               "critical"
             ],
             "default": "normal"
+          },
+          "failureSeverity": {
+            "type": "string",
+            "enum": [
+              "none",
+              "minor",
+              "moderate",
+              "major",
+              "critical"
+            ],
+            "description": "Severidad prevista si Lucas incumple o deja vencer el compromiso."
+          },
+          "failureConsequence": {
+            "type": "string",
+            "description": "Consecuencia narrativa/mecanica prevista si se incumple. No se aplica sola; debe cerrarse con op fail/expire y parches concretos si corresponde."
+          },
+          "successConsequence": {
+            "type": "string",
+            "description": "Resultado positivo previsto si se cumple. No reemplaza npcRelationshipPatches ni recompensas formales."
+          },
+          "graceMinutes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1440,
+            "description": "Margen de gracia antes de marcar el compromiso como consequence_ready."
+          },
+          "requiresExplicitResolution": {
+            "type": "boolean",
+            "description": "Si true, el narrador debe cerrarlo con fulfill/fail/cancel/expire cuando cambie su estado."
           },
           "visibility": {
             "type": "string",
