@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Compact",
-    "version": "2.10.2",
+    "version": "2.11.0",
     "description": "Schema compacto con hasta 30 operaciones para GPT Builder. Incluye ApplyTurn con missionPatch, activityCost, gameStatePatch y parches de economia/memoria/relacion social. Incluye previewSocialImpact con proyeccion de relationshipState y excluye rollback y mutadores peligrosos directos. El backend separa evento principal unico, rumores menores y eventos de fondo; el scheduler solo genera otro evento principal cuando no hay uno abierto. applyTurn, completeJobShift y context/compact pueden devolver narrativeHints/narrativeContext para variar escenas repetidas sin crear mecanicas nuevas."
   },
   "servers": [
@@ -420,8 +420,89 @@
             "items": {
               "$ref": "#/components/schemas/WorldEventPatchItem"
             }
+          },
+          "jobContractPatch": {
+            "description": "Cambio formal de contrato laboral/agenda de turnos. Usar para cambios acordados con el jefe, no para recordar logs.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/JobContractPatchItem"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/JobContractPatchItem"
+                }
+              }
+            ]
           }
         },
+        "additionalProperties": false
+      },
+      "JobContractPatchItem": {
+        "type": "object",
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "update_shift_schedule"
+            ],
+            "default": "update_shift_schedule"
+          },
+          "contractId": {
+            "type": "string"
+          },
+          "shiftId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive",
+              "ended"
+            ],
+            "default": "active"
+          },
+          "activeFromDay": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "activeUntilDay": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "inactiveFromDay": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reason": {
+            "type": "string"
+          },
+          "inactiveReason": {
+            "type": "string"
+          },
+          "scheduleNotes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lateGraceMinutes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "absenceConsequences": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "contractId",
+          "shiftId",
+          "reason"
+        ],
         "additionalProperties": false
       },
       "MoneyPatch": {

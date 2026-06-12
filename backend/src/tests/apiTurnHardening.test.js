@@ -471,6 +471,23 @@ describe("turn hardening coverage", () => {
     assert.equal(completed.data.result.after.time, "12:00");
     assert.equal(completed.data.result.after.satiety, 51);
     assert.equal(completed.data.result.after.energy, 70);
+    assert.deepEqual(completed.data.result.changes.physicalBreakdown.start, {
+      satiety: 66,
+      energy: 100,
+    });
+    assert.deepEqual(completed.data.result.changes.physicalBreakdown.afterMeals, {
+      satiety: 66,
+      energy: 100,
+    });
+    assert.deepEqual(completed.data.result.changes.physicalBreakdown.final, {
+      satiety: 51,
+      energy: 70,
+    });
+    assert.ok(
+      completed.data.result.changes.physicalBreakdown.displayLines.some((line) =>
+        line.includes("Saciedad: 66->66 por comida de contrato ->51 tras trabajo")
+      )
+    );
     assert.deepEqual(
       completed.data.result.changes.biologicalClock.coveredPendingAccumulations.map((entry) => entry.accumulationId),
       ["bioacc_test_shift_overlap"]
@@ -530,6 +547,105 @@ describe("turn hardening coverage", () => {
     await JobContract.updateOne({ contractId: tempJobContractId }, { $set: { flags: { testSuite: true } } });
   });
 
+  it("formalizes inactive job shifts and blocks future completion", async () => {
+    const originalState = await GameState.findOne({ gameId: tempGameId }).lean();
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: 10,
+          "diegeticDate.day": 10,
+          block: "Mediodía",
+          time: "12:00",
+          locationId: "loc_hoshimori_grulla_azul_comedor",
+          biologicalClock: {
+            lastProcessedTime: "12:00",
+            currentHourBlock: "12:00-13:00",
+            pendingAccumulation: [],
+            pendingAccumulations: [],
+          },
+        },
+      }
+    );
+    await JobContract.updateOne({ contractId: tempJobContractId }, { $set: { flags: { testSuite: true } } });
+
+    const patched = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: formalizar fin de turno laboral futuro.",
+      jobContractPatch: {
+        contractId: tempJobContractId,
+        shiftId: "shift_test_morning_0700_1200",
+        status: "ended",
+        activeUntilDay: 10,
+        inactiveFromDay: 11,
+        reason: "Fixture: Lucas deja este turno desde Dia 11.",
+      },
+      biologicalCostExemptReason: "Cambio administrativo de contrato sin actividad fisica.",
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de jobContractPatch.",
+          visibility: "hidden",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+    });
+
+    assert.equal(patched.status, 200);
+    assert.equal(patched.data.ok, true);
+    assert.equal(patched.data.changes.jobContracts[0].shiftId, "shift_test_morning_0700_1200");
+    assert.equal(patched.data.changes.jobContracts[0].after.status, "ended");
+    assert.equal(patched.data.changes.autoCheckpoint.created, true);
+
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: 11,
+          "diegeticDate.day": 11,
+          block: "Mañana",
+          time: "07:00",
+          "lucasStatus.satiety.current": 80,
+          "lucasStatus.energy.current": 90,
+        },
+      }
+    );
+
+    const preview = await post("/api/jobs/shifts/shift_test_morning_0700_1200/preview", {
+      gameId: tempGameId,
+      contractId: tempJobContractId,
+    });
+    assert.equal(preview.status, 200);
+    assert.equal(preview.data.preview.availability.canStart, false);
+    assert.equal(preview.data.preview.availability.status, "ended");
+
+    const blocked = await post("/api/jobs/shifts/shift_test_morning_0700_1200/complete", {
+      gameId: tempGameId,
+      contractId: tempJobContractId,
+      completionSummary: "Test controlado: no debe completarse un turno terminado.",
+    });
+    assert.equal(blocked.status, 400);
+    assert.match(blocked.data.error, /ya no esta activo/);
+
+    await JobContract.updateOne({ contractId: tempJobContractId }, { $set: { flags: { testSuite: true } } });
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: originalState.currentDay,
+          diegeticDate: originalState.diegeticDate,
+          block: originalState.block,
+          time: originalState.time,
+          locationId: originalState.locationId,
+          activeEventIds: originalState.activeEventIds || [],
+          activeMissionIds: originalState.activeMissionIds || [],
+          lucasStatus: originalState.lucasStatus,
+          biologicalClock: originalState.biologicalClock,
+        },
+      }
+    );
+  });
+
   it("infers already consumed contract meals from formal meal logs", async () => {
     const originalState = await GameState.findOne({ gameId: tempGameId }).lean();
     await GameState.updateOne(
@@ -538,7 +654,7 @@ describe("turn hardening coverage", () => {
         $set: {
           currentDay: 10,
           "diegeticDate.day": 10,
-          block: "MaÃ±ana",
+          block: "Mañana",
           time: "07:00",
           moneyCopper: 100,
           "lucasStatus.satiety.current": 66,
@@ -841,6 +957,8 @@ describe("turn hardening coverage", () => {
       ]
     );
     assert.ok(relationship.data.changes.npcRelationships[0].displayLines.includes("Confianza: 10->12 (+2)"));
+    assert.ok(Array.isArray(relationship.data.changes.npcRelationships[0].milestoneLines));
+    assert.equal(relationship.data.changes.npcRelationships[0].milestoneLines.length, 0);
     assert.ok(relationship.data.changes.npcRelationships[0].ledgerId);
 
     const firstLedger = await NpcSocialLedger.findOne({
@@ -884,6 +1002,51 @@ describe("turn hardening coverage", () => {
       cappedRelationship.data.changes.npcRelationships[0].caps.fields.trust.reason,
       "daily_cap_trust"
     );
+  });
+
+  it("reports social milestone lines when a relationship crosses a band", async () => {
+    await NpcSocialLedger.deleteMany({ npcId: tempNpcId, gameId: tempGameId });
+    await Npc.updateOne(
+      { npcId: tempNpcId },
+      {
+        $set: {
+          "relationshipWithLucas.trust": 24,
+          "relationshipWithLucas.familiarity": 0,
+          "relationshipWithLucas.respect": 5,
+        },
+      }
+    );
+
+    const milestone = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: hito social por cruce de rango.",
+      npcRelationshipPatches: [
+        {
+          npcId: tempNpcId,
+          trustDelta: 1,
+          reason: "Accion social suficiente para cruzar rango de confianza.",
+          actionType: "test_milestone_help",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de hito social.",
+          visibility: "hidden",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+    });
+
+    assert.equal(milestone.status, 200);
+    const relationship = milestone.data.changes.npcRelationships[0];
+    assert.equal(relationship.after.trust, 25);
+    assert.equal(relationship.fieldChanges[0].bandChanged, true);
+    assert.equal(relationship.fieldChanges[0].beforeBandKey, "low");
+    assert.equal(relationship.fieldChanges[0].afterBandKey, "moderate");
+    assert.ok(relationship.milestoneLines[0].includes("Confianza"));
+    assert.ok(relationship.milestoneLines[0].includes("moderado"));
   });
 
   it("creates automatic checkpoints before direct combat mutations", async () => {

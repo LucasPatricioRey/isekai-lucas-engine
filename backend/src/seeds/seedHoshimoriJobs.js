@@ -51,6 +51,9 @@ const contract = {
       activityCategory: "trabajo_normal",
       expectedMinutes: 300,
       payCopper: 70,
+      status: "active",
+      activeFromDay: 10,
+      lateGraceMinutes: 5,
       includedMealIds: ["meal_grulla_light_breakfast"],
       typicalTasks: [
         "limpiar mesas",
@@ -72,6 +75,9 @@ const contract = {
       activityCategory: "trabajo_normal",
       expectedMinutes: 390,
       payCopper: 70,
+      status: "active",
+      activeFromDay: 10,
+      lateGraceMinutes: 5,
       includedMealIds: ["meal_grulla_main_meal"],
       typicalTasks: [
         "servicio de comedor",

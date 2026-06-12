@@ -59,6 +59,41 @@ const jobShiftSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    status: {
+      type: String,
+      enum: ["active", "inactive", "ended"],
+      default: "active",
+      index: true,
+    },
+    activeFromDay: {
+      type: Number,
+      min: 1,
+    },
+    activeUntilDay: {
+      type: Number,
+      min: 1,
+    },
+    inactiveFromDay: {
+      type: Number,
+      min: 1,
+    },
+    inactiveReason: {
+      type: String,
+      default: "",
+    },
+    lateGraceMinutes: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    absenceConsequences: {
+      type: [String],
+      default: [],
+    },
+    scheduleNotes: {
+      type: [String],
+      default: [],
+    },
     includedMealIds: {
       type: [String],
       default: [],

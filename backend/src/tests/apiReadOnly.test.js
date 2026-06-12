@@ -33,6 +33,12 @@ describe("read-only API coverage", () => {
       compact.data.context.pendingBiology,
       compact.data.context.pendingBiologicalAccumulations
     );
+    assert.ok(compact.data.context.jobContract);
+    assert.ok(compact.data.context.jobContract.schedule);
+    assert.ok(Array.isArray(compact.data.context.jobContract.schedule.activeShiftIds));
+    assert.ok(
+      compact.data.context.jobContract.shifts.every((shift) => shift.scheduleStatus)
+    );
   });
 
   it("serves public OpenAPI schemas for GPT Builder import", async () => {

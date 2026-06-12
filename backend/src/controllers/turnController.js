@@ -22,6 +22,7 @@ const {
   attachNarrativeTrackingToLogDrafts,
   buildNarrativeHints,
 } = require("../services/narrativeVariationService");
+const { applyJobContractPatches } = require("../services/jobScheduleService");
 const {
   SOCIAL_FIELD_RANGES,
   SOCIAL_RELATIONSHIP_FIELDS,
@@ -161,6 +162,7 @@ function buildSocialFieldChanges({ before = {}, after = {}, requestedDeltas = {}
       const beforeBand = field === "socialDebt" ? socialDebtBand(beforeValue) : relationshipBand(beforeValue);
       const afterBand = field === "socialDebt" ? socialDebtBand(afterValue) : relationshipBand(afterValue);
       const label = SOCIAL_FIELD_LABELS[field] || field;
+      const bandChanged = beforeBand.key !== afterBand.key;
 
       return {
         field,
@@ -173,8 +175,29 @@ function buildSocialFieldChanges({ before = {}, after = {}, requestedDeltas = {}
         beforeBandKey: beforeBand.key,
         afterBand: afterBand.label,
         afterBandKey: afterBand.key,
+        bandChanged,
+        milestone: bandChanged
+          ? {
+              field,
+              label,
+              beforeBand: beforeBand.label,
+              beforeBandKey: beforeBand.key,
+              afterBand: afterBand.label,
+              afterBandKey: afterBand.key,
+              value: afterValue,
+            }
+          : null,
         display: `${label}: ${beforeValue}->${afterValue} (${formatSignedDelta(appliedDelta)})`,
       };
+    });
+}
+
+function buildSocialMilestoneLines(npcName, fieldChanges = []) {
+  return fieldChanges
+    .filter((entry) => entry.bandChanged && entry.milestone)
+    .map((entry) => {
+      const direction = entry.after > entry.before ? "subio" : "cambio";
+      return `Hito de vínculo — ${npcName}: ${entry.label} ${direction} de ${entry.beforeBand} a ${entry.afterBand}.`;
     });
 }
 
@@ -230,6 +253,10 @@ function buildApplyTurnAutoCheckpointPlan(changes = {}) {
 
   if (socialDelta >= 5) {
     addAutoCheckpointTrigger(triggers, "major_social", "avance social significativo");
+  }
+
+  if (Array.isArray(changes.jobContracts) && changes.jobContracts.length > 0) {
+    addAutoCheckpointTrigger(triggers, "job_contract", "cambio formal de contrato laboral");
   }
 
   if (elapsedMinutes >= 120) {
@@ -742,6 +769,7 @@ async function applyNpcRelationshipPatches(gameState, patches, session = null) {
       requestedDeltas: capped.requestedDeltas,
       appliedDeltas: capped.appliedDeltas,
     });
+    const milestoneLines = buildSocialMilestoneLines(npc.name, fieldChanges);
     const ledgerEntry = await createSocialLedgerEntry({
       gameId: gameState.gameId,
       characterId: gameState.characterId,
@@ -771,6 +799,7 @@ async function applyNpcRelationshipPatches(gameState, patches, session = null) {
       appliedDeltas: capped.appliedDeltas,
       fieldChanges,
       displayLines: fieldChanges.map((entry) => entry.display),
+      milestoneLines,
       caps: capped.caps,
       ledgerId: ledgerEntry?.ledgerId || "",
       skippedByDailyCap: hasNonZeroDelta(capped.requestedDeltas) && !hasNonZeroDelta(capped.appliedDeltas),
@@ -2368,6 +2397,11 @@ async function applyTurn(req, res) {
       if (body.missionPatch) {
         const missionChanges = await applyMissionPatches(gameState, body.missionPatch, session);
         if (missionChanges.length > 0) changes.missions = missionChanges;
+      }
+
+      if (body.jobContractPatch) {
+        const jobContractChanges = await applyJobContractPatches(gameState, body.jobContractPatch, session);
+        if (jobContractChanges.length > 0) changes.jobContracts = jobContractChanges;
       }
 
       const missionExpiry = await expireAvailableMissionsForGameState(gameState, {

@@ -656,11 +656,25 @@ async function getCompactContext(req, res) {
     if (weatherSummary?.staleByCurrentTime) {
       alerts.push({
         type: "weather_stale",
-        severity: "warning",
-        message: "El clima guardado ya paso su expectedUntil y necesita world tick o refresh.",
+        severity: "info",
+        message: "El clima guardado llego a su limite de bloque y conviene refrescarlo antes de narrar exterior.",
         weatherId: weatherSummary.weatherId,
         expectedUntilDay: weatherSummary.expectedUntilDay,
         expectedUntilTime: weatherSummary.expectedUntilTime,
+        recommendedAction: "Usar previewWorldTick/applyTurn o ensureCurrentWeather antes de viajes/escenas exteriores.",
+      });
+    }
+
+    const jobContractSummary = responseShaping.summarizeJobContract(jobContract, gameState);
+    const inactiveJobShifts = jobContractSummary?.schedule?.inactiveShiftIds || [];
+    const futureJobChanges = jobContractSummary?.schedule?.futureChanges || [];
+    if (inactiveJobShifts.length > 0 || futureJobChanges.length > 0) {
+      alerts.push({
+        type: "job_schedule_notice",
+        severity: "info",
+        message: "El contrato laboral tiene turnos inactivos o cambios futuros que deben respetarse.",
+        inactiveShiftIds: inactiveJobShifts,
+        futureShiftIds: futureJobChanges.map((shift) => shift.shiftId),
       });
     }
 
@@ -801,7 +815,7 @@ async function getCompactContext(req, res) {
         pendingBiologicalAccumulations,
         narrativeContext,
         weather: weatherSummary,
-        jobContract: responseShaping.summarizeJobContract(jobContract),
+        jobContract: jobContractSummary,
         activeCombatEncounters: activeCombatEncounters.map(responseShaping.summarizeCombatEncounter),
         alerts,
       },

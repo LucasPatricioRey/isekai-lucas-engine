@@ -180,6 +180,7 @@ function main() {
     "biologicalCostExemptReason",
     "missionPatch",
     "worldEventPatches",
+    "jobContractPatch",
     "eventLogs",
   ]) {
     assertCondition(
@@ -217,6 +218,11 @@ function main() {
     issues,
     "compact activityCost supports minutes mismatch override",
     Boolean(compact.components?.schemas?.ActivityCostInput?.properties?.allowMinutesMismatch)
+  );
+  assertCondition(
+    issues,
+    "compact has JobContractPatchItem",
+    Boolean(compact.components?.schemas?.JobContractPatchItem)
   );
   assertCondition(
     issues,

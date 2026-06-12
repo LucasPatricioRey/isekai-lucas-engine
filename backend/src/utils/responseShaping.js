@@ -6,6 +6,7 @@ const {
 const { summarizeNpcSocialProfile } = require("../services/socialProfileService");
 const { buildSocialConsequenceHintEffect } = require("../services/dailyEventSocialService");
 const { evaluateSocialRelationshipState } = require("../services/socialRelationshipStateService");
+const { summarizeContractSchedule } = require("../services/jobScheduleService");
 const { buildDailyEventNotice, getDailyEventTemplateId } = require("./worldEventPresentation");
 
 function unique(values) {
@@ -393,8 +394,9 @@ function summarizeWeather(weather, currentDay, currentTime) {
   };
 }
 
-function summarizeJobContract(contract) {
+function summarizeJobContract(contract, gameState = null) {
   if (!contract) return null;
+  const schedule = summarizeContractSchedule(contract, gameState);
   return {
     contractId: contract.contractId,
     jobId: contract.jobId,
@@ -406,7 +408,11 @@ function summarizeJobContract(contract) {
     pay: contract.pay || {},
     includesMeals: Boolean(contract.includesMeals),
     mealBenefits: contract.mealBenefits || [],
-    shifts: contract.shifts || [],
+    shifts: (contract.shifts || []).map((shift) => ({
+      ...shift,
+      scheduleStatus: schedule?.shifts?.find((entry) => entry.shiftId === shift.shiftId) || null,
+    })),
+    schedule,
     typicalTasks: contract.typicalTasks || [],
     absenceRules: contract.absenceRules || [],
     tags: contract.tags || [],

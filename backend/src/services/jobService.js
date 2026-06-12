@@ -16,6 +16,7 @@ const {
   attachNarrativeTrackingToLogDrafts,
   buildNarrativeHints,
 } = require("./narrativeVariationService");
+const { getShiftAvailability } = require("./jobScheduleService");
 
 function timeToMinutes(time) {
   const [hours, minutes] = String(time || "00:00").split(":").map(Number);
@@ -230,34 +231,6 @@ async function summarizeMealAvailability({ contract, shift, gameState }) {
   };
 }
 
-function getShiftAvailability(shift, gameState) {
-  const currentMinutes = timeToMinutes(gameState.time);
-  const startMinutes = timeToMinutes(shift.startTime);
-  const endMinutes = timeToMinutes(shift.endTime);
-
-  if (currentMinutes > endMinutes) {
-    return {
-      canStart: false,
-      status: "past",
-      reason: "El turno ya termino para la hora actual.",
-    };
-  }
-
-  if (currentMinutes > startMinutes && currentMinutes <= endMinutes) {
-    return {
-      canStart: false,
-      status: "in_progress_window",
-      reason: "El turno ya empezo; requiere regla explicita para entrada tarde.",
-    };
-  }
-
-  return {
-    canStart: true,
-    status: currentMinutes === startMinutes ? "now" : "upcoming",
-    reason: "Turno disponible para preview o completar con validacion de contrato.",
-  };
-}
-
 async function getActiveJobContract({ characterId = "char_lucas", contractId = "" } = {}) {
   const query = contractId ? { contractId, characterId } : { characterId, status: "active" };
   const contract = await JobContract.findOne(query).lean();
@@ -289,7 +262,7 @@ async function getAvailableShifts({ gameId = "isekai_lucas_main", characterId = 
 
   const shifts = (contract.shifts || []).map((shift) => ({
     ...shift,
-    availability: getShiftAvailability(shift, gameState),
+    availability: getShiftAvailability(shift, gameState, contract),
   }));
 
   return {
@@ -355,7 +328,7 @@ async function previewShift({
     },
     contractId: contract.contractId,
     shift,
-    availability: getShiftAvailability(shift, gameState),
+    availability: getShiftAvailability(shift, gameState, contract),
     payPreview: {
       moneyCopper: shift.payCopper || 0,
       dailyContractPayCopper: contract.pay?.dailyCopper || 0,
@@ -394,16 +367,75 @@ function applyMealBenefit(gameState, meal) {
     name: meal.name,
     satiety: {
       before: before.satiety,
+      potentialDelta: meal.satietyBonus || 0,
       delta: satietyAfter - before.satiety,
+      lostToCap: Math.max(0, (meal.satietyBonus || 0) - (satietyAfter - before.satiety)),
       after: satietyAfter,
       labelAfter: gameState.lucasStatus.satiety.label,
     },
     energy: {
       before: before.energy,
+      potentialDelta: meal.energyBonus || 0,
       delta: energyAfter - before.energy,
+      lostToCap: Math.max(0, (meal.energyBonus || 0) - (energyAfter - before.energy)),
       after: energyAfter,
       labelAfter: gameState.lucasStatus.energy.label,
     },
+  };
+}
+
+function buildPhysicalBreakdown({ before, mealChanges = [], activityCost }) {
+  const afterMeals = {
+    satiety: activityCost?.satiety?.before ?? before.satiety,
+    energy: activityCost?.energy?.before ?? before.energy,
+  };
+  const final = {
+    satiety: activityCost?.satiety?.after ?? afterMeals.satiety,
+    energy: activityCost?.energy?.after ?? afterMeals.energy,
+  };
+  const mealTotals = mealChanges.reduce(
+    (totals, meal) => ({
+      satietyPotential: totals.satietyPotential + (meal.satiety?.potentialDelta || 0),
+      satietyApplied: totals.satietyApplied + (meal.satiety?.delta || 0),
+      satietyLostToCap: totals.satietyLostToCap + (meal.satiety?.lostToCap || 0),
+      energyPotential: totals.energyPotential + (meal.energy?.potentialDelta || 0),
+      energyApplied: totals.energyApplied + (meal.energy?.delta || 0),
+      energyLostToCap: totals.energyLostToCap + (meal.energy?.lostToCap || 0),
+    }),
+    {
+      satietyPotential: 0,
+      satietyApplied: 0,
+      satietyLostToCap: 0,
+      energyPotential: 0,
+      energyApplied: 0,
+      energyLostToCap: 0,
+    }
+  );
+
+  const displayLines = [
+    `Saciedad: ${before.satiety}->${afterMeals.satiety} por comida de contrato ->${final.satiety} tras trabajo`,
+    `Energía: ${before.energy}->${afterMeals.energy} por comida de contrato ->${final.energy} tras trabajo`,
+  ];
+
+  if (mealTotals.satietyLostToCap > 0 || mealTotals.energyLostToCap > 0) {
+    displayLines.push(
+      `Tope de comida: ${mealTotals.satietyLostToCap} saciedad y ${mealTotals.energyLostToCap} energía no se aplicaron porque el valor ya estaba cerca del máximo`
+    );
+  }
+
+  return {
+    start: {
+      satiety: before.satiety,
+      energy: before.energy,
+    },
+    afterMeals,
+    final,
+    mealTotals,
+    workCost: {
+      satiety: activityCost?.satiety?.delta || 0,
+      energy: activityCost?.energy?.delta || 0,
+    },
+    displayLines,
   };
 }
 
@@ -566,6 +598,18 @@ async function completeShift({
         throw error;
       }
 
+      const availability = getShiftAvailability(shift, gameState, contract);
+      if (!availability.scheduleStatus?.active) {
+        const error = new Error("El turno laboral ya no esta activo para este contrato.");
+        error.statusCode = 400;
+        error.details = {
+          shiftId: shift.shiftId,
+          currentDay: gameState.currentDay,
+          availability,
+        };
+        throw error;
+      }
+
       const currentMinutes = timeToMinutes(gameState.time);
       const startMinutes = timeToMinutes(shift.startTime);
       const endMinutes = timeToMinutes(shift.endTime);
@@ -688,6 +732,11 @@ async function completeShift({
       }
 
       const activityCost = applyShiftActivityCost(gameState, shift);
+      const physicalBreakdown = buildPhysicalBreakdown({
+        before,
+        mealChanges,
+        activityCost,
+      });
       const coveredPendingAccumulations = markPendingAccumulationsCoveredByShift(gameState, shift);
       const beforeMoney = gameState.moneyCopper;
       const payCopper = shift.payCopper || 0;
@@ -747,6 +796,7 @@ async function completeShift({
           details: mealChanges,
         },
         activityCost,
+        physicalBreakdown,
         biologicalClock: {
           coveredPendingAccumulations,
         },
@@ -772,6 +822,7 @@ async function completeShift({
           pay: baseChanges.pay,
           meals: baseChanges.meals,
           activityCost,
+          physicalBreakdown,
           biologicalClock: baseChanges.biologicalClock,
           missionExpiry,
         },
