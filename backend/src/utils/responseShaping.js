@@ -217,6 +217,202 @@ function isWeatherStale(weather, currentDay, currentTime) {
   return timeToMinutes(currentTime) >= timeToMinutes(weather.expectedUntilTime);
 }
 
+function toArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizeKey(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function stockAvailableQuantity(stock = {}) {
+  const quantity = Number(stock.quantity || 0);
+  const reserved = Number(stock.reservedQuantity || 0);
+  return Math.max(0, quantity - reserved);
+}
+
+function summarizeStockPressure(stock, shop, item, reason) {
+  return {
+    shopId: stock.shopId,
+    shopName: shop?.name || stock.shopId,
+    itemId: stock.itemId,
+    itemName: item?.name || stock.itemId,
+    quantity: Number(stock.quantity || 0),
+    reservedQuantity: Number(stock.reservedQuantity || 0),
+    availableQuantity: stockAvailableQuantity(stock),
+    currentPriceCopper: Number(stock.currentPriceCopper || stock.basePriceCopper || item?.basePriceCopper || 0),
+    scarcityFlags: stock.scarcityFlags || [],
+    reason,
+  };
+}
+
+function isSupplyPressureEvent(event = {}) {
+  const tags = toArray(event.tags).map(normalizeKey);
+  const type = normalizeKey(event.type);
+  return (
+    type === "supply_delay" ||
+    tags.includes("supplies") ||
+    tags.includes("supply_delay") ||
+    tags.includes("weather_aftereffect") ||
+    tags.includes("market_pressure")
+  );
+}
+
+function isTravelPressureEvent(event = {}) {
+  const tags = toArray(event.tags).map(normalizeKey);
+  const type = normalizeKey(event.type);
+  return (
+    ["travel_disruption", "road_problem", "weather_aftereffect"].includes(type) ||
+    tags.some((tag) =>
+      [
+        "travel",
+        "route",
+        "road",
+        "mud",
+        "barro",
+        "weather",
+        "forest",
+        "wilderness",
+        "camino",
+      ].includes(tag)
+    )
+  );
+}
+
+function weatherBaseTravelMultiplier(weather = {}) {
+  const condition = normalizeKey(weather.currentCondition);
+  if (["heavy_rain", "storm", "tormenta", "lluvia_fuerte"].includes(condition)) return 1.5;
+  if (["light_rain", "rain", "lluvia", "lluvia_leve", "bad_weather", "mal_clima", "mud", "barro"].includes(condition)) {
+    return 1.25;
+  }
+  return 1;
+}
+
+function weatherVisibilityWarnings(weather = {}) {
+  const condition = normalizeKey(weather.currentCondition);
+  const warnings = [];
+  if (["fog", "niebla"].includes(condition)) warnings.push("Visibilidad reducida en exteriores.");
+  if (Number(weather.intensity || 0) >= 3) warnings.push("Clima intenso: evitar resolver viaje sin preview.");
+  return warnings;
+}
+
+function configuredWeatherMultiplier(weather = {}) {
+  return toArray(weather.effects)
+    .filter((effect) => effect?.type === "travel_time_multiplier")
+    .map((effect) => Number(effect.value || 1))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .reduce((total, value) => total * value, 1);
+}
+
+function buildWorldFrictionSummary({
+  location = null,
+  weather = null,
+  shops = [],
+  shopStocks = [],
+  items = [],
+  events = [],
+} = {}) {
+  const itemById = new Map(toArray(items).map((item) => [item.itemId, item]));
+  const shopById = new Map(toArray(shops).map((shop) => [shop.shopId, shop]));
+  const eventList = toArray(events).filter(Boolean);
+  const supplyEvents = eventList.filter(isSupplyPressureEvent);
+  const travelEvents = eventList.filter(isTravelPressureEvent);
+  const pressureTags = unique(
+    eventList.flatMap((event) => [
+      event.type,
+      event.eventLayer,
+      event.status,
+      ...toArray(event.tags),
+    ]).map(normalizeKey)
+  );
+
+  const lowStock = [];
+  const outOfStock = [];
+  const supplyDelayed = [];
+
+  for (const stock of toArray(shopStocks)) {
+    const shop = shopById.get(stock.shopId);
+    const item = itemById.get(stock.itemId);
+    const available = stockAvailableQuantity(stock);
+    const scarcityFlags = stock.scarcityFlags || [];
+
+    if (available <= 0) {
+      outOfStock.push(summarizeStockPressure(stock, shop, item, "out_of_stock"));
+    } else if (available <= 2) {
+      lowStock.push(summarizeStockPressure(stock, shop, item, "low_stock"));
+    }
+
+    if (scarcityFlags.includes("supply_delay_active") || supplyEvents.length > 0) {
+      supplyDelayed.push(summarizeStockPressure(stock, shop, item, "supply_delay_context"));
+    }
+  }
+
+  const weatherMultiplier = weather ? weatherBaseTravelMultiplier(weather) * configuredWeatherMultiplier(weather) : 1;
+  const weatherWarnings = weather ? weatherVisibilityWarnings(weather) : [];
+  const weatherStale = Boolean(weather?.staleByCurrentTime);
+  const currentDanger = location?.dangerLevel || "unknown";
+  const locationNotSafe = currentDanger && !["safe", "unknown"].includes(currentDanger);
+  const economyPressure =
+    lowStock.length > 0 || outOfStock.length > 0 || supplyDelayed.length > 0 || supplyEvents.length > 0;
+  const travelPressure =
+    weatherMultiplier > 1 || weatherWarnings.length > 0 || weatherStale || travelEvents.length > 0 || locationNotSafe;
+
+  const guidance = [
+    weatherStale ? "Refrescar clima antes de viajes o escenas exteriores." : "",
+    weatherMultiplier > 1 ? "Usar previewTravel antes de rutas exteriores; el clima puede alargar trayectos." : "",
+    travelEvents.length > 0 ? "Hay eventos/rumores de ruta: no convertirlos en encuentro automatico sin causa." : "",
+    economyPressure ? "Validar stock y dinero antes de compras; no asumir suministros infinitos." : "",
+    locationNotSafe ? "La ubicacion tiene peligro no seguro; pedir preview o confirmar riesgo antes de saltos largos." : "",
+  ].filter(Boolean);
+
+  return {
+    schemaVersion: "world_friction_v1",
+    economy: {
+      nearbyShopCount: toArray(shops).length,
+      operationalShopCount: toArray(shops).filter((shop) => shop.status === "operational").length,
+      lowStock: lowStock.slice(0, 8),
+      outOfStock: outOfStock.slice(0, 8),
+      supplyDelayed: supplyDelayed.slice(0, 8),
+      affectedBySupplyEvents: supplyEvents.map((event) => ({
+        eventId: event.eventId,
+        title: event.title,
+        status: event.status,
+      })).slice(0, 5),
+      hasPressure: economyPressure,
+    },
+    weather: weather
+      ? {
+          condition: weather.currentCondition,
+          intensity: weather.intensity,
+          staleByCurrentTime: weatherStale,
+          exteriorTravelTimeMultiplier: Number(weatherMultiplier.toFixed(2)),
+          warnings: weatherWarnings,
+        }
+      : null,
+    travel: {
+      currentLocationId: location?.locationId || "",
+      currentDangerLevel: currentDanger,
+      affectedByTravelEvents: travelEvents.map((event) => ({
+        eventId: event.eventId,
+        title: event.title,
+        status: event.status,
+      })).slice(0, 5),
+      shouldPreviewTravel: travelPressure,
+      hasPressure: travelPressure,
+    },
+    activePressureTags: pressureTags.slice(0, 12),
+    guidance,
+    globalGuidance: guidance.length
+      ? "Hay friccion de mundo activa: validar compras/viajes/clima antes de resolver consecuencias mecanicas."
+      : "Sin friccion significativa de economia, clima o viaje en el contexto compacto.",
+  };
+}
+
 function commitmentDueStatus(commitment, currentDay, currentTime) {
   if (!commitment?.dueDay) return "unscheduled";
   const currentAbs = (Number(currentDay || 1) - 1) * 1440 + timeToMinutes(currentTime);
@@ -760,6 +956,7 @@ module.exports = {
   summarizeWorldEvent,
   summarizeCommitment,
   summarizeWeather,
+  buildWorldFrictionSummary,
   summarizeJobContract,
   summarizeCombatEncounter,
   missionActionState,

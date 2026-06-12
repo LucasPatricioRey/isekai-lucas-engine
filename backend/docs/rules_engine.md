@@ -1750,6 +1750,16 @@ Un reporte de mision debe guardar resumen, evidencia, calidad, testigos y ubicac
 
 Si `guildState.formalGuildRegistrationPending` esta activo, las misiones de rango que requieren registro formal solo se aceptan con permiso/supervision explicita y `registrationOverrideReason`; si no, el backend debe bloquearlas.
 
+### P10. Friccion de mundo: economia, viaje y clima
+
+`getCompactContext.worldFriction` es la lectura compacta para stock cercano, demoras de suministro, clima y riesgo de viaje. No muta estado y no reemplaza previews: solo avisa que hay friccion que el narrador debe respetar.
+
+Si `worldFriction.economy.hasPressure` esta activo, no asumir stock infinito, descuentos faciles ni disponibilidad automatica. Compras/ventas requieren validar tienda, dinero, item, stock y precio antes de mutar.
+
+Si `worldFriction.travel.shouldPreviewTravel` esta activo, usar `previewTravel` antes de resolver rutas exteriores, viajes largos o salidas a zona peligrosa. El clima o eventos de ruta pueden alargar tiempo, cambiar coste biologico o exigir cautela narrativa, pero no crean combate automatico.
+
+Si el clima esta `staleByCurrentTime`, refrescarlo con el flujo de turno/world tick antes de escenas exteriores relevantes. Rumores de ruta, barro o suministros retrasados son presion contextual: pueden afectar escena, precios o disponibilidad solo cuando el backend lo exponga o una accion lo justifique.
+
 ---
 
 ## 24. Ejemplos de resolución

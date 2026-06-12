@@ -67,6 +67,7 @@ function summarizeTechnicalReadiness({
   availableMissionPreview,
   missionAgenda,
   guildState,
+  worldFriction,
   mainEventSummary,
   minorRumorEventSummaries,
   backgroundEventSummaries,
@@ -167,6 +168,16 @@ function summarizeTechnicalReadiness({
           staleByCurrentTime: Boolean(weatherSummary.staleByCurrentTime),
           expectedUntilDay: weatherSummary.expectedUntilDay,
           expectedUntilTime: weatherSummary.expectedUntilTime,
+      }
+      : null,
+    worldFrictionState: worldFriction
+      ? {
+          economyPressure: Boolean(worldFriction.economy?.hasPressure),
+          travelPressure: Boolean(worldFriction.travel?.hasPressure),
+          weatherMultiplier: worldFriction.weather?.exteriorTravelTimeMultiplier || 1,
+          lowStockCount: worldFriction.economy?.lowStock?.length || 0,
+          outOfStockCount: worldFriction.economy?.outOfStock?.length || 0,
+          guidance: worldFriction.guidance || [],
         }
       : null,
     narrativeState: narrativeContext || null,
@@ -200,6 +211,9 @@ function summarizeTechnicalReadiness({
         : "",
       missionAgenda?.awaitingVerification?.length > 0
         ? "Verificar reportes de mision antes de completar o pagar recompensa."
+        : "",
+      (worldFriction?.guidance || []).length > 0
+        ? "Revisar worldFriction antes de resolver compras, viajes o consecuencias de clima."
         : "",
     ].filter(Boolean),
   };
@@ -762,7 +776,28 @@ async function getCompactContext(req, res) {
       currentLocation?.regionId ||
       parentLocation?.regionId ||
       "region_hoshimori";
-    const inventoryItemIds = unique((gameState.inventory || []).map((entry) => entry.itemId));
+
+    const nearbyShops = locationIds.length
+      ? await Shop.find({
+          locationId: { $in: locationIds },
+        })
+          .sort({ status: 1, name: 1 })
+          .limit(10)
+          .lean()
+      : [];
+    const nearbyShopIds = nearbyShops.map((shop) => shop.shopId);
+    const nearbyShopStocks = nearbyShopIds.length
+      ? await ShopStock.find({
+          shopId: { $in: nearbyShopIds },
+        })
+          .sort({ shopId: 1, itemId: 1 })
+          .limit(80)
+          .lean()
+      : [];
+    const inventoryItemIds = unique([
+      ...(gameState.inventory || []).map((entry) => entry.itemId),
+      ...nearbyShopStocks.map((stock) => stock.itemId),
+    ]);
 
     const eventClauses = [];
     if (activeEventIds.length > 0) eventClauses.push({ eventId: { $in: activeEventIds } });
@@ -1214,6 +1249,28 @@ async function getCompactContext(req, res) {
       ...activeEvents.filter(isBackgroundEvent),
       ...layeredWorldEvents.filter(isBackgroundEvent),
     ]).map(responseShaping.summarizeWorldEvent);
+    const worldFriction = responseShaping.buildWorldFrictionSummary({
+      location: currentLocation,
+      weather: weatherSummary,
+      shops: nearbyShops,
+      shopStocks: nearbyShopStocks,
+      items: inventoryItems,
+      events: [
+        mainEventSummary,
+        ...minorRumorEventSummaries,
+        ...backgroundEventSummaries,
+      ],
+    });
+
+    if (worldFriction.economy.hasPressure || worldFriction.travel.hasPressure) {
+      alerts.push({
+        type: "world_friction_active",
+        severity: "info",
+        message: "Hay friccion de economia, clima o viaje que conviene considerar antes de compras, rutas o escenas exteriores.",
+        guidance: worldFriction.guidance,
+        pressureTags: worldFriction.activePressureTags,
+      });
+    }
 
     if (pendingBiologicalAccumulations.length > 0) {
       alerts.push({
@@ -1264,6 +1321,7 @@ async function getCompactContext(req, res) {
           availableMissionPreview,
           missionAgenda,
           guildState,
+          worldFriction,
           mainEventSummary,
           minorRumorEventSummaries,
           backgroundEventSummaries,
@@ -1313,6 +1371,7 @@ async function getCompactContext(req, res) {
         pendingCommitments: pendingCommitmentSummaries,
         commitmentAgenda,
         guildState,
+        worldFriction,
         activeMissions: activeMissionSummaries,
         availableMissionPreview,
         missionAgenda,
