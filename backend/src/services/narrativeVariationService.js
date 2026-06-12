@@ -5,12 +5,14 @@ const RECENT_WINDOW_DAYS = 5;
 
 const ACTION_FAMILIES = {
   COMBAT: "combat",
+  INVESTIGATION: "investigation",
   JOB_SHIFT: "job_shift",
   MAGIC_PRACTICE: "magic_practice",
   MEAL: "meal",
   MISSION: "mission",
   PHYSICAL_TRAINING: "physical_training",
   REST: "rest",
+  REPORT: "report",
   SHOPPING: "shopping",
   SOCIAL: "social",
   TRAVEL: "travel",
@@ -19,12 +21,14 @@ const ACTION_FAMILIES = {
 
 const FAMILY_LABELS = {
   combat: "combate",
+  investigation: "investigacion",
   job_shift: "trabajo",
   magic_practice: "practica magica",
   meal: "comida",
   mission: "mision",
   physical_training: "entrenamiento",
   rest: "descanso",
+  report: "reporte",
   shopping: "compra/mercado",
   social: "escena social",
   travel: "viaje",
@@ -56,6 +60,16 @@ const FAMILY_KEYWORDS = [
     family: ACTION_FAMILIES.TRAVEL,
     tags: ["travel", "route", "walk"],
     words: ["viaje", "viaja", "camina", "caminar", "ruta", "camino", "vuelve", "regresa", "sale hacia"],
+  },
+  {
+    family: ACTION_FAMILIES.REPORT,
+    tags: ["report", "guild_report", "evidence_reported", "testimony"],
+    words: ["reporta", "reporte", "informe", "informar", "entrega evidencia", "muestra evidencia", "declara", "testimonio"],
+  },
+  {
+    family: ACTION_FAMILIES.INVESTIGATION,
+    tags: ["investigation", "clue", "evidence", "tracks", "search"],
+    words: ["investiga", "investigar", "rastros", "huellas", "pista", "evidencia", "muestra", "revisa", "inspecciona", "observa"],
   },
   {
     family: ACTION_FAMILIES.MISSION,
@@ -115,6 +129,18 @@ const MICRO_BEATS = {
     "si no hay evento, mantener el viaje funcional y sin drama gratuito",
     "usar cambio de luz, barro, ruido o cansancio como variacion de ruta",
   ],
+  investigation: [
+    "centrar la escena en metodo, pista concreta y limite de riesgo, no en recompensa",
+    "si la busqueda se repite, resumir lo rutinario y mostrar solo hallazgo o descarte nuevo",
+    "distinguir indicio, evidencia y conclusion confirmada",
+    "usar terreno, luz, barro, olor o testigos como variacion de investigacion",
+  ],
+  report: [
+    "separar evidencia observada, evidencia entregada y conclusion institucional",
+    "no convertir un reporte en recompensa automatica ni deuda personal sin motivo",
+    "mostrar si el receptor registra, duda, escala o pide verificacion",
+    "si el reporte es parcial, dejar claro que no resuelve por si solo el evento",
+  ],
   mission: [
     "centrar la escena en evidencia, riesgo y objetivo de mision, no en recompensa inventada",
     "si la tarea es repetida, resumir preparativos y narrar la pista o decision nueva",
@@ -155,12 +181,14 @@ const MICRO_BEATS = {
 
 const TONE_BY_FAMILY = {
   combat: "tenso y concreto",
+  investigation: "observador y metodico",
   job_shift: "cotidiano y funcional",
   magic_practice: "interno y contenido",
   meal: "pausado y sensorial",
   mission: "practico y atento al riesgo",
   physical_training: "fisico y disciplinado",
   rest: "breve y corporal",
+  report: "formal y prudente",
   shopping: "local y practico",
   social: "humano y contenido",
   travel: "transicional y situado",
@@ -169,12 +197,14 @@ const TONE_BY_FAMILY = {
 
 const VARIATION_LEVERS = {
   combat: ["posicion", "lectura del enemigo", "terreno", "fatiga", "riesgo inmediato"],
+  investigation: ["pista", "metodo", "terreno", "certeza", "limite de riesgo"],
   job_shift: ["cliente concreto", "tarea distinta", "correccion breve", "ritmo de sala", "cierre del turno"],
   magic_practice: ["sensacion interna", "control de respiracion", "interferencia emocional", "limite de seguridad", "microprogreso"],
   meal: ["sabor", "pausa corporal", "compania", "ruido del lugar", "efecto directo de comida"],
   mission: ["evidencia", "riesgo", "ruta", "testigo", "prueba para reportar"],
   physical_training: ["tecnica", "respiracion", "terreno", "clima", "limite fisico"],
   rest: ["hora de despertar", "hambre", "ruido ambiente", "cansancio residual", "quietud"],
+  report: ["registro", "receptor", "calidad de prueba", "duda", "proximo paso"],
   shopping: ["stock", "precio", "trato del vendedor", "calidad visible", "rumor de mercado"],
   social: ["silencio", "gesto", "limite", "cansancio", "continuidad de confianza"],
   travel: ["clima", "barro", "luz", "sonidos", "demora"],
@@ -183,12 +213,14 @@ const VARIATION_LEVERS = {
 
 const REACTION_PALETTES = {
   combat: ["ajuste tactico", "riesgo inmediato", "lectura del enemigo", "impacto fisico"],
+  investigation: ["hallazgo", "descarte", "metodo", "limite de riesgo", "certeza parcial"],
   job_shift: ["indicacion breve", "coordinacion sin palabras", "correccion concreta", "reconocimiento seco"],
   magic_practice: ["sensacion interna", "limite de control", "duda prudente", "microprogreso silencioso"],
   meal: ["pausa compartida", "gesto cotidiano", "comentario minimo", "silencio comodo o cansado"],
   mission: ["dato util", "advertencia practica", "testigo", "prueba concreta"],
   physical_training: ["fatiga localizada", "ajuste de tecnica", "terreno", "respiracion"],
   rest: ["despertar", "cuerpo recuperado", "hambre", "ruido ambiente"],
+  report: ["registro formal", "duda", "verificacion pendiente", "escalado institucional"],
   shopping: ["trato del vendedor", "calidad visible", "precio", "stock"],
   social: ["gesto", "pausa", "respuesta breve", "limite personal", "cambio sutil de trato"],
   travel: ["clima", "barro", "luz", "demora", "ruido del camino"],
@@ -524,6 +556,8 @@ function buildScenePlan({ actionFamily, repetition, sceneMode, socialGuidance, s
       socialGuidance?.outcome === "memory_or_texture_only"
         ? "Mostrar continuidad del vinculo con gesto, coordinacion o comodidad; no sumar otra recompensa social por rutina."
         : "Reaccion NPC segun personalidad, tarea actual y conocimiento; no forzar agradecimiento ni exposicion emocional.",
+    npcAgencyRule:
+      "No hacer que todo gire alrededor de Lucas. Un NPC solo muestra preocupacion, proteccion o interes fuerte si tiene vinculo, rol de cuidado/seguridad, obligacion laboral, interes propio, impacto directo o conocimiento suficiente.",
     consequenceRule:
       "Si no hubo cambio mecanico guardado, narrar solo textura, intencion o preparacion; no inventar beneficio persistente.",
     stateCalloutRule:
@@ -593,6 +627,8 @@ function buildNarrativeHintsFromRecentLogs({
     }),
     avoidRepeating: buildAvoidRepeating({ actionFamily: resolvedFamily, repetition }),
     variationGuidance: buildVariationGuidance({ actionFamily: resolvedFamily, repetition, seedText }),
+    npcAgencyRule:
+      "El mundo no debe orbitar a Lucas: NPCs desconocidos o poco vinculados reaccionan segun su trabajo, intereses y limites; preocupacion fuerte solo con motivo diegetico.",
     mechanicsBoundary:
       "Estas pistas solo guian narracion. No agregan dinero, EXP, loot, relacion, daño, curacion ni consecuencias.",
     tracking: {

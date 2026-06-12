@@ -104,10 +104,14 @@ async function previewRoutineSync({ toDay, toTime }) {
     const nextLocationId = routine.locationId;
     const nextTask = routine.task;
     const nextStatus = inferAvailability(nextTask);
+    const nextReason = override
+      ? `Override de rutina vigente para Dia ${toDay} ${toTime}`
+      : `Rutina base vigente para ${toTime}`;
     const changed =
       npc.currentLocationId !== nextLocationId ||
       npc.currentTask !== nextTask ||
-      npc.availability?.status !== nextStatus;
+      npc.availability?.status !== nextStatus ||
+      npc.availability?.reason !== nextReason;
 
     if (!changed) {
       skipped.push({
@@ -131,9 +135,7 @@ async function previewRoutineSync({ toDay, toTime }) {
         currentTask: nextTask,
         availability: {
           status: nextStatus,
-          reason: override
-            ? `Override de rutina activo para Dia ${toDay} ${toTime}`
-            : `Rutina base aplicable para ${toTime}`,
+          reason: nextReason,
         },
       },
       source: override ? "override" : "routineBase",

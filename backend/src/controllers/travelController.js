@@ -40,13 +40,18 @@ async function getRouteController(req, res) {
 async function previewTravelController(req, res) {
   try {
     const body = req.body || {};
+    const conditions = {
+      ...(body.conditions || {}),
+    };
+    if (body.allowMultiSegment !== undefined) conditions.allowMultiSegment = Boolean(body.allowMultiSegment);
+    if (body.maxSegments !== undefined) conditions.maxSegments = Number(body.maxSegments);
 
     const preview = await previewTravel({
       gameId: body.gameId || "isekai_lucas_main",
       routeId: body.routeId || "",
       fromLocationId: body.fromLocationId || "",
       toLocationId: body.toLocationId || "",
-      conditions: body.conditions || {},
+      conditions,
     });
 
     return res.json({

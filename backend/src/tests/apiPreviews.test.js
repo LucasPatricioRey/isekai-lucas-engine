@@ -37,7 +37,7 @@ describe("preview and rejection API coverage", () => {
       modifiers: { aquaBlessing: true },
     });
     assert.equal(skill.status, 200);
-    assert.equal(skill.data.preview.validation.effectiveExpDelta, 20);
+    assert.equal(skill.data.preview.validation.effectiveExpDelta, 40);
 
     const social = await post("/api/npcs/social/impact/preview", {
       npcId: "npc_yara_mils",

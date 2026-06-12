@@ -122,8 +122,8 @@ async function runSmokeTests() {
     modifiers: { aquaBlessing: true },
   });
   if (!skillPreview.ok) throw new Error("skill progression preview fallo");
-  if (skillPreview.preview?.validation?.effectiveExpDelta !== 20) {
-    throw new Error("skill progression preview no aplico Aqua a Mana");
+  if (skillPreview.preview?.validation?.effectiveExpDelta !== 40) {
+    throw new Error("skill progression preview no aplico Aqua y aprendizaje de fase a Mana");
   }
   console.log("OK /api/progression/skills/preview");
 

@@ -51,6 +51,25 @@
           "actionSummary": {
             "type": "string"
           },
+          "actionFamily": {
+            "type": "string",
+            "enum": [
+              "combat",
+              "investigation",
+              "job_shift",
+              "magic_practice",
+              "meal",
+              "mission",
+              "physical_training",
+              "rest",
+              "report",
+              "shopping",
+              "social",
+              "travel",
+              "general_action"
+            ],
+            "description": "Familia narrativa explicita para evitar clasificacion incorrecta en narrativeHints. No crea mecanicas por si sola."
+          },
           "timeAdvance": {
             "type": "object",
             "properties": {
@@ -111,6 +130,13 @@
               "$ref": "#/components/schemas/NpcRelationshipPatchItem"
             }
           },
+          "factionReputationPatches": {
+            "type": "array",
+            "description": "Parches de reputacion/credito institucional separados de deuda social personal de NPCs.",
+            "items": {
+              "$ref": "#/components/schemas/FactionReputationPatchItem"
+            }
+          },
           "missionPatch": {
             "$ref": "#/components/schemas/MissionPatchInput"
           },
@@ -125,6 +151,13 @@
             "description": "Parches de evento mundial. Usar para resolver/cancelar eventos existentes o crear eventos narrativos validados.",
             "items": {
               "$ref": "#/components/schemas/WorldEventPatchItem"
+            }
+          },
+          "evidencePatches": {
+            "type": "array",
+            "description": "Evidencia u objetos narrativos persistentes. No reemplaza inventoryPatch para items canonicos ni missionPatch para reportes formales de mision.",
+            "items": {
+              "$ref": "#/components/schemas/EvidencePatchItem"
             }
           }
         },
@@ -769,9 +802,292 @@
               "none"
             ],
             "description": "Resultado social opcional del evento diario. Si se omite, se infiere desde status."
+          },
+          "progress": {
+            "$ref": "#/components/schemas/WorldEventProgressPatch"
           }
         },
         "additionalProperties": false
+      },
+      "EvidencePatchItem": {
+        "type": "object",
+        "description": "Evidencia u objeto narrativo persistente que no es loot ni item vendible. Usar para muestras, rastros, notas, objetos improvisados o pruebas fisicas relacionadas con eventos/misiones.",
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "create",
+              "collect",
+              "update",
+              "report",
+              "hand_over",
+              "lose",
+              "discard",
+              "destroy"
+            ]
+          },
+          "evidenceId": {
+            "type": "string",
+            "description": "Opcional al crear; si se omite el backend genera uno."
+          },
+          "gameId": {
+            "type": "string",
+            "default": "isekai_lucas_main"
+          },
+          "characterId": {
+            "type": "string",
+            "default": "char_lucas"
+          },
+          "name": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "sample",
+              "trace",
+              "note",
+              "object",
+              "document",
+              "testimony",
+              "other"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "observed",
+              "collected",
+              "stored",
+              "reported",
+              "handed_over",
+              "lost",
+              "discarded",
+              "destroyed"
+            ]
+          },
+          "holderType": {
+            "type": "string",
+            "enum": [
+              "character",
+              "npc",
+              "location",
+              "faction",
+              "none"
+            ]
+          },
+          "holderId": {
+            "type": "string"
+          },
+          "containerItemId": {
+            "type": "string"
+          },
+          "locationId": {
+            "type": "string"
+          },
+          "sourceEventId": {
+            "type": "string"
+          },
+          "sourceMissionId": {
+            "type": "string"
+          },
+          "relatedEventIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "relatedMissionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reportedToNpcIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "visibleToNpcIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "condition": {
+            "type": "string"
+          },
+          "integrity": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "collectedDay": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "collectedTime": {
+            "type": "string",
+            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          },
+          "observationSummary": {
+            "type": "string",
+            "description": "Observacion breve que se agrega al historial de evidencia."
+          },
+          "observation": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "observations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "additionalProperties": false
+      },
+      "WorldEventProgressPatch": {
+        "type": "object",
+        "description": "Progreso parcial de un evento sin resolverlo: pistas, evidencia, reportes, confianza y siguiente accion posible.",
+        "properties": {
+          "stage": {
+            "type": "string"
+          },
+          "statusLabel": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "rumor",
+              "partial",
+              "strong",
+              "confirmed"
+            ]
+          },
+          "nextAction": {
+            "type": "string"
+          },
+          "clueIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidenceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reportIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lastUpdatedDay": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "lastUpdatedTime": {
+            "type": "string",
+            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          },
+          "updatedByCharacterId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FactionReputationPatchItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "factionId",
+          "reason"
+        ],
+        "properties": {
+          "factionId": {
+            "type": "string",
+            "description": "Faction id institucional, por ejemplo faction_hoshimori_guild."
+          },
+          "reputationDelta": {
+            "type": "integer",
+            "minimum": -10,
+            "maximum": 10,
+            "description": "Cambio de reputacion institucional general."
+          },
+          "trustDelta": {
+            "type": "integer",
+            "minimum": -10,
+            "maximum": 10,
+            "description": "Cambio de confianza institucional, no NPC personal."
+          },
+          "suspicionDelta": {
+            "type": "integer",
+            "minimum": -10,
+            "maximum": 10,
+            "description": "Cambio de sospecha institucional."
+          },
+          "institutionalCreditDelta": {
+            "type": "integer",
+            "minimum": -10,
+            "maximum": 10,
+            "description": "Credito/merito informal registrable por reportes, pruebas o ayuda institucional."
+          },
+          "meritDelta": {
+            "type": "integer",
+            "minimum": -10,
+            "maximum": 10,
+            "description": "Merito acumulado ante la institucion."
+          },
+          "accessLevel": {
+            "type": "string",
+            "enum": [
+              "none",
+              "basic",
+              "trusted",
+              "restricted",
+              "hostile"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 8
+          },
+          "sourceEventId": {
+            "type": "string"
+          },
+          "sourceMissionId": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
       }
     }
   },

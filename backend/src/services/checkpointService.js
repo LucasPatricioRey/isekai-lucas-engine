@@ -14,6 +14,11 @@ const Item = require("../models/Item");
 const Faction = require("../models/Faction");
 const RoutineOverride = require("../models/RoutineOverride");
 const CombatEncounter = require("../models/CombatEncounter");
+const CombatantState = require("../models/CombatantState");
+const CombatActionPreview = require("../models/CombatActionPreview");
+const CombatLogEntry = require("../models/CombatLogEntry");
+const InjuryRecord = require("../models/InjuryRecord");
+const WeaponProfile = require("../models/WeaponProfile");
 const NpcRelationship = require("../models/NpcRelationship");
 const NpcSocialLedger = require("../models/NpcSocialLedger");
 const CharacterMagicKnowledge = require("../models/CharacterMagicKnowledge");
@@ -21,6 +26,7 @@ const MagicDiscipline = require("../models/MagicDiscipline");
 const MagicTechnique = require("../models/MagicTechnique");
 const TravelRoute = require("../models/TravelRoute");
 const WeatherState = require("../models/WeatherState");
+const Evidence = require("../models/Evidence");
 
 const RESTORE_COLLECTIONS = [
   ["characters", Character],
@@ -37,6 +43,11 @@ const RESTORE_COLLECTIONS = [
   ["factions", Faction],
   ["routineOverrides", RoutineOverride],
   ["combatEncounters", CombatEncounter],
+  ["combatantStates", CombatantState],
+  ["combatActionPreviews", CombatActionPreview],
+  ["combatLogEntries", CombatLogEntry],
+  ["injuryRecords", InjuryRecord],
+  ["weaponProfiles", WeaponProfile],
   ["npcRelationships", NpcRelationship],
   ["npcSocialLedger", NpcSocialLedger],
   ["characterMagicKnowledge", CharacterMagicKnowledge],
@@ -44,6 +55,7 @@ const RESTORE_COLLECTIONS = [
   ["magicTechniques", MagicTechnique],
   ["travelRoutes", TravelRoute],
   ["weatherStates", WeatherState],
+  ["evidence", Evidence],
 ];
 
 const DEFAULT_AUTO_CHECKPOINT_RETENTION = 40;
@@ -129,6 +141,11 @@ async function buildFullSnapshot(gameId, { session = null } = {}) {
     factions,
     routineOverrides,
     combatEncounters,
+    combatantStates,
+    combatActionPreviews,
+    combatLogEntries,
+    injuryRecords,
+    weaponProfiles,
     npcRelationships,
     npcSocialLedger,
     characterMagicKnowledge,
@@ -136,6 +153,7 @@ async function buildFullSnapshot(gameId, { session = null } = {}) {
     magicTechniques,
     travelRoutes,
     weatherStates,
+    evidence,
   ] = await Promise.all([
     withSession(Character.find({}).lean(), session),
     withSession(Npc.find({}).lean(), session),
@@ -151,6 +169,11 @@ async function buildFullSnapshot(gameId, { session = null } = {}) {
     withSession(Faction.find({}).lean(), session),
     withSession(RoutineOverride.find({}).lean(), session),
     withSession(CombatEncounter.find({}).lean(), session),
+    withSession(CombatantState.find({}).lean(), session),
+    withSession(CombatActionPreview.find({}).lean(), session),
+    withSession(CombatLogEntry.find({}).lean(), session),
+    withSession(InjuryRecord.find({}).lean(), session),
+    withSession(WeaponProfile.find({}).lean(), session),
     withSession(NpcRelationship.find({}).lean(), session),
     withSession(NpcSocialLedger.find({}).lean(), session),
     withSession(CharacterMagicKnowledge.find({}).lean(), session),
@@ -158,6 +181,7 @@ async function buildFullSnapshot(gameId, { session = null } = {}) {
     withSession(MagicTechnique.find({}).lean(), session),
     withSession(TravelRoute.find({}).lean(), session),
     withSession(WeatherState.find({}).lean(), session),
+    withSession(Evidence.find({}).lean(), session),
   ]);
 
   return {
@@ -177,6 +201,11 @@ async function buildFullSnapshot(gameId, { session = null } = {}) {
       factions,
       routineOverrides,
       combatEncounters,
+      combatantStates,
+      combatActionPreviews,
+      combatLogEntries,
+      injuryRecords,
+      weaponProfiles,
       npcRelationships,
       npcSocialLedger,
       characterMagicKnowledge,
@@ -184,6 +213,7 @@ async function buildFullSnapshot(gameId, { session = null } = {}) {
       magicTechniques,
       travelRoutes,
       weatherStates,
+      evidence,
     },
   };
 }

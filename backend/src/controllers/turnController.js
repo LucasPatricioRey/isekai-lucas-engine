@@ -11,6 +11,8 @@ const ShopStock = require("../models/ShopStock");
 const Item = require("../models/Item");
 const Mission = require("../models/Mission");
 const Commitment = require("../models/Commitment");
+const Evidence = require("../models/Evidence");
+const Faction = require("../models/Faction");
 const { syncNpcRoutines } = require("../services/routineService");
 const { calculateActivityCost, normalizeCategory } = require("../services/biologicalClockService");
 const { reconcileDailyEventsForGameState } = require("../services/dailyEventSchedulerService");
@@ -20,6 +22,7 @@ const { previewSkillProgression } = require("../services/skillProgressionService
 const { ensureCurrentWeatherForGameState } = require("../services/weatherService");
 const { createAutomaticCheckpoint } = require("../services/checkpointService");
 const {
+  ACTION_FAMILIES,
   attachNarrativeTrackingToLogDrafts,
   buildNarrativeHints,
 } = require("../services/narrativeVariationService");
@@ -68,12 +71,40 @@ const VALID_COMMITMENT_STATUSES = new Set(["pending", "active", "fulfilled", "fa
 const VALID_COMMITMENT_PRIORITIES = new Set(["low", "normal", "high", "critical"]);
 const VALID_COMMITMENT_FAILURE_SEVERITIES = new Set(["none", "minor", "moderate", "major", "critical"]);
 const VALID_COMMITMENT_VISIBILITIES = new Set(["hidden", "private", "local", "public"]);
+const VALID_EVIDENCE_OPS = new Set(["create", "collect", "update", "report", "hand_over", "lose", "discard", "destroy"]);
+const VALID_EVIDENCE_TYPES = new Set(["sample", "trace", "note", "object", "document", "testimony", "other"]);
+const VALID_EVIDENCE_STATUSES = new Set([
+  "observed",
+  "collected",
+  "stored",
+  "reported",
+  "handed_over",
+  "lost",
+  "discarded",
+  "destroyed",
+]);
+const VALID_EVIDENCE_HOLDER_TYPES = new Set(["character", "npc", "location", "faction", "none"]);
+const VALID_EVENT_PROGRESS_CONFIDENCE = new Set(["unknown", "rumor", "partial", "strong", "confirmed"]);
+const VALID_ACTION_FAMILIES = new Set(Object.values(ACTION_FAMILIES));
+const VALID_FACTION_ACCESS_LEVELS = new Set(["none", "basic", "trusted", "restricted", "hostile"]);
 
 function validationError(message, details = {}) {
   const error = new Error(message);
   error.statusCode = 400;
   error.details = details;
   return error;
+}
+
+function normalizeActionFamilyInput(value = "") {
+  const actionFamily = String(value || "").trim();
+  if (!actionFamily) return "";
+  if (!VALID_ACTION_FAMILIES.has(actionFamily)) {
+    throw validationError("actionFamily invalido.", {
+      actionFamily,
+      allowed: Array.from(VALID_ACTION_FAMILIES),
+    });
+  }
+  return actionFamily;
 }
 
 function isValidTime(value) {
@@ -302,6 +333,14 @@ function buildApplyTurnAutoCheckpointPlan(changes = {}) {
     addAutoCheckpointTrigger(triggers, "world_event", "evento de mundo modificado");
   }
 
+  if (Array.isArray(changes.evidence) && changes.evidence.length > 0) {
+    addAutoCheckpointTrigger(triggers, "evidence", "evidencia u objeto narrativo persistente");
+  }
+
+  if (Array.isArray(changes.factions) && changes.factions.length > 0) {
+    addAutoCheckpointTrigger(triggers, "faction", "reputacion o credito institucional modificado");
+  }
+
   if (socialDelta >= 5) {
     addAutoCheckpointTrigger(triggers, "major_social", "avance social significativo");
   }
@@ -341,6 +380,8 @@ function buildApplyTurnAutoCheckpointPlan(changes = {}) {
     "long_scene",
     "progression",
     "commitment",
+    "evidence",
+    "faction",
     "economy",
     "major_travel",
   ];
@@ -1013,6 +1054,372 @@ function buildWorldEventResolution({ existingEvent = null, eventPayload, patch =
   };
 }
 
+function normalizeEvidenceOp(value) {
+  const op = String(value || "").trim();
+  if (!VALID_EVIDENCE_OPS.has(op)) {
+    throw validationError("evidencePatch.op debe ser create, collect, update, report, hand_over, lose, discard o destroy.", {
+      op,
+    });
+  }
+  return op;
+}
+
+function normalizeEvidenceType(value = "other") {
+  const type = String(value || "other").trim();
+  if (!VALID_EVIDENCE_TYPES.has(type)) {
+    throw validationError("evidencePatch.type invalido.", {
+      type,
+      allowed: Array.from(VALID_EVIDENCE_TYPES),
+    });
+  }
+  return type;
+}
+
+function normalizeEvidenceStatus(value) {
+  const status = String(value || "").trim();
+  if (!VALID_EVIDENCE_STATUSES.has(status)) {
+    throw validationError("evidencePatch.status invalido.", {
+      status,
+      allowed: Array.from(VALID_EVIDENCE_STATUSES),
+    });
+  }
+  return status;
+}
+
+function normalizeEvidenceHolderType(value = "character") {
+  const holderType = String(value || "character").trim();
+  if (!VALID_EVIDENCE_HOLDER_TYPES.has(holderType)) {
+    throw validationError("evidencePatch.holderType invalido.", {
+      holderType,
+      allowed: Array.from(VALID_EVIDENCE_HOLDER_TYPES),
+    });
+  }
+  return holderType;
+}
+
+function evidenceStatusForOp(op, patchStatus, existingStatus = "observed") {
+  if (patchStatus) return normalizeEvidenceStatus(patchStatus);
+  if (op === "collect") return "collected";
+  if (op === "report") return "reported";
+  if (op === "hand_over") return "handed_over";
+  if (op === "lose") return "lost";
+  if (op === "discard") return "discarded";
+  if (op === "destroy") return "destroyed";
+  if (op === "create") return "observed";
+  return existingStatus || "observed";
+}
+
+function normalizeEvidenceObservation(value, gameState, patch = {}) {
+  if (!value) return null;
+  const observation = typeof value === "string" ? { summary: value } : value;
+  const summary = String(observation.summary || "").trim();
+  if (!summary) return null;
+
+  return {
+    day: observation.day || gameState.currentDay,
+    time: observation.time || gameState.time,
+    locationId: observation.locationId || patch.locationId || gameState.locationId || "",
+    summary,
+    byCharacterId: observation.byCharacterId || gameState.characterId || "char_lucas",
+    byNpcId: observation.byNpcId || "",
+    certainty: observation.certainty || "unknown",
+    tags: unique([...(observation.tags || []), ...(patch.tags || [])]).slice(0, 12),
+  };
+}
+
+function evidenceDisplayLine(evidence, op) {
+  const action =
+    op === "report"
+      ? "reportada"
+      : op === "hand_over"
+        ? "entregada"
+        : op === "lose"
+          ? "perdida"
+          : op === "discard"
+            ? "descartada"
+            : op === "destroy"
+              ? "destruida"
+              : op === "collect"
+                ? "recogida"
+                : "registrada";
+
+  return `Evidencia ${action}: ${evidence.name} (${evidence.status}).`;
+}
+
+async function applyEvidencePatches(gameState, patches, session = null) {
+  if (patches !== undefined && !Array.isArray(patches)) {
+    throw validationError("evidencePatches debe ser un array.");
+  }
+
+  const results = [];
+
+  for (const rawPatch of patches || []) {
+    if (!rawPatch || typeof rawPatch !== "object" || Array.isArray(rawPatch)) {
+      throw validationError("evidencePatch debe ser un objeto.");
+    }
+
+    const op = normalizeEvidenceOp(rawPatch.op);
+    const evidenceId = rawPatch.evidenceId || createId("evidence");
+    const existing = await Evidence.findOne({
+      evidenceId,
+      gameId: rawPatch.gameId || gameState.gameId || "isekai_lucas_main",
+    }).session(session);
+
+    if (!existing && !["create", "collect"].includes(op)) {
+      throw validationError("No se puede actualizar evidencia inexistente sin crearla primero.", {
+        evidenceId,
+        op,
+      });
+    }
+
+    const name = String(rawPatch.name || existing?.name || "").trim();
+    if (!name) {
+      throw validationError("evidencePatch.name es obligatorio al crear o recoger evidencia.");
+    }
+
+    const holderType = normalizeEvidenceHolderType(rawPatch.holderType || existing?.holderType || "character");
+    const holderId =
+      rawPatch.holderId !== undefined
+        ? rawPatch.holderId
+        : existing?.holderId || (holderType === "character" ? gameState.characterId || "char_lucas" : "");
+    const status = evidenceStatusForOp(op, rawPatch.status, existing?.status);
+    const observationInputs = [
+      ...(Array.isArray(rawPatch.observations) ? rawPatch.observations : []),
+      rawPatch.observation,
+      rawPatch.observationSummary,
+    ];
+    const observations = observationInputs
+      .map((entry) => normalizeEvidenceObservation(entry, gameState, rawPatch))
+      .filter(Boolean);
+    const before = existing ? toPlain(existing) : null;
+    const baseRelatedEventIds = unique([
+      ...(existing?.relatedEventIds || []),
+      existing?.sourceEventId,
+      rawPatch.sourceEventId,
+      ...(rawPatch.relatedEventIds || []),
+    ]);
+    const baseRelatedMissionIds = unique([
+      ...(existing?.relatedMissionIds || []),
+      existing?.sourceMissionId,
+      rawPatch.sourceMissionId,
+      ...(rawPatch.relatedMissionIds || []),
+    ]);
+    const requestedIntegrity =
+      rawPatch.integrity !== undefined ? Number(rawPatch.integrity) : Number(existing?.integrity ?? 100);
+    const normalizedIntegrity = Number.isFinite(requestedIntegrity) ? clamp(requestedIntegrity, 0, 100) : 100;
+
+    const payload = {
+      evidenceId,
+      gameId: rawPatch.gameId || existing?.gameId || gameState.gameId || "isekai_lucas_main",
+      characterId: rawPatch.characterId || existing?.characterId || gameState.characterId || "char_lucas",
+      name,
+      summary: rawPatch.summary !== undefined ? String(rawPatch.summary || "") : existing?.summary || "",
+      type: normalizeEvidenceType(rawPatch.type || existing?.type || "other"),
+      status,
+      holderType,
+      holderId: holderType === "none" ? "" : holderId,
+      containerItemId: rawPatch.containerItemId !== undefined ? rawPatch.containerItemId : existing?.containerItemId || "",
+      locationId: rawPatch.locationId || existing?.locationId || gameState.locationId || "",
+      sourceEventId: rawPatch.sourceEventId !== undefined ? rawPatch.sourceEventId : existing?.sourceEventId || "",
+      sourceMissionId: rawPatch.sourceMissionId !== undefined ? rawPatch.sourceMissionId : existing?.sourceMissionId || "",
+      relatedEventIds: baseRelatedEventIds.slice(0, 12),
+      relatedMissionIds: baseRelatedMissionIds.slice(0, 12),
+      reportedToNpcIds: unique([...(existing?.reportedToNpcIds || []), ...(rawPatch.reportedToNpcIds || [])]).slice(0, 12),
+      visibleToNpcIds: unique([...(existing?.visibleToNpcIds || []), ...(rawPatch.visibleToNpcIds || [])]).slice(0, 12),
+      condition: rawPatch.condition !== undefined ? rawPatch.condition : existing?.condition || "normal",
+      integrity: normalizedIntegrity,
+      collectedDay:
+        rawPatch.collectedDay !== undefined
+          ? rawPatch.collectedDay
+          : existing?.collectedDay || (["collect", "create"].includes(op) ? gameState.currentDay : null),
+      collectedTime:
+        rawPatch.collectedTime !== undefined
+          ? rawPatch.collectedTime
+          : existing?.collectedTime || (["collect", "create"].includes(op) ? gameState.time : ""),
+      observations: [...(existing?.observations || []), ...observations].slice(-12),
+      tags: unique([...(existing?.tags || []), ...(rawPatch.tags || []), `evidence_status_${status}`]).slice(0, 20),
+    };
+
+    const evidence = await Evidence.findOneAndUpdate(
+      { evidenceId, gameId: payload.gameId },
+      { $set: payload },
+      { upsert: true, returnDocument: "after", runValidators: true, session }
+    ).lean();
+
+    results.push({
+      op,
+      evidenceId,
+      before,
+      after: evidence,
+      displayLine: evidenceDisplayLine(evidence, op),
+    });
+  }
+
+  return results;
+}
+
+function normalizeFactionDelta(value, field) {
+  if (value === undefined || value === null) return 0;
+  if (!Number.isInteger(value) || value < -10 || value > 10) {
+    throw validationError(`factionReputationPatches.${field} debe ser entero entre -10 y 10.`, {
+      field,
+      value,
+    });
+  }
+  return value;
+}
+
+function factionRelationshipSnapshot(faction) {
+  const rel = faction?.relationshipWithLucas || {};
+  return {
+    reputation: Number.isInteger(rel.reputation) ? rel.reputation : 0,
+    trust: Number.isInteger(rel.trust) ? rel.trust : 0,
+    suspicion: Number.isInteger(rel.suspicion) ? rel.suspicion : 0,
+    institutionalCredit: Number.isInteger(rel.institutionalCredit) ? rel.institutionalCredit : 0,
+    merit: Number.isInteger(rel.merit) ? rel.merit : 0,
+    accessLevel: rel.accessLevel || "basic",
+    notes: rel.notes || "",
+  };
+}
+
+async function applyFactionReputationPatches(gameState, patches, session = null) {
+  if (patches !== undefined && !Array.isArray(patches)) {
+    throw validationError("factionReputationPatches debe ser un array.");
+  }
+
+  const results = [];
+
+  for (const rawPatch of patches || []) {
+    if (!rawPatch || typeof rawPatch !== "object" || Array.isArray(rawPatch)) {
+      throw validationError("factionReputationPatch debe ser un objeto.");
+    }
+
+    const factionId = String(rawPatch.factionId || "").trim();
+    if (!factionId) {
+      throw validationError("factionReputationPatch.factionId es obligatorio.");
+    }
+
+    const reason = String(rawPatch.reason || "").trim();
+    if (reason.length < 8) {
+      throw validationError("factionReputationPatch.reason debe explicar el motivo institucional.");
+    }
+
+    const faction = await Faction.findOne({ factionId }).session(session);
+    if (!faction) {
+      throw validationError(`No existe faccion con id: ${factionId}.`, { factionId });
+    }
+
+    if (rawPatch.accessLevel && !VALID_FACTION_ACCESS_LEVELS.has(rawPatch.accessLevel)) {
+      throw validationError("factionReputationPatch.accessLevel invalido.", {
+        accessLevel: rawPatch.accessLevel,
+        allowed: Array.from(VALID_FACTION_ACCESS_LEVELS),
+      });
+    }
+
+    const before = factionRelationshipSnapshot(faction);
+    const deltas = {
+      reputation: normalizeFactionDelta(rawPatch.reputationDelta, "reputationDelta"),
+      trust: normalizeFactionDelta(rawPatch.trustDelta, "trustDelta"),
+      suspicion: normalizeFactionDelta(rawPatch.suspicionDelta, "suspicionDelta"),
+      institutionalCredit: normalizeFactionDelta(rawPatch.institutionalCreditDelta, "institutionalCreditDelta"),
+      merit: normalizeFactionDelta(rawPatch.meritDelta, "meritDelta"),
+    };
+
+    const after = {
+      ...before,
+      reputation: clamp(before.reputation + deltas.reputation, -100, 100),
+      trust: clamp(before.trust + deltas.trust, 0, 100),
+      suspicion: clamp(before.suspicion + deltas.suspicion, 0, 100),
+      institutionalCredit: clamp(before.institutionalCredit + deltas.institutionalCredit, -100, 100),
+      merit: clamp(before.merit + deltas.merit, 0, 100),
+      accessLevel: rawPatch.accessLevel || before.accessLevel,
+      notes: rawPatch.notes !== undefined ? String(rawPatch.notes || "") : before.notes,
+    };
+
+    faction.relationshipWithLucas = after;
+    faction.flags = {
+      ...(faction.flags && typeof faction.flags === "object" ? toPlain(faction.flags) : {}),
+      lastLucasInstitutionalChange: {
+        day: gameState.currentDay,
+        time: gameState.time,
+        reason,
+        sourceEventId: rawPatch.sourceEventId || "",
+        sourceMissionId: rawPatch.sourceMissionId || "",
+      },
+    };
+
+    if (typeof faction.markModified === "function") {
+      faction.markModified("relationshipWithLucas");
+      faction.markModified("flags");
+    }
+
+    await faction.save({ session });
+
+    results.push({
+      factionId,
+      name: faction.name,
+      reason,
+      before,
+      deltas,
+      after,
+      displayLines: [
+        `Reputacion institucional ${faction.name}: ${before.reputation}->${after.reputation} (${deltas.reputation >= 0 ? "+" : ""}${deltas.reputation}).`,
+        `Credito institucional ${faction.name}: ${before.institutionalCredit}->${after.institutionalCredit} (${deltas.institutionalCredit >= 0 ? "+" : ""}${deltas.institutionalCredit}).`,
+      ].filter((line) => !line.includes("(+0)") && !line.includes("(0)")),
+    });
+  }
+
+  return results;
+}
+
+function normalizeWorldEventProgress(progress, gameState, patch = {}) {
+  if (progress === undefined || progress === null) return null;
+  if (typeof progress !== "object" || Array.isArray(progress)) {
+    throw validationError("worldEventPatch.progress debe ser un objeto.");
+  }
+
+  const confidence = progress.confidence ? String(progress.confidence).trim() : "";
+  if (confidence && !VALID_EVENT_PROGRESS_CONFIDENCE.has(confidence)) {
+    throw validationError("worldEventPatch.progress.confidence invalido.", {
+      confidence,
+      allowed: Array.from(VALID_EVENT_PROGRESS_CONFIDENCE),
+    });
+  }
+
+  return {
+    stage: String(progress.stage || "").trim(),
+    statusLabel: String(progress.statusLabel || "").trim(),
+    summary: String(progress.summary || "").trim(),
+    confidence,
+    nextAction: String(progress.nextAction || "").trim(),
+    clueIds: unique(progress.clueIds || []),
+    evidenceIds: unique(progress.evidenceIds || []),
+    reportIds: unique(progress.reportIds || []),
+    lastUpdatedDay: progress.lastUpdatedDay || gameState.currentDay,
+    lastUpdatedTime: progress.lastUpdatedTime || gameState.time,
+    updatedByCharacterId: progress.updatedByCharacterId || patch.resolvedByCharacterId || gameState.characterId || "char_lucas",
+  };
+}
+
+function mergeWorldEventProgress(existingProgress = {}, patchProgress = null, gameState, patch = {}) {
+  const normalized = normalizeWorldEventProgress(patchProgress, gameState, patch);
+  if (!normalized) return existingProgress || {};
+
+  return {
+    stage: normalized.stage || existingProgress?.stage || "",
+    statusLabel: normalized.statusLabel || existingProgress?.statusLabel || "",
+    summary: normalized.summary || existingProgress?.summary || "",
+    confidence: normalized.confidence || existingProgress?.confidence || "unknown",
+    nextAction: normalized.nextAction || existingProgress?.nextAction || "",
+    clueIds: unique([...(existingProgress?.clueIds || []), ...normalized.clueIds]).slice(0, 20),
+    evidenceIds: unique([...(existingProgress?.evidenceIds || []), ...normalized.evidenceIds]).slice(0, 20),
+    reportIds: unique([...(existingProgress?.reportIds || []), ...normalized.reportIds]).slice(0, 20),
+    lastUpdatedDay: normalized.lastUpdatedDay,
+    lastUpdatedTime: normalized.lastUpdatedTime,
+    updatedByCharacterId: normalized.updatedByCharacterId,
+  };
+}
+
 async function applyWorldEventPatches(gameState, patches, session = null) {
   const results = {
     events: [],
@@ -1071,6 +1478,7 @@ async function applyWorldEventPatches(gameState, patches, session = null) {
       createdBy: patch.createdBy || existingEvent?.createdBy || "system",
       tags: unique([...(existingEvent?.tags || []), ...(patch.tags || [])]),
       resolution: existingEvent?.resolution || {},
+      progress: mergeWorldEventProgress(existingEvent?.progress || {}, patch.progress, gameState, patch),
     };
 
     const resolution = buildWorldEventResolution({
@@ -1095,6 +1503,23 @@ async function applyWorldEventPatches(gameState, patches, session = null) {
           target: "world_event",
           value: resolution,
           reason: "Cierre formal de evento de mundo.",
+        },
+      ];
+    }
+
+    if (patch.progress) {
+      eventPayload.tags = unique([
+        ...(eventPayload.tags || []),
+        "event_progress_updated",
+        eventPayload.progress.stage ? `event_stage_${eventPayload.progress.stage}` : "",
+      ]);
+      eventPayload.effects = [
+        ...(eventPayload.effects || []),
+        {
+          type: "event_progress",
+          target: "world_event",
+          value: eventPayload.progress,
+          reason: patch.reason || "Progreso formal del evento actualizado.",
         },
       ];
     }
@@ -2623,6 +3048,7 @@ async function applyTurn(req, res) {
     }
 
     const body = req.body || {};
+    const actionFamily = normalizeActionFamilyInput(body.actionFamily);
     validateEventLogInputs(body.eventLogs);
 
     let responsePayload = null;
@@ -2889,6 +3315,15 @@ async function applyTurn(req, res) {
         }
       }
 
+      if (Array.isArray(body.evidencePatches)) {
+        const evidenceChanges = await applyEvidencePatches(gameState, body.evidencePatches, session);
+        if (evidenceChanges.length > 0) {
+          changes.evidence = evidenceChanges;
+        }
+      } else if (body.evidencePatches !== undefined) {
+        throw validationError("evidencePatches debe ser un array.");
+      }
+
       if (body.skillPatch !== undefined && !Array.isArray(body.skillPatch)) {
         throw validationError("skillPatch debe ser un array.");
       }
@@ -2922,6 +3357,13 @@ async function applyTurn(req, res) {
       if (Array.isArray(body.npcRelationshipPatches)) {
         const relationshipChanges = await applyNpcRelationshipPatches(gameState, body.npcRelationshipPatches, session);
         if (relationshipChanges.length > 0) changes.npcRelationships = relationshipChanges;
+      }
+
+      if (Array.isArray(body.factionReputationPatches)) {
+        const factionChanges = await applyFactionReputationPatches(gameState, body.factionReputationPatches, session);
+        if (factionChanges.length > 0) changes.factions = factionChanges;
+      } else if (body.factionReputationPatches !== undefined) {
+        throw validationError("factionReputationPatches debe ser un array.");
       }
 
       if (Array.isArray(body.npcMemoryPatches)) {
@@ -3083,6 +3525,7 @@ async function applyTurn(req, res) {
           actionSummary: body.actionSummary || "",
           changes,
           logDrafts: logsToCreate,
+          actionFamily,
           session,
         });
         attachNarrativeTrackingToLogDrafts(logsToCreate, narrativeHints);

@@ -227,7 +227,7 @@ async function checkCompactEndpoints(issues) {
   assertEqual(issues, "activity preview energy delta", activityPreview.preview?.totalDelta?.energy, -2);
   assertCondition(issues, "magic techniques has entries", (magicTechniques.techniques || []).length >= 6);
   assertCondition(issues, "skill preview is dryRun", skillPreview.dryRun === true);
-  assertEqual(issues, "skill preview applies Aqua to mana", skillPreview.preview?.validation?.effectiveExpDelta, 20);
+  assertEqual(issues, "skill preview applies Aqua to mana", skillPreview.preview?.validation?.effectiveExpDelta, 40);
   assertCondition(issues, "magic practice preview can practice", magicPracticePreview.preview?.canPractice === true);
   assertCondition(
     issues,
@@ -362,11 +362,19 @@ async function main() {
   assertCondition(issues, "compact excludes context/full", !compactOps.includes("GET /api/context/full"));
   assertCondition(issues, "compact includes character state", compactOps.includes("GET /api/characters/{characterId}/state"));
   assertCondition(issues, "compact has missionPatch", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.missionPatch));
+  assertCondition(issues, "compact has evidencePatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.evidencePatches));
   assertCondition(issues, "compact has skillPatch", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.skillPatch));
   assertCondition(issues, "compact has shopStockPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.shopStockPatches));
   assertCondition(issues, "compact has npcMemoryPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.npcMemoryPatches));
   assertCondition(issues, "compact has npcRelationshipPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.npcRelationshipPatches));
+  assertCondition(issues, "compact has factionReputationPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.factionReputationPatches));
+  assertCondition(issues, "compact has actionFamily", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.actionFamily));
   assertCondition(issues, "compact has jobContractPatch", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.jobContractPatch));
+  assertCondition(
+    issues,
+    "compact travel preview supports multi-segment pathfinding",
+    Boolean(compact.paths?.["/api/travel/preview"]?.post?.requestBody?.content?.["application/json"]?.schema?.properties?.allowMultiSegment)
+  );
   assertCondition(issues, "compact includes social impact preview", compactOps.includes("POST /api/npcs/social/impact/preview"));
   assertCondition(issues, "compact applyTurn is non-consequential for fluid gameplay", compact.paths?.["/api/turn/apply"]?.post?.["x-openai-isConsequential"] === false);
   assertCondition(issues, "compact completeJobShift is non-consequential for fluid gameplay", compact.paths?.["/api/jobs/shifts/{shiftId}/complete"]?.post?.["x-openai-isConsequential"] === false);
@@ -407,6 +415,11 @@ async function main() {
     ["verify", "complete", "fail", "expire"].every((op) =>
       compact.components?.schemas?.MissionPatchItem?.properties?.op?.enum?.includes(op)
     )
+  );
+  assertCondition(
+    issues,
+    "compact supports event progress patches",
+    Boolean(compact.components?.schemas?.WorldEventPatchItem?.properties?.progress)
   );
   assertCondition(issues, "compact excludes checkpoint list", !compact.paths?.["/api/checkpoints"]?.get);
   assertCondition(issues, "compact excludes checkpoint create", !compact.paths?.["/api/checkpoints"]?.post);

@@ -17,6 +17,16 @@ const relationshipWithLucasSchema = new mongoose.Schema(
       default: 0,
     },
 
+    institutionalCredit: {
+      type: Number,
+      default: 0,
+    },
+
+    merit: {
+      type: Number,
+      default: 0,
+    },
+
     accessLevel: {
       type: String,
       enum: ["none", "basic", "trusted", "restricted", "hostile"],

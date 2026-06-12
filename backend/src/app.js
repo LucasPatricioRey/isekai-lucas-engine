@@ -29,6 +29,7 @@ const PUBLIC_DOC_FILES = new Set([
   "openapi-gpt-action-compact.json",
   "openapi-gpt-action-admin.json",
   "openapi-gpt-action-admin-extra.json",
+  "openapi-gpt-action-combat.json",
 ]);
 
 app.use(cors());

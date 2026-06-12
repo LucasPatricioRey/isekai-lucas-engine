@@ -22,6 +22,57 @@ const effectSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const progressSchema = new mongoose.Schema(
+  {
+    stage: {
+      type: String,
+      default: "",
+    },
+    statusLabel: {
+      type: String,
+      default: "",
+    },
+    summary: {
+      type: String,
+      default: "",
+    },
+    confidence: {
+      type: String,
+      enum: ["unknown", "rumor", "partial", "strong", "confirmed"],
+      default: "unknown",
+    },
+    nextAction: {
+      type: String,
+      default: "",
+    },
+    clueIds: {
+      type: [String],
+      default: [],
+    },
+    evidenceIds: {
+      type: [String],
+      default: [],
+    },
+    reportIds: {
+      type: [String],
+      default: [],
+    },
+    lastUpdatedDay: {
+      type: Number,
+      default: null,
+    },
+    lastUpdatedTime: {
+      type: String,
+      default: "",
+    },
+    updatedByCharacterId: {
+      type: String,
+      default: "",
+    },
+  },
+  { _id: false }
+);
+
 const worldEventSchema = new mongoose.Schema(
   {
     eventId: {
@@ -164,6 +215,11 @@ const worldEventSchema = new mongoose.Schema(
     resolution: {
       type: mongoose.Schema.Types.Mixed,
       default: {},
+    },
+
+    progress: {
+      type: progressSchema,
+      default: () => ({}),
     },
   },
   {

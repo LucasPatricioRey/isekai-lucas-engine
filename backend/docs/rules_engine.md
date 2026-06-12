@@ -698,6 +698,10 @@ Al superar nivel 10, pasar a la siguiente fase nivel 1.
 
 Máximo: Legendario nivel 10.
 
+La EXP base se valida por categoria de accion, pero el backend aplica multiplicador de aprendizaje por fase. Principiante aprende rapido para que haya progreso visible; Novato y Competente aun progresan de forma razonable; fases altas exigen acciones mas serias. Multiplicadores actuales: Principiante x5, Novato x2.5, Competente x1.5, Experto x1, Maestro x0.75, Legendario x0.5.
+
+Habilidades dificiles de entrenar por disponibilidad, como Percepcion, pueden tener multiplicador propio si la accion usa realmente esa habilidad. No dar Percepcion por estar presente: solo por vigilancia, lectura de detalles, rastreo, peligro real o lectura social activa.
+
 ### 10.3 Abreviatura visible
 
 Usar formato:
@@ -1283,6 +1287,8 @@ Un NPC no puede usar libertad creativa para:
 
 El objetivo es que cada NPC se sienta vivo: con voz, límites, humor, silencios, cansancio, dudas y subtexto. La creatividad mejora la expresión, no altera la verdad del mundo.
 
+Regla de agencia: el mundo no debe orbitar alrededor de Lucas. Un NPC solo muestra preocupacion, proteccion, interes fuerte o implicacion personal si hay motivo diegetico: confianza/familiaridad suficiente, rol de seguridad o cuidado, obligacion laboral, interes propio, impacto directo, deuda, curiosidad coherente o conocimiento concreto del riesgo. NPCs desconocidos o poco vinculados pueden ignorar, juzgar, usar la informacion para sus propios fines o responder de forma institucional.
+
 ### 18.4 Escena viva
 
 NPCs relevantes presentes por rutina/lógica deben sentirse en escena aunque no hablen.
@@ -1491,6 +1497,8 @@ La confianza sube por calidad, oportunidad, respeto y consecuencia, no por canti
 Si `getCompactContext.socialRhythm` marca un NPC como saturado en el dia, la escena debe mostrar continuidad natural: gesto, coordinacion, comodidad, cansancio o memoria. No repetir agradecimientos ni aplicar nuevos deltas numericos salvo que haya novedad fuerte validada por preview/backend.
 
 Si `narrativeHints.scenePlan` pide escena comprimida, resumir la rutina y elegir un solo detalle nuevo. La repeticion tambien puede ser inmersiva: que un NPC deje de sorprenderse, de menos instrucciones, confie una tarea simple o responda con menos palabras.
+
+Cuando el GPT use `applyTurn` debe enviar `actionFamily` si la accion tiene familia clara (`investigation`, `report`, `travel`, `social`, `physical_training`, `magic_practice`, `mission`, etc.). Este campo solo guia `narrativeHints`: no crea mecanicas ni reemplaza tags, pero evita que reportes, investigaciones o viajes se clasifiquen como compra/entrenamiento por inferencia.
 
 ### 19.10 Ejemplo: charla ligera con Yara
 
@@ -1750,13 +1758,31 @@ Un reporte de mision debe guardar resumen, evidencia, calidad, testigos y ubicac
 
 Si `guildState.formalGuildRegistrationPending` esta activo, las misiones de rango que requieren registro formal solo se aceptan con permiso/supervision explicita y `registrationOverrideReason`; si no, el backend debe bloquearlas.
 
-### P10. Friccion de mundo: economia, viaje y clima
+Los reportes institucionales al gremio, guardia, templo u otra faccion no deben convertirse automaticamente en `socialDebt` de un NPC. Si la ganancia es institucional usar `factionReputationPatches` (`institutionalCreditDelta`, `meritDelta`, `reputationDelta`) y reservar `npcRelationshipPatches` para trato personal directo.
+
+La cartelera puede mostrar misiones disponibles pero bloqueadas por registro, rango, permiso o vencimiento. El narrador puede mencionarlas como visibles/no aceptables, pero no debe ofrecerlas como aceptadas ni vigentes si `boardVisibility.canAccept` es falso.
+
+### P10. Evidencia, objetos improvisados y progreso de eventos
+
+La evidencia fisica o narrativa no debe vivir solo como EventLog ni forzarse como item de inventario canonico. Para muestras, rastros, notas improvisadas, objetos encontrados, testimonios o pruebas no vendibles usar `evidencePatches`.
+
+`inventoryPatch` sigue siendo solo para items existentes. Si Lucas recoge una muestra o prueba que no existe como item canonico, crear/recoger evidencia con `evidencePatches` en vez de inventar `itemId`.
+
+Si una evidencia se reporta, entrega, pierde, descarta o destruye, actualizarla con `evidencePatches`. Si se relaciona con evento o mision, guardar `sourceEventId`, `relatedEventIds`, `sourceMissionId` o `relatedMissionIds`.
+
+Los eventos de mundo pueden avanzar sin resolverse. Para pistas parciales, reportes libres al gremio, evaluaciones pendientes o evidencia no concluyente usar `worldEventPatches.progress`. No cerrar un evento como `resolved` hasta que el resultado real este claro.
+
+EventLog acompaña la narracion, pero no reemplaza evidencia formal ni progreso de evento. Si una Action falla, no narrar como guardado lo que el backend rechazo; corregir el payload o avisar en modo tecnico.
+
+### P11. Friccion de mundo: economia, viaje y clima
 
 `getCompactContext.worldFriction` es la lectura compacta para stock cercano, demoras de suministro, clima y riesgo de viaje. No muta estado y no reemplaza previews: solo avisa que hay friccion que el narrador debe respetar.
 
 Si `worldFriction.economy.hasPressure` esta activo, no asumir stock infinito, descuentos faciles ni disponibilidad automatica. Compras/ventas requieren validar tienda, dinero, item, stock y precio antes de mutar.
 
 Si `worldFriction.travel.shouldPreviewTravel` esta activo, usar `previewTravel` antes de resolver rutas exteriores, viajes largos o salidas a zona peligrosa. El clima o eventos de ruta pueden alargar tiempo, cambiar coste biologico o exigir cautela narrativa, pero no crean combate automatico.
+
+Si no hay ruta directa y el destino es razonable, usar `previewTravel` con `allowMultiSegment:true` y `maxSegments` prudente. El resultado `path.segments` manda el recorrido real, tiempo total y riesgo maximo; no componer rutas largas solo desde narracion.
 
 Si el clima esta `staleByCurrentTime`, refrescarlo con el flujo de turno/world tick antes de escenas exteriores relevantes. Rumores de ruta, barro o suministros retrasados son presion contextual: pueden afectar escena, precios o disponibilidad solo cuando el backend lo exponga o una accion lo justifique.
 

@@ -1,0 +1,711 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Isekai Lucas Engine GPT Actions Combat Advanced",
+    "version": "0.3.0",
+    "description": "Tercer bloque de Actions para combate avanzado. Fase C5: crea/lista encuentros, genera previewId, resuelve acciones basicas con backend rolls y agrega consecuencias post-combate controladas: evidencia, loot logico sin inventario automatico y tratamiento basico de heridas."
+  },
+  "servers": [
+    {
+      "url": "https://isekai-lucas-engine.onrender.com"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key"
+      }
+    },
+    "schemas": {
+      "GenericResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "GameId": {
+        "type": "string",
+        "default": "isekai_lucas_main"
+      },
+      "PreviewStartEncounterRequest": {
+        "type": "object",
+        "required": ["enemyId"],
+        "properties": {
+          "gameId": {
+            "$ref": "#/components/schemas/GameId"
+          },
+          "enemyId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "sourceEventId": {
+            "type": "string"
+          },
+          "sourceMissionId": {
+            "type": "string"
+          },
+          "sourceCommitmentId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "StartEncounterRequest": {
+        "type": "object",
+        "required": ["enemyId"],
+        "properties": {
+          "gameId": {
+            "$ref": "#/components/schemas/GameId"
+          },
+          "enemyId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "sourceEventId": {
+            "type": "string"
+          },
+          "sourceMissionId": {
+            "type": "string"
+          },
+          "sourceCommitmentId": {
+            "type": "string"
+          },
+          "terrainTags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "visibility": {
+            "type": "string",
+            "enum": ["clear", "dim", "dark", "fog", "rain", "obscured", "unknown"],
+            "default": "unknown"
+          },
+          "noiseLevel": {
+            "type": "string",
+            "enum": ["silent", "quiet", "normal", "loud", "alarming", "unknown"],
+            "default": "unknown"
+          },
+          "surpriseState": {
+            "type": "string",
+            "enum": ["none", "lucas_surprised", "enemy_surprised", "mutual", "unknown"],
+            "default": "unknown"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PreviewActionRequest": {
+        "type": "object",
+        "required": ["actionType"],
+        "properties": {
+          "gameId": {
+            "$ref": "#/components/schemas/GameId"
+          },
+          "actionType": {
+            "type": "string",
+            "enum": ["attack", "defend", "dodge", "observe", "move", "flee", "surrender", "use_item", "use_magic", "protect", "intimidate", "prepare"]
+          },
+          "actorId": {
+            "type": "string"
+          },
+          "targetIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ApplyActionRequest": {
+        "type": "object",
+        "required": ["previewId"],
+        "properties": {
+          "gameId": {
+            "$ref": "#/components/schemas/GameId"
+          },
+          "previewId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EndEncounterRequest": {
+        "type": "object",
+        "properties": {
+          "gameId": {
+            "$ref": "#/components/schemas/GameId"
+          },
+          "endStatus": {
+            "type": "string",
+            "enum": ["escaped", "deescalated", "interrupted", "cancelled"],
+            "default": "cancelled"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CombatGameIdOnlyRequest": {
+        "type": "object",
+        "properties": {
+          "gameId": {
+            "$ref": "#/components/schemas/GameId"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TreatmentRequest": {
+        "type": "object",
+        "properties": {
+          "gameId": {
+            "$ref": "#/components/schemas/GameId"
+          },
+          "treatmentType": {
+            "type": "string",
+            "enum": ["field_dressing", "clean_and_bind", "rest_care"],
+            "default": "field_dressing"
+          },
+          "quality": {
+            "type": "string",
+            "enum": ["poor", "basic", "good", "excellent"],
+            "default": "basic"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "paths": {
+    "/api/combat/advanced/actions": {
+      "get": {
+        "operationId": "combatAdvancedListActions",
+        "summary": "Lista acciones de combate avanzado disponibles en C4.",
+        "description": "Lectura. Devuelve actionTypes, economia de accion y notas. En C4 attack/defend/observe/move/flee/surrender/intimidate/prepare tienen aplicacion basica.",
+        "responses": {
+          "200": {
+            "description": "Acciones.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/combat/advanced/encounters/start/preview": {
+      "post": {
+        "operationId": "combatAdvancedPreviewStartEncounter",
+        "summary": "Previsualiza iniciar un encuentro avanzado.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewStartEncounterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Preview.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/combat/advanced/encounters/start": {
+      "post": {
+        "operationId": "combatAdvancedStartEncounter",
+        "summary": "Inicia un encuentro avanzado formal.",
+        "description": "Muta estado de combate y crea checkpoint automatico. No usar si Lucas solo pregunta, mira o evalua riesgo.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartEncounterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Encuentro iniciado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/combat/advanced/encounters/active": {
+      "get": {
+        "operationId": "combatAdvancedListActiveEncounters",
+        "summary": "Lista combates avanzados activos.",
+        "parameters": [
+          {
+            "name": "gameId",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/GameId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Encuentros activos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/combat/advanced/encounters/{encounterId}": {
+      "get": {
+        "operationId": "combatAdvancedGetEncounter",
+        "summary": "Obtiene un encuentro avanzado.",
+        "parameters": [
+          {
+            "name": "encounterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Encuentro.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/combat/advanced/encounters/{encounterId}/actions": {
+      "get": {
+        "operationId": "combatAdvancedListAvailableActions",
+        "summary": "Lista acciones disponibles para un encuentro concreto.",
+        "parameters": [
+          {
+            "name": "encounterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Acciones disponibles.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/combat/advanced/encounters/{encounterId}/actions/preview": {
+      "post": {
+        "operationId": "combatAdvancedPreviewAction",
+        "summary": "Crea previewId para una accion de combate avanzado.",
+        "description": "Crea un token de preview pendiente. No resuelve dano ni cambia el encuentro hasta llamar applyAction.",
+        "parameters": [
+          {
+            "name": "encounterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Preview con previewId.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/combat/advanced/actions/apply": {
+      "post": {
+        "operationId": "combatAdvancedApplyAction",
+        "summary": "Aplica una accion previsualizada.",
+        "description": "Valida previewId y aplica acciones soportadas por C4. Algunas acciones, como use_item/use_magic/protect, pueden devolver 501 hasta fases posteriores.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reservado para C4.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Accion concreta pendiente de fase posterior."
+          }
+        }
+      }
+    },
+    "/api/combat/advanced/encounters/{encounterId}/npc-turn/resolve": {
+      "post": {
+        "operationId": "combatAdvancedResolveNextNpcTurn",
+        "summary": "Resuelve el siguiente turno NPC.",
+        "description": "Resuelve turno NPC basico: ataque o retirada por moral/vida.",
+        "parameters": [
+          {
+            "name": "encounterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "gameId": {
+                    "$ref": "#/components/schemas/GameId"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Turno NPC resuelto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/combat/advanced/encounters/{encounterId}/loot/preview": {
+      "post": {
+        "operationId": "combatAdvancedPreviewLoot",
+        "summary": "Previsualiza consecuencias post-combate.",
+        "description": "No muta estado. Indica si se puede reclamar evidencia/loot logico tras el combate. No crea dinero ni items de inventario.",
+        "parameters": [
+          {
+            "name": "encounterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CombatGameIdOnlyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Preview post-combate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/combat/advanced/encounters/{encounterId}/loot/claim": {
+      "post": {
+        "operationId": "combatAdvancedClaimLoot",
+        "summary": "Reclama consecuencias post-combate controladas.",
+        "description": "Muta estado: crea Evidence, actualiza encuentro y puede enlazar evento/mision/faccion. No da dinero ni crea items inexistentes.",
+        "parameters": [
+          {
+            "name": "encounterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CombatGameIdOnlyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Consecuencias reclamadas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/combat/advanced/encounters/{encounterId}/end/preview": {
+      "post": {
+        "operationId": "combatAdvancedPreviewEndEncounter",
+        "summary": "Previsualiza cierre manual seguro del encuentro.",
+        "parameters": [
+          {
+            "name": "encounterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EndEncounterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Preview de cierre.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/combat/advanced/encounters/{encounterId}/end": {
+      "post": {
+        "operationId": "combatAdvancedEndEncounter",
+        "summary": "Cierra manualmente un encuentro avanzado.",
+        "description": "Cierre manual seguro para escaped/deescalated/interrupted/cancelled. La resolucion normal del combate se maneja por combatAdvancedApplyAction y combatAdvancedResolveNextNpcTurn.",
+        "parameters": [
+          {
+            "name": "encounterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EndEncounterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Encuentro cerrado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/combat/advanced/injuries/{injuryId}/treatment/preview": {
+      "post": {
+        "operationId": "combatAdvancedPreviewTreatment",
+        "summary": "Previsualiza tratamiento basico de una herida.",
+        "description": "No muta estado. Estima estabilizacion de sangrado/dolor. No cura vida automaticamente.",
+        "parameters": [
+          {
+            "name": "injuryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TreatmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Preview de tratamiento.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/combat/advanced/injuries/{injuryId}/treatment/apply": {
+      "post": {
+        "operationId": "combatAdvancedApplyTreatment",
+        "summary": "Aplica tratamiento basico de una herida.",
+        "description": "Muta InjuryRecord y, si corresponde, la herida legacy de Lucas. No restaura vida automaticamente.",
+        "parameters": [
+          {
+            "name": "injuryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TreatmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tratamiento aplicado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "x-action-role": "combat-advanced",
+  "x-no-overlap-with": "openapi-gpt-action-compact.json",
+  "x-phase": "C5"
+}

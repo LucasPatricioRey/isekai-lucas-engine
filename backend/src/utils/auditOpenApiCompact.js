@@ -171,6 +171,7 @@ function main() {
   for (const propertyName of [
     "moneyPatch",
     "inventoryPatch",
+    "evidencePatches",
     "skillPatch",
     "shopStockPatches",
     "npcMemoryPatches",
@@ -178,11 +179,13 @@ function main() {
     "gameStatePatch",
     "activityCost",
     "biologicalCostExemptReason",
+    "actionFamily",
     "missionPatch",
     "worldEventPatches",
     "jobContractPatch",
     "commitmentPatches",
     "eventLogs",
+    "factionReputationPatches",
   ]) {
     assertCondition(
       issues,
@@ -341,6 +344,39 @@ function main() {
     issues,
     "compact WorldEventPatchItem supports expired status",
     compact.components?.schemas?.WorldEventPatchItem?.properties?.status?.enum?.includes("expired")
+  );
+  assertCondition(
+    issues,
+    "compact has EvidencePatchItem",
+    Boolean(compact.components?.schemas?.EvidencePatchItem)
+  );
+  assertCondition(
+    issues,
+    "compact WorldEventPatchItem has progress",
+    Boolean(compact.components?.schemas?.WorldEventPatchItem?.properties?.progress)
+  );
+  assertCondition(
+    issues,
+    "compact has FactionReputationPatchItem",
+    Boolean(compact.components?.schemas?.FactionReputationPatchItem)
+  );
+  assertCondition(
+    issues,
+    "compact actionFamily supports investigation",
+    compact.components?.schemas?.ApplyTurnRequest?.properties?.actionFamily?.enum?.includes("investigation")
+  );
+  assertCondition(
+    issues,
+    "compact actionFamily supports report",
+    compact.components?.schemas?.ApplyTurnRequest?.properties?.actionFamily?.enum?.includes("report")
+  );
+  assertCondition(
+    issues,
+    "compact travel preview supports multi-segment pathfinding",
+    Boolean(
+      compactOps.get("POST /api/travel/preview")?.requestBody?.content?.["application/json"]?.schema?.properties
+        ?.allowMultiSegment
+    )
   );
   for (const propertyName of ["applySocialConsequences", "socialOutcome"]) {
     assertCondition(

@@ -20,8 +20,10 @@ const NpcSocialLedger = require("../models/NpcSocialLedger");
 const WeatherState = require("../models/WeatherState");
 const JobContract = require("../models/JobContract");
 const Commitment = require("../models/Commitment");
+const Evidence = require("../models/Evidence");
 const responseShaping = require("../utils/responseShaping");
 const { buildNarrativeContextSummary } = require("../services/narrativeVariationService");
+const { annotateMissionForBoard } = require("../services/missionService");
 const {
   DAILY_EVENT_TAG,
   EVENT_LAYERS,
@@ -342,14 +344,28 @@ function buildMissionAgenda({ activeMissions = [], availableMissions = [] } = {}
   };
 }
 
-function buildGuildState(gameState = {}) {
+function buildGuildState(gameState = {}, guildFaction = null) {
   const flags = gameState.flags && typeof gameState.flags === "object" ? gameState.flags : {};
   const guild = flags.guild && typeof flags.guild === "object" ? flags.guild : {};
+  const relationship = guildFaction?.relationshipWithLucas || {};
   return {
     formalGuildRegistrationPending: Boolean(flags.formalGuildRegistrationPending),
     mg: Number.isInteger(guild.mg) ? guild.mg : 0,
     rank: guild.rank || guild.currentRank || "",
     registrationStatus: flags.formalGuildRegistrationPending ? "pending" : "available_or_complete",
+    factionId: guildFaction?.factionId || "faction_hoshimori_guild",
+    factionName: guildFaction?.name || "Gremio local de Hoshimori",
+    institutionalStanding: guildFaction
+      ? {
+          reputation: relationship.reputation || 0,
+          trust: relationship.trust || 0,
+          suspicion: relationship.suspicion || 0,
+          institutionalCredit: relationship.institutionalCredit || 0,
+          merit: relationship.merit || 0,
+          accessLevel: relationship.accessLevel || "basic",
+          notes: relationship.notes || "",
+        }
+      : null,
   };
 }
 
@@ -839,6 +855,8 @@ async function getCompactContext(req, res) {
       jobContract,
       todaySocialLedger,
       pendingCommitments,
+      carriedEvidence,
+      guildFaction,
     ] = await Promise.all([
       inventoryItemIds.length
         ? Item.find({ itemId: { $in: inventoryItemIds } }).sort({ name: 1 }).lean()
@@ -978,6 +996,31 @@ async function getCompactContext(req, res) {
             .limit(Math.max(limits.commitmentLimit * 4, limits.commitmentLimit))
             .lean()
         : Promise.resolve([]),
+
+      Evidence.find({
+        gameId,
+        status: { $in: ["observed", "collected", "stored", "reported"] },
+        $or: [
+          { holderType: "character", holderId: gameState.characterId || "char_lucas" },
+          ...(activeEventIds.length
+            ? [
+                { sourceEventId: { $in: activeEventIds } },
+                { relatedEventIds: { $in: activeEventIds } },
+              ]
+            : []),
+          ...(activeMissionIds.length
+            ? [
+                { sourceMissionId: { $in: activeMissionIds } },
+                { relatedMissionIds: { $in: activeMissionIds } },
+              ]
+            : []),
+        ],
+      })
+        .sort({ updatedAt: -1, collectedDay: -1, collectedTime: -1 })
+        .limit(8)
+        .lean(),
+
+      Faction.findOne({ factionId: "faction_hoshimori_guild" }).lean(),
     ]);
 
     const activeMissionSummaries = activeMissions.map((mission) =>
@@ -996,9 +1039,9 @@ async function getCompactContext(req, res) {
       })
       .slice(0, limits.commitmentLimit);
     const commitmentAgenda = buildCommitmentAgenda(pendingCommitmentSummaries);
-    const availableMissionSummaries = availableMissions.map((mission) =>
-      responseShaping.summarizeMission(mission, gameState.currentDay, gameState.time)
-    );
+    const availableMissionSummaries = availableMissions
+      .map((mission) => annotateMissionForBoard(mission, gameState))
+      .map((mission) => responseShaping.summarizeMission(mission, gameState.currentDay, gameState.time));
     const availableMissionPreview = availableMissionSummaries
       .filter((mission) => !mission.expiredByCurrentTime)
       .slice(0, limits.missionLimit);
@@ -1006,7 +1049,7 @@ async function getCompactContext(req, res) {
       activeMissions: activeMissionSummaries,
       availableMissions: availableMissionPreview,
     });
-    const guildState = buildGuildState(gameState);
+    const guildState = buildGuildState(gameState, guildFaction);
     const nearbyNpcSummaries = nearbyNpcs.map(responseShaping.summarizeNpc);
     const socialRhythm = buildSocialRhythm({
       nearbyNpcSummaries,
@@ -1372,6 +1415,7 @@ async function getCompactContext(req, res) {
         commitmentAgenda,
         guildState,
         worldFriction,
+        carriedEvidence: carriedEvidence.map(responseShaping.summarizeEvidence),
         activeMissions: activeMissionSummaries,
         availableMissionPreview,
         missionAgenda,

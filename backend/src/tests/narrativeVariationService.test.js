@@ -27,6 +27,18 @@ describe("narrative variation service", () => {
       }),
       ACTION_FAMILIES.SHOPPING
     );
+    assert.equal(
+      inferActionFamily({
+        actionSummary: "Lucas investiga rastros, huellas y ramas quebradas en el borde del bosque.",
+      }),
+      ACTION_FAMILIES.INVESTIGATION
+    );
+    assert.equal(
+      inferActionFamily({
+        actionSummary: "Lucas reporta evidencia util al gremio con un informe sobrio.",
+      }),
+      ACTION_FAMILIES.REPORT
+    );
   });
 
   it("compresses repeated job scenes and tells the narrator what not to repeat", () => {

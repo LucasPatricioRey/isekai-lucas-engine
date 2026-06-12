@@ -3,7 +3,9 @@ const { after, before, describe, it } = require("node:test");
 const Checkpoint = require("../models/Checkpoint");
 const CombatEncounter = require("../models/CombatEncounter");
 const Commitment = require("../models/Commitment");
+const Evidence = require("../models/Evidence");
 const EventLog = require("../models/EventLog");
+const Faction = require("../models/Faction");
 const GameState = require("../models/GameState");
 const JobContract = require("../models/JobContract");
 const Mission = require("../models/Mission");
@@ -34,6 +36,7 @@ let tempJobContractId = "";
 let tempCreatedJobContractId = "";
 let tempNpcId = "";
 let tempRemoteNpcId = "";
+let tempFactionId = "";
 let tempWeatherRegionId = "";
 
 async function createIsolatedGameState() {
@@ -44,6 +47,7 @@ async function createIsolatedGameState() {
   tempJobContractId = `contract_test_turn_hardening_${Date.now()}`;
   tempNpcId = `npc_test_relationship_${Date.now()}`;
   tempRemoteNpcId = `npc_test_relationship_remote_${Date.now()}`;
+  tempFactionId = `faction_test_institution_${Date.now()}`;
   tempWeatherRegionId = `region_test_turn_hardening_${Date.now()}`;
 
   const base = await GameState.findOne({ gameId: "isekai_lucas_main" }).lean();
@@ -218,6 +222,23 @@ async function createIsolatedGameState() {
       notes: "Fixture temporal remota de pruebas.",
     },
   });
+
+  await Faction.create({
+    factionId: tempFactionId,
+    name: "Institucion temporal de test",
+    type: "guild",
+    scope: "local",
+    relationshipWithLucas: {
+      reputation: 0,
+      trust: 0,
+      suspicion: 0,
+      institutionalCredit: 0,
+      merit: 0,
+      accessLevel: "basic",
+      notes: "Fixture temporal institucional.",
+    },
+    flags: { testSuite: true },
+  });
 }
 
 async function cleanupIsolatedState() {
@@ -225,6 +246,7 @@ async function cleanupIsolatedState() {
   if (tempGameId) await Checkpoint.deleteMany({ gameId: tempGameId });
   if (tempGameId) await CombatEncounter.deleteMany({ gameId: tempGameId });
   if (tempGameId) await Commitment.deleteMany({ gameId: tempGameId });
+  if (tempGameId) await Evidence.deleteMany({ gameId: tempGameId });
   if (tempGameId) await WorldEvent.deleteMany({ gameId: tempGameId });
   await Mission.deleteMany({
     missionId: { $in: [tempMissionId, tempExpiredMissionId, tempGuildMissionId].filter(Boolean) },
@@ -236,6 +258,7 @@ async function cleanupIsolatedState() {
   if (tempNpcId) await NpcSocialLedger.deleteMany({ npcId: tempNpcId });
   if (tempRemoteNpcId) await Npc.deleteOne({ npcId: tempRemoteNpcId });
   if (tempRemoteNpcId) await NpcSocialLedger.deleteMany({ npcId: tempRemoteNpcId });
+  if (tempFactionId) await Faction.deleteOne({ factionId: tempFactionId });
   if (tempWeatherRegionId) await WeatherState.deleteMany({ regionId: tempWeatherRegionId });
   await EventLog.deleteMany({
     $or: [
@@ -270,6 +293,22 @@ describe("turn hardening coverage", () => {
     assert.equal(debugBoard.status, 200);
     assert.equal(debugBoard.data.ok, true);
     assert.equal(debugBoard.data.missions.some((mission) => mission.missionId === tempExpiredMissionId), true);
+  });
+
+  it("shows formally blocked guild missions on the board with a clear block reason", async () => {
+    const board = await get(
+      `/api/missions/board?gameId=${encodeURIComponent(tempGameId)}&status=available&locationId=loc_hoshimori_guild`
+    );
+    assert.equal(board.status, 200, JSON.stringify(board.data));
+    assert.equal(board.data.ok, true);
+
+    const mission = board.data.missions.find((entry) => entry.missionId === tempGuildMissionId);
+    assert.ok(mission, "Cobre mission should stay visible on the live board.");
+    assert.equal(mission.status, "available");
+    assert.equal(mission.boardVisibility.blocked, true);
+    assert.equal(mission.boardVisibility.canAccept, false);
+    assert.equal(mission.boardVisibility.displayStatus, "blocked_by_registration");
+    assert.match(mission.boardVisibility.blockReason, /registro formal/);
   });
 
   it("refreshes stale weather for the current time block idempotently", async () => {
@@ -424,7 +463,7 @@ describe("turn hardening coverage", () => {
         $set: {
           currentDay: 10,
           "diegeticDate.day": 10,
-          block: "MaÃ±ana",
+          block: "Mañana",
           time: "07:00",
           moneyCopper: 100,
           "lucasStatus.satiety.current": 66,
@@ -490,7 +529,7 @@ describe("turn hardening coverage", () => {
         $set: {
           currentDay: 10,
           "diegeticDate.day": 10,
-          block: "MaÃ±ana",
+          block: "Mañana",
           time: "07:00",
           moneyCopper: 100,
           "lucasStatus.satiety.current": 66,
@@ -545,6 +584,27 @@ describe("turn hardening coverage", () => {
 
   it("completes job shifts without duplicating consumed meals or pay", async () => {
     const originalState = await GameState.findOne({ gameId: tempGameId }).lean();
+    await Promise.all([
+      Checkpoint.deleteMany({
+        gameId: tempGameId,
+        auto: true,
+        triggerKey: "complete_job_shift:shift_test_morning_0700_1200",
+        day: 10,
+        time: "12:00",
+      }),
+      Mission.updateOne(
+        { missionId: tempExpiredMissionId },
+        {
+          $set: {
+            status: "available",
+            proofStatus: "pending",
+            expiresDay: 10,
+            expiresTime: "11:00",
+            flags: { testSuite: true },
+          },
+        }
+      ),
+    ]);
     await GameState.updateOne(
       { gameId: tempGameId },
       {
@@ -850,7 +910,7 @@ describe("turn hardening coverage", () => {
         $set: {
           currentDay: 10,
           time: "12:00",
-          block: "Mediodia",
+          block: "Mediodía",
         },
       }
     );
@@ -1163,7 +1223,7 @@ describe("turn hardening coverage", () => {
       ...stateAfterClose,
       currentDay: 16,
       time: "06:00",
-      block: "MaÃ±ana",
+      block: "Mañana",
       activeEventIds: [],
     };
     const nextDayEnsure = await ensureDailyEventForGameState(nextDayState, {
@@ -1190,6 +1250,157 @@ describe("turn hardening coverage", () => {
         },
       }
     );
+  });
+
+  it("persists narrative evidence and partial world event progress without using inventory", async () => {
+    const eventId = `event_test_evidence_${Date.now()}`;
+    const evidenceId = `evidence_test_sample_${Date.now()}`;
+
+    await WorldEvent.create({
+      eventId,
+      gameId: tempGameId,
+      title: "Rastro temporal de test",
+      type: "test_investigation",
+      scope: "local",
+      status: "active",
+      eventLayer: "main_event",
+      countsAsMainEvent: true,
+      blocksMainEventGeneration: true,
+      startDay: 10,
+      startTime: "08:00",
+      affectedLocationIds: ["loc_hoshimori_forest_edge"],
+      affectedNpcIds: [],
+      effects: [],
+      visibility: "local",
+      cause: "Fixture temporal para evidencia.",
+      severity: "minor",
+      createdBy: "system",
+      tags: ["test_turn_hardening", "daily_event"],
+    });
+
+    const collected = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: Lucas recoge una muestra fisica y reporta progreso parcial.",
+      biologicalCostExemptReason: "Registro formal de evidencia sin coste fisico relevante.",
+      evidencePatches: [
+        {
+          op: "collect",
+          evidenceId,
+          name: "Muestra fisica temporal",
+          summary: "Muestra de prueba creada por test para representar evidencia fisica no vendible.",
+          type: "sample",
+          sourceEventId: eventId,
+          relatedEventIds: [eventId],
+          locationId: "loc_hoshimori_forest_edge",
+          holderType: "character",
+          holderId: "char_lucas",
+          condition: "guardada",
+          observationSummary: "La muestra fue recogida con cuidado para mostrarla a una autoridad.",
+          tags: ["test_turn_hardening", "evidence_sample"],
+        },
+      ],
+      worldEventPatches: [
+        {
+          eventId,
+          status: "active",
+          reason: "Fixture: evidencia parcial encontrada, evento aun no resuelto.",
+          progress: {
+            stage: "evidence_collected",
+            statusLabel: "evidencia parcial recogida",
+            summary: "Lucas encontro una muestra fisica, pero todavia no hay conclusion.",
+            confidence: "partial",
+            nextAction: "Reportar a una autoridad o conseguir identificacion.",
+            evidenceIds: [evidenceId],
+          },
+        },
+      ],
+    });
+
+    assert.equal(collected.status, 200, JSON.stringify(collected.data));
+    assert.equal(collected.data.ok, true);
+    assert.equal(collected.data.changes.evidence[0].evidenceId, evidenceId);
+    assert.equal(collected.data.changes.evidence[0].after.status, "collected");
+    assert.equal(collected.data.changes.worldEvents[0].progress.stage, "evidence_collected");
+    assert.equal(collected.data.changes.worldEvents[0].status, "active");
+
+    const compact = await get(`/api/context/compact?gameId=${encodeURIComponent(tempGameId)}&eventLimit=6`);
+    assert.equal(compact.status, 200, JSON.stringify(compact.data));
+    assert.ok(compact.data.context.carriedEvidence.some((entry) => entry.evidenceId === evidenceId));
+    assert.equal(compact.data.context.mainEvent.progress.stage, "evidence_collected");
+
+    const reported = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: Lucas reporta la muestra a un NPC responsable.",
+      biologicalCostExemptReason: "Reporte formal de evidencia sin coste fisico relevante.",
+      evidencePatches: [
+        {
+          op: "report",
+          evidenceId,
+          name: "Muestra fisica temporal",
+          reportedToNpcIds: [tempNpcId],
+          observationSummary: "La muestra fue mostrada a un NPC responsable sin convertirla en recompensa.",
+          tags: ["test_turn_hardening", "evidence_reported"],
+        },
+      ],
+      worldEventPatches: [
+        {
+          eventId,
+          status: "active",
+          reason: "Fixture: reporte parcial recibido, evento sigue abierto.",
+          progress: {
+            stage: "reported_partial",
+            statusLabel: "evidencia parcial reportada",
+            summary: "La evidencia fue reportada, pero aun requiere identificacion.",
+            confidence: "partial",
+            nextAction: "Evaluar la muestra antes de resolver el evento.",
+            evidenceIds: [evidenceId],
+            reportIds: ["report_test_partial"],
+          },
+        },
+      ],
+    });
+
+    assert.equal(reported.status, 200, JSON.stringify(reported.data));
+    assert.equal(reported.data.changes.evidence[0].after.status, "reported");
+    assert.ok(reported.data.changes.evidence[0].after.reportedToNpcIds.includes(tempNpcId));
+    assert.equal(reported.data.changes.worldEvents[0].progress.stage, "reported_partial");
+    assert.equal(reported.data.changes.worldEvents[0].status, "active");
+  });
+
+  it("records institutional credit separately from NPC social debt and honors explicit actionFamily", async () => {
+    const credited = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: Lucas reporta evidencia util ante una institucion.",
+      actionFamily: "report",
+      biologicalCostExemptReason: "Registro institucional de test sin coste fisico relevante.",
+      factionReputationPatches: [
+        {
+          factionId: tempFactionId,
+          reputationDelta: 1,
+          institutionalCreditDelta: 2,
+          meritDelta: 1,
+          reason: "Reporte util registrado por una institucion de test.",
+          notes: "Fixture temporal: credito institucional separado del vinculo con NPCs.",
+        },
+      ],
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de credito institucional separado de deuda social personal.",
+          visibility: "hidden",
+          tags: ["test_turn_hardening", "institutional_credit"],
+        },
+      ],
+    });
+
+    assert.equal(credited.status, 200, JSON.stringify(credited.data));
+    assert.equal(credited.data.ok, true);
+    assert.equal(credited.data.changes.factions[0].factionId, tempFactionId);
+    assert.equal(credited.data.changes.factions[0].after.reputation, 1);
+    assert.equal(credited.data.changes.factions[0].after.institutionalCredit, 2);
+    assert.equal(credited.data.changes.factions[0].after.merit, 1);
+    assert.equal(credited.data.changes.npcRelationships, undefined);
+    assert.equal(credited.data.changes.narrativeHints.tracking.actionFamily, "report");
   });
 
   it("creates generic job contracts and records attendance formally", async () => {
@@ -1326,6 +1537,15 @@ describe("turn hardening coverage", () => {
   });
 
   it("applies skill patches only through validated progression ranges", async () => {
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          "lucasStatus.energy.current": 80,
+          "lucasStatus.energy.label": "rendimiento normal",
+        },
+      }
+    );
     const beforeState = await getCanonicalState(tempGameId);
     const beforeSkill = await GameState.findOne(
       { gameId: tempGameId },
@@ -1406,14 +1626,14 @@ describe("turn hardening coverage", () => {
     assert.equal(valid.data.changes.skills[0].skillId, "skill_percepcion");
     assert.equal(valid.data.changes.skills[0].category, "buscar_detalles_30min");
     assert.equal(valid.data.changes.skills[0].baseExpDelta, 2);
-    assert.equal(valid.data.changes.skills[0].effectiveExpDelta, 2);
-    assert.equal(valid.data.changes.skills[0].after.exp, initialPerception.exp + 2);
+    assert.equal(valid.data.changes.skills[0].effectiveExpDelta, 15);
+    assert.equal(valid.data.changes.skills[0].after.exp, initialPerception.exp + 15);
 
     const afterSkill = await GameState.findOne(
       { gameId: tempGameId },
       { skills: { $elemMatch: { skillId: "skill_percepcion" } } }
     ).lean();
-    assert.equal(afterSkill.skills[0].exp, initialPerception.exp + 2);
+    assert.equal(afterSkill.skills[0].exp, initialPerception.exp + 15);
   });
 
   it("applies npc relationship patches through applyTurn", async () => {
@@ -1746,6 +1966,46 @@ describe("turn hardening coverage", () => {
   });
 
   it("previews travel biology and applies validated turn mutations atomically", async () => {
+    await Promise.all([
+      GameState.updateOne(
+        { gameId: tempGameId },
+        {
+          $set: {
+            currentDay: 10,
+            "diegeticDate.day": 10,
+            block: "Mediodía",
+            time: "12:00",
+            locationId: "loc_hoshimori_grulla_azul",
+            moneyCopper: 100,
+            activeMissionIds: [],
+            "lucasStatus.satiety.current": 30,
+            "lucasStatus.satiety.label": "hambre fuerte",
+            "lucasStatus.energy.current": 59,
+            "lucasStatus.energy.label": "cansancio leve/energia media",
+            biologicalClock: {
+              lastProcessedTime: "12:00",
+              currentHourBlock: "12:00-13:00",
+              pendingAccumulation: [],
+              pendingAccumulations: [],
+            },
+          },
+        }
+      ),
+      Mission.updateOne(
+        { missionId: tempMissionId },
+        {
+          $set: {
+            status: "available",
+            proofStatus: "pending",
+            acceptedByCharacterId: "",
+            acceptedDay: null,
+            completedDay: null,
+            flags: { testSuite: true },
+          },
+        }
+      ),
+    ]);
+
     const beforeState = await getCanonicalState(tempGameId);
     const yaraBefore = await Npc.findOne({ npcId: "npc_yara_mils" }).lean();
     assertCanonState(beforeState);
@@ -1765,6 +2025,25 @@ describe("turn hardening coverage", () => {
     assert.equal(travelPreview.data.preview.biologicalCostPreview.satietyDelta, -1);
     assert.equal(travelPreview.data.preview.biologicalCostPreview.energyDelta, -2);
     assert.equal(travelPreview.data.preview.biologicalCostPreview.processesAtHourBoundary, true);
+
+    const multiSegmentPreview = await post("/api/travel/preview", {
+      gameId: tempGameId,
+      fromLocationId: "loc_hoshimori_forest_whispers_edge",
+      toLocationId: "loc_hoshimori_guild",
+      allowMultiSegment: true,
+      maxSegments: 3,
+      conditions: {
+        ignoreCurrentWeather: true,
+        startTime: "09:10",
+      },
+    });
+    assert.equal(multiSegmentPreview.status, 200, JSON.stringify(multiSegmentPreview.data));
+    assert.equal(multiSegmentPreview.data.preview.path.multiSegment, true);
+    assert.equal(multiSegmentPreview.data.preview.path.segmentCount, 2);
+    assert.equal(multiSegmentPreview.data.preview.path.segments[0].route.toLocationId, "loc_hoshimori_grulla_azul");
+    assert.equal(multiSegmentPreview.data.preview.path.segments[1].route.toLocationId, "loc_hoshimori_guild");
+    assert.equal(multiSegmentPreview.data.preview.timing.finalMinutes, 110);
+    assert.equal(multiSegmentPreview.data.preview.timing.expectedArrivalTime, "11:00");
 
     const missingCost = await post("/api/turn/apply", {
       gameId: tempGameId,

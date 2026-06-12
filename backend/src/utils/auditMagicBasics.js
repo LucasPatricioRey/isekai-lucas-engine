@@ -238,6 +238,7 @@ async function main() {
     category: "entreno_intenso",
     modifiers: { aquaBlessing: true },
     currentEnergy: 80,
+    currentPhase: "Principiante",
   });
   const aquaMagic = validateSkillPatch({
     skillId: "skill_mana",
@@ -245,10 +246,12 @@ async function main() {
     category: "practica_basica_1h_solo",
     modifiers: { aquaBlessing: true },
     currentEnergy: 80,
+    currentPhase: "Principiante",
   });
 
-  assertEqual(issues, "Aqua physical effective EXP", aquaPhysical.effectiveExpDelta, 10);
-  assertEqual(issues, "Aqua magic effective EXP", aquaMagic.effectiveExpDelta, 20);
+  assertEqual(issues, "Aqua physical effective EXP", aquaPhysical.effectiveExpDelta, 50);
+  assertTrue(issues, "Aqua physical is not applied", aquaPhysical.multiplierParts.some((part) => part.id === "aqua" && part.applied === false));
+  assertEqual(issues, "Aqua magic effective EXP", aquaMagic.effectiveExpDelta, 40);
 
   await assertMongoAvailable();
 

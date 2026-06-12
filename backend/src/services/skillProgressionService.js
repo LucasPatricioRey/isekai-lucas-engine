@@ -16,6 +16,19 @@ const EXP_TO_NEXT_BY_PHASE = {
   Legendario: 10000,
 };
 
+const PHASE_LEARNING_MULTIPLIERS = {
+  Principiante: 5,
+  Novato: 2.5,
+  Competente: 1.5,
+  Experto: 1,
+  Maestro: 0.75,
+  Legendario: 0.5,
+};
+
+const HARD_TO_TRAIN_SKILL_MULTIPLIERS = {
+  skill_percepcion: 1.5,
+};
+
 const MAGICAL_SKILL_IDS = new Set([
   "skill_mana",
   "skill_magia",
@@ -68,11 +81,11 @@ const SKILL_ACTIVITY_RANGES = {
   },
   skill_percepcion: {
     trabajo_comun: { min: 0, max: 0, unit: "hour" },
-    vigilar_30min: { min: 1, max: 3, unit: "block" },
-    buscar_detalles_30min: { min: 1, max: 4, unit: "block" },
-    leer_gestos_charla: { min: 1, max: 3, unit: "scene" },
-    exploracion_peligrosa: { min: 3, max: 8, unit: "scene" },
-    guardia_nocturna: { min: 4, max: 10, unit: "shift" },
+    vigilar_30min: { min: 1, max: 6, unit: "block" },
+    buscar_detalles_30min: { min: 1, max: 8, unit: "block" },
+    leer_gestos_charla: { min: 1, max: 6, unit: "scene" },
+    exploracion_peligrosa: { min: 3, max: 16, unit: "scene" },
+    guardia_nocturna: { min: 4, max: 18, unit: "shift" },
   },
   skill_percepcion_magica: {
     practica_percepcion_magica_30min: { min: 8, max: 8, unit: "block" },
@@ -248,10 +261,22 @@ function getEnergyExpMultiplier(currentEnergy) {
   return 0;
 }
 
-function calculateExpMultiplier({ skillId, modifiers = {}, currentEnergy = null }) {
+function calculateExpMultiplier({ skillId, modifiers = {}, currentEnergy = null, currentPhase = "" }) {
   const isMagical = MAGICAL_SKILL_IDS.has(skillId);
   const multiplierParts = [];
   let multiplier = 1;
+
+  const phaseMultiplier = PHASE_LEARNING_MULTIPLIERS[currentPhase] || 1;
+  if (phaseMultiplier !== 1) {
+    multiplier *= phaseMultiplier;
+    multiplierParts.push({ id: "phase_learning", phase: currentPhase, multiplier: phaseMultiplier, applied: true });
+  }
+
+  const hardToTrainMultiplier = HARD_TO_TRAIN_SKILL_MULTIPLIERS[skillId] || 1;
+  if (hardToTrainMultiplier !== 1) {
+    multiplier *= hardToTrainMultiplier;
+    multiplierParts.push({ id: "hard_to_train_skill", multiplier: hardToTrainMultiplier, applied: true });
+  }
 
   if (modifiers.hasMaster === true) {
     multiplier *= 2;
@@ -295,7 +320,15 @@ function getRecommendedRange({ skillId, category }) {
   };
 }
 
-function validateSkillPatch({ skillId, expDelta, reason = "", category = "", modifiers = {}, currentEnergy = null }) {
+function validateSkillPatch({
+  skillId,
+  expDelta,
+  reason = "",
+  category = "",
+  modifiers = {},
+  currentEnergy = null,
+  currentPhase = "",
+}) {
   const issues = [];
 
   if (!skillId) {
@@ -307,7 +340,7 @@ function validateSkillPatch({ skillId, expDelta, reason = "", category = "", mod
   }
 
   const { categoryId, range } = getRecommendedRange({ skillId, category });
-  const multiplierInfo = calculateExpMultiplier({ skillId, modifiers, currentEnergy });
+  const multiplierInfo = calculateExpMultiplier({ skillId, modifiers, currentEnergy, currentPhase });
   const effectiveExpDelta = Number.isInteger(expDelta)
     ? Math.max(0, Math.round(expDelta * multiplierInfo.multiplier * multiplierInfo.antiFarming.multiplier))
     : 0;
@@ -341,6 +374,7 @@ function previewSkillProgression({ skill, expDelta, reason = "", category = "", 
     category,
     modifiers,
     currentEnergy,
+    currentPhase: skill?.phase || "",
   });
 
   if (!validation.ok) {
@@ -358,6 +392,7 @@ function previewSkillProgression({ skill, expDelta, reason = "", category = "", 
 
 module.exports = {
   EXP_TO_NEXT_BY_PHASE,
+  PHASE_LEARNING_MULTIPLIERS,
   MAGICAL_SKILL_IDS,
   PHASE_ORDER,
   SKILL_ACTIVITY_RANGES,

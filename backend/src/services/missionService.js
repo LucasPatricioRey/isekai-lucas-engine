@@ -2,6 +2,18 @@
 const Mission = require("../models/Mission");
 const EventLog = require("../models/EventLog");
 
+const GUILD_RANKS_REQUIRING_FORMAL_REGISTRATION = new Set([
+  "Cobre",
+  "Bronce",
+  "Hierro",
+  "Plata",
+  "Oro",
+  "Platino",
+  "Mithril",
+  "Oricalco",
+  "Adamantita",
+]);
+
 function timeToMinutes(time) {
   if (!time) return 0;
   const [hours, minutes] = String(time).split(":").map(Number);
@@ -21,6 +33,54 @@ function isMissionExpired(mission, gameState) {
 
 function createLogId() {
   return `log_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getMissionFlags(mission = {}) {
+  return mission.flags && typeof mission.flags === "object" ? mission.flags : {};
+}
+
+function missionRequiresFormalRegistration(mission = {}) {
+  const flags = getMissionFlags(mission);
+  return (
+    flags.requiresFormalRegistration === true ||
+    GUILD_RANKS_REQUIRING_FORMAL_REGISTRATION.has(mission.rank)
+  );
+}
+
+function annotateMissionForBoard(mission, gameState = null) {
+  const expired = gameState ? isMissionExpired(mission, gameState) : false;
+  const requiresFormalRegistration = missionRequiresFormalRegistration(mission);
+  const registrationPending = Boolean(gameState?.flags?.formalGuildRegistrationPending);
+  const blockedByRegistration =
+    mission.status === "available" && requiresFormalRegistration && registrationPending;
+  const blockedByStatus = mission.status === "blocked";
+  const blockedByExpiry = mission.status === "available" && expired;
+  let blockReason = "";
+
+  if (blockedByRegistration) {
+    blockReason = "Requiere registro formal del gremio antes de aceptar.";
+  } else if (blockedByExpiry) {
+    blockReason = "El encargo vencio por tiempo de partida.";
+  } else if (blockedByStatus) {
+    blockReason = getMissionFlags(mission).blockReason || "Bloqueada por condicion interna.";
+  }
+
+  return {
+    ...mission,
+    boardVisibility: {
+      canAccept: mission.status === "available" && !blockedByRegistration && !blockedByExpiry,
+      blocked: Boolean(blockedByRegistration || blockedByStatus || blockedByExpiry),
+      displayStatus: blockedByRegistration
+        ? "blocked_by_registration"
+        : blockedByExpiry
+          ? "expired_by_current_time"
+          : mission.status,
+      blockReason,
+      expiredByCurrentTime: expired,
+      requiresFormalRegistration,
+      registrationPending,
+    },
+  };
 }
 
 async function getMissionBoard({
@@ -50,15 +110,15 @@ async function getMissionBoard({
     .limit(50)
     .lean();
 
-  if (includeExpiredAvailable) return missions;
+  const gameState = await GameState.findOne({ gameId }).lean();
+  const annotated = missions.map((mission) => annotateMissionForBoard(mission, gameState));
+
+  if (includeExpiredAvailable || !gameState) return annotated;
 
   const hasAvailableStatus = !status || status === "available" || (Array.isArray(status) && status.includes("available"));
-  if (!hasAvailableStatus) return missions;
+  if (!hasAvailableStatus) return annotated;
 
-  const gameState = await GameState.findOne({ gameId }).lean();
-  if (!gameState) return missions;
-
-  return missions.filter((mission) => mission.status !== "available" || !isMissionExpired(mission, gameState));
+  return annotated.filter((mission) => mission.status !== "available" || !mission.boardVisibility.expiredByCurrentTime);
 }
 
 async function getMissionDetail(missionId) {
@@ -269,4 +329,6 @@ module.exports = {
   expireAvailableMissions,
   expireAvailableMissionsForGameState,
   isMissionExpired,
+  annotateMissionForBoard,
+  missionRequiresFormalRegistration,
 };

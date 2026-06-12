@@ -710,6 +710,7 @@ function summarizeMission(mission, currentDay, currentTime) {
     acceptedByCharacterId: mission.acceptedByCharacterId || "",
     acceptedDay: mission.acceptedDay,
     completedDay: mission.completedDay,
+    boardVisibility: mission.boardVisibility || null,
     flags: mission.flags || {},
   };
 }
@@ -791,6 +792,7 @@ function summarizeWorldEvent(event) {
         "social_consequence_rules",
         "social_consequence_applied",
         "event_resolution",
+        "event_progress",
       ].includes(effect.type)
     );
 
@@ -816,6 +818,21 @@ function summarizeWorldEvent(event) {
     scope: event.scope,
     status: event.status,
     resolution: event.resolution || {},
+    progress: event.progress
+      ? {
+          stage: event.progress.stage || "",
+          statusLabel: event.progress.statusLabel || "",
+          summary: truncateText(event.progress.summary || "", 450),
+          confidence: event.progress.confidence || "unknown",
+          nextAction: truncateText(event.progress.nextAction || "", 300),
+          clueIds: (event.progress.clueIds || []).slice(0, 8),
+          evidenceIds: (event.progress.evidenceIds || []).slice(0, 8),
+          reportIds: (event.progress.reportIds || []).slice(0, 8),
+          lastUpdatedDay: event.progress.lastUpdatedDay || null,
+          lastUpdatedTime: event.progress.lastUpdatedTime || "",
+          updatedByCharacterId: event.progress.updatedByCharacterId || "",
+        }
+      : {},
     startDay: event.startDay,
     startTime: event.startTime,
     endDay: event.endDay,
@@ -931,6 +948,45 @@ function summarizeCombatEncounter(encounter) {
   };
 }
 
+function summarizeEvidence(evidence) {
+  if (!evidence) return null;
+
+  return {
+    evidenceId: evidence.evidenceId,
+    gameId: evidence.gameId || "isekai_lucas_main",
+    characterId: evidence.characterId || "char_lucas",
+    name: evidence.name,
+    summary: truncateText(evidence.summary || "", 500),
+    type: evidence.type || "other",
+    status: evidence.status || "observed",
+    holderType: evidence.holderType || "none",
+    holderId: evidence.holderId || "",
+    containerItemId: evidence.containerItemId || "",
+    locationId: evidence.locationId || "",
+    sourceEventId: evidence.sourceEventId || "",
+    sourceMissionId: evidence.sourceMissionId || "",
+    relatedEventIds: (evidence.relatedEventIds || []).slice(0, 8),
+    relatedMissionIds: (evidence.relatedMissionIds || []).slice(0, 8),
+    reportedToNpcIds: (evidence.reportedToNpcIds || []).slice(0, 8),
+    visibleToNpcIds: (evidence.visibleToNpcIds || []).slice(0, 8),
+    condition: evidence.condition || "",
+    integrity: Number.isFinite(Number(evidence.integrity)) ? Number(evidence.integrity) : null,
+    collectedDay: evidence.collectedDay || null,
+    collectedTime: evidence.collectedTime || "",
+    observations: (evidence.observations || []).slice(-4).map((observation) => ({
+      day: observation.day || null,
+      time: observation.time || "",
+      locationId: observation.locationId || "",
+      summary: truncateText(observation.summary || "", 300),
+      byCharacterId: observation.byCharacterId || "",
+      byNpcId: observation.byNpcId || "",
+      certainty: observation.certainty || "unknown",
+      tags: observation.tags || [],
+    })),
+    tags: evidence.tags || [],
+  };
+}
+
 module.exports = {
   unique,
   toIntQuery,
@@ -955,6 +1011,7 @@ module.exports = {
   summarizeRumor,
   summarizeWorldEvent,
   summarizeCommitment,
+  summarizeEvidence,
   summarizeWeather,
   buildWorldFrictionSummary,
   summarizeJobContract,

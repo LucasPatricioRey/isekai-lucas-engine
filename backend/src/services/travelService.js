@@ -5,6 +5,7 @@ const { calculateActivityCost } = require("./biologicalClockService");
 const { previewWeatherEffects } = require("./weatherService");
 
 const EXTERIOR_ROUTE_TYPES = new Set(["town", "road", "wilderness", "regional"]);
+const DANGER_ORDER = ["safe", "low", "medium", "high", "extreme"];
 
 function timeToMinutes(time) {
   const [hours, minutes] = String(time || "00:00").split(":").map(Number);
@@ -99,6 +100,81 @@ function buildWarnings(route, finalMinutes, conditions) {
   return warnings;
 }
 
+function highestRiskLevel(levels = []) {
+  return levels
+    .filter(Boolean)
+    .sort((left, right) => DANGER_ORDER.indexOf(right) - DANGER_ORDER.indexOf(left))[0] || "safe";
+}
+
+function routeEdge(route, reversed = false) {
+  return {
+    route,
+    reversed,
+    fromLocationId: reversed ? route.toLocationId : route.fromLocationId,
+    toLocationId: reversed ? route.fromLocationId : route.toLocationId,
+  };
+}
+
+async function findRoutePath({ fromLocationId, toLocationId, maxSegments = 4 } = {}) {
+  if (!fromLocationId || !toLocationId) {
+    const error = new Error("fromLocationId y toLocationId son obligatorios para pathfinding.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (fromLocationId === toLocationId) {
+    return {
+      segments: [],
+      startLocationId: fromLocationId,
+      endLocationId: toLocationId,
+    };
+  }
+
+  const routes = await TravelRoute.find({}).sort({ baseMinutes: 1, routeId: 1 }).lean();
+  const edgesByLocation = new Map();
+
+  for (const route of routes) {
+    const edges = [routeEdge(route, false)];
+    if (route.bidirectional) edges.push(routeEdge(route, true));
+
+    for (const edge of edges) {
+      const list = edgesByLocation.get(edge.fromLocationId) || [];
+      list.push(edge);
+      edgesByLocation.set(edge.fromLocationId, list);
+    }
+  }
+
+  const queue = [{ locationId: fromLocationId, segments: [], visited: new Set([fromLocationId]) }];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (current.segments.length >= maxSegments) continue;
+
+    for (const edge of edgesByLocation.get(current.locationId) || []) {
+      if (current.visited.has(edge.toLocationId)) continue;
+
+      const segments = [...current.segments, edge];
+      if (edge.toLocationId === toLocationId) {
+        return {
+          segments,
+          startLocationId: fromLocationId,
+          endLocationId: toLocationId,
+        };
+      }
+
+      queue.push({
+        locationId: edge.toLocationId,
+        segments,
+        visited: new Set([...current.visited, edge.toLocationId]),
+      });
+    }
+  }
+
+  const error = new Error(`No existe ruta directa ni ruta multi-tramo entre ${fromLocationId} y ${toLocationId}.`);
+  error.statusCode = 404;
+  throw error;
+}
+
 async function listRoutes({ fromLocationId = "", toLocationId = "", routeType = "", dangerLevel = "" } = {}) {
   const query = {};
 
@@ -166,28 +242,14 @@ async function findRoute({ routeId = "", fromLocationId = "", toLocationId = "" 
   throw error;
 }
 
-async function previewTravel({
-  gameId = "isekai_lucas_main",
-  routeId = "",
-  fromLocationId = "",
-  toLocationId = "",
+async function buildRoutePreview({
+  gameState,
+  route,
+  reversed = false,
   conditions = {},
+  startDay,
+  startTime,
 } = {}) {
-  const gameState = await GameState.findOne({ gameId }).lean();
-
-  if (!gameState) {
-    const error = new Error(`No existe GameState para gameId: ${gameId}`);
-    error.statusCode = 404;
-    throw error;
-  }
-
-  const requestedFrom = fromLocationId || gameState.locationId;
-  const { route, reversed } = await findRoute({
-    routeId,
-    fromLocationId: requestedFrom,
-    toLocationId,
-  });
-
   const actualFromLocationId = reversed ? route.toLocationId : route.fromLocationId;
   const actualToLocationId = reversed ? route.fromLocationId : route.toLocationId;
 
@@ -255,9 +317,7 @@ async function previewTravel({
   }
 
   const finalMinutes = roundUpToFive(total);
-  const previewStartDay = Number.isInteger(conditions.startDay) ? conditions.startDay : gameState.currentDay;
-  const previewStartTime = isValidTime(conditions.startTime) ? conditions.startTime : gameState.time;
-  const arrival = addMinutesToDayTime(previewStartDay, previewStartTime, finalMinutes);
+  const arrival = addMinutesToDayTime(startDay, startTime, finalMinutes);
   const activityCategory = conditions.activityCategory || "viaje_caminata_suave";
   const biologicalCost = calculateActivityCost({
     category: activityCategory,
@@ -280,9 +340,6 @@ async function previewTravel({
   };
 
   return {
-    dryRun: true,
-    willMutateGameState: false,
-    gameId,
     route: {
       ...route,
       fromLocationId: actualFromLocationId,
@@ -292,8 +349,8 @@ async function previewTravel({
       toLocation: locationById.get(actualToLocationId) || null,
     },
     timing: {
-      startDay: previewStartDay,
-      startTime: previewStartTime,
+      startDay,
+      startTime,
       baseMinutes: route.baseMinutes,
       finalMinutes,
       expectedArrivalDay: arrival.day,
@@ -301,11 +358,157 @@ async function previewTravel({
       roundedToFiveMinutes: finalMinutes !== Math.round(total),
     },
     biologicalCostPreview,
-    conditions,
     appliedModifiers,
     weatherPreview,
     riskLevel: route.dangerLevel,
     warnings: buildWarnings(route, finalMinutes, conditions),
+  };
+}
+
+async function previewTravel({
+  gameId = "isekai_lucas_main",
+  routeId = "",
+  fromLocationId = "",
+  toLocationId = "",
+  conditions = {},
+} = {}) {
+  const gameState = await GameState.findOne({ gameId }).lean();
+
+  if (!gameState) {
+    const error = new Error(`No existe GameState para gameId: ${gameId}`);
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const requestedFrom = fromLocationId || gameState.locationId;
+  const previewStartDay = Number.isInteger(conditions.startDay) ? conditions.startDay : gameState.currentDay;
+  const previewStartTime = isValidTime(conditions.startTime) ? conditions.startTime : gameState.time;
+  const allowMultiSegment = Boolean(conditions.allowMultiSegment || conditions.allowPathfinding || conditions.multiSegment);
+  const maxSegments = Number.isInteger(conditions.maxSegments)
+    ? Math.max(1, Math.min(conditions.maxSegments, 8))
+    : 4;
+
+  let routeResult = null;
+  try {
+    routeResult = await findRoute({
+      routeId,
+      fromLocationId: requestedFrom,
+      toLocationId,
+    });
+  } catch (error) {
+    if (!allowMultiSegment || routeId || error.statusCode !== 404) {
+      throw error;
+    }
+  }
+
+  if (routeResult) {
+    const segmentPreview = await buildRoutePreview({
+      gameState,
+      route: routeResult.route,
+      reversed: routeResult.reversed,
+      conditions,
+      startDay: previewStartDay,
+      startTime: previewStartTime,
+    });
+
+    return {
+      dryRun: true,
+      willMutateGameState: false,
+      gameId,
+      ...segmentPreview,
+      conditions,
+      encounters: {
+        willCreateRandomEncounter: false,
+        note: "Travel preview never creates encounters; a future mutator/world tick must decide that explicitly.",
+      },
+    };
+  }
+
+  const path = await findRoutePath({
+    fromLocationId: requestedFrom,
+    toLocationId,
+    maxSegments,
+  });
+
+  const segmentPreviews = [];
+  let cursorDay = previewStartDay;
+  let cursorTime = previewStartTime;
+
+  for (const segment of path.segments) {
+    const segmentPreview = await buildRoutePreview({
+      gameState,
+      route: segment.route,
+      reversed: segment.reversed,
+      conditions,
+      startDay: cursorDay,
+      startTime: cursorTime,
+    });
+    segmentPreviews.push(segmentPreview);
+    cursorDay = segmentPreview.timing.expectedArrivalDay;
+    cursorTime = segmentPreview.timing.expectedArrivalTime;
+  }
+
+  const finalMinutes = segmentPreviews.reduce((sum, segment) => sum + segment.timing.finalMinutes, 0);
+  const activityCategory = conditions.activityCategory || "viaje_caminata_suave";
+  const biologicalCost = calculateActivityCost({
+    category: activityCategory,
+    minutes: finalMinutes,
+    currentEnergy: gameState.lucasStatus?.energy?.current,
+    currentSatiety: gameState.lucasStatus?.satiety?.current,
+  });
+  const biologicalCostPreview = {
+    category: biologicalCost.categoryId,
+    label: biologicalCost.label,
+    minutes: finalMinutes,
+    satietyDelta: biologicalCost.delta.satiety,
+    energyDelta: biologicalCost.delta.energy,
+    processesAtHourBoundary: cursorTime.endsWith(":00") && finalMinutes > 0,
+    currentStatus: {
+      satiety: gameState.lucasStatus?.satiety || null,
+      energy: gameState.lucasStatus?.energy || null,
+    },
+    projectedStatus: biologicalCost.projected || null,
+  };
+
+  return {
+    dryRun: true,
+    willMutateGameState: false,
+    gameId,
+    route: null,
+    path: {
+      multiSegment: true,
+      startLocationId: requestedFrom,
+      endLocationId: toLocationId,
+      segmentCount: segmentPreviews.length,
+      maxSegments,
+      segments: segmentPreviews.map((segment, index) => ({
+        index: index + 1,
+        route: segment.route,
+        timing: segment.timing,
+        biologicalCostPreview: segment.biologicalCostPreview,
+        appliedModifiers: segment.appliedModifiers,
+        riskLevel: segment.riskLevel,
+        warnings: segment.warnings,
+      })),
+    },
+    timing: {
+      startDay: previewStartDay,
+      startTime: previewStartTime,
+      baseMinutes: path.segments.reduce((sum, segment) => sum + segment.route.baseMinutes, 0),
+      finalMinutes,
+      expectedArrivalDay: cursorDay,
+      expectedArrivalTime: cursorTime,
+      roundedToFiveMinutes: segmentPreviews.some((segment) => segment.timing.roundedToFiveMinutes),
+    },
+    biologicalCostPreview,
+    conditions,
+    appliedModifiers: segmentPreviews.flatMap((segment) => segment.appliedModifiers),
+    weatherPreview: segmentPreviews.map((segment) => segment.weatherPreview),
+    riskLevel: highestRiskLevel(segmentPreviews.map((segment) => segment.riskLevel)),
+    warnings: [
+      `Ruta multi-tramo: ${segmentPreviews.length} segmentos.`,
+      ...segmentPreviews.flatMap((segment) => segment.warnings),
+    ],
     encounters: {
       willCreateRandomEncounter: false,
       note: "Travel preview never creates encounters; a future mutator/world tick must decide that explicitly.",
@@ -317,6 +520,7 @@ module.exports = {
   listRoutes,
   getRoute,
   findRoute,
+  findRoutePath,
   previewTravel,
   timeToMinutes,
   minutesToTime,

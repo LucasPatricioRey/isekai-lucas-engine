@@ -87,11 +87,15 @@ async function syncNpcRoutines({ day, time, session = null }) {
     const nextLocationId = routine.locationId;
     const nextTask = routine.task;
     const nextStatus = inferAvailability(nextTask);
+    const nextReason = override
+      ? `Override de rutina vigente para Dia ${day} ${time}`
+      : `Rutina base vigente para ${time}`;
 
     const changed =
       npc.currentLocationId !== nextLocationId ||
       npc.currentTask !== nextTask ||
-      npc.availability?.status !== nextStatus;
+      npc.availability?.status !== nextStatus ||
+      npc.availability?.reason !== nextReason;
 
     if (!changed) {
       skipped.push({
@@ -112,9 +116,7 @@ async function syncNpcRoutines({ day, time, session = null }) {
     npc.currentTask = nextTask;
     npc.availability = {
       status: nextStatus,
-      reason: override
-        ? `Override de rutina activo para Dia ${day} ${time}`
-        : `Rutina base aplicada para ${time}`,
+      reason: nextReason,
     };
 
     await npc.save({ session });

@@ -98,6 +98,10 @@ function getSnapshotDocId(collectionKey, doc) {
     doc.factionId ||
     doc.overrideId ||
     doc.encounterId ||
+    doc.combatantId ||
+    doc.previewId ||
+    doc.injuryId ||
+    doc.weaponProfileId ||
     doc.relationshipId ||
     doc.ledgerId ||
     doc.knowledgeId ||
@@ -105,6 +109,7 @@ function getSnapshotDocId(collectionKey, doc) {
     doc.techniqueId ||
     doc.routeId ||
     doc.weatherId ||
+    doc.evidenceId ||
     doc._id ||
     `${collectionKey}:unknown`
   );

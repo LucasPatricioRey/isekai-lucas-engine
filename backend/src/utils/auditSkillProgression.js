@@ -135,6 +135,7 @@ async function main() {
     category: "entreno_intenso",
     modifiers: { aquaBlessing: true },
     currentEnergy: 80,
+    currentPhase: "Principiante",
   });
   const aquaMagic = validateSkillPatch({
     skillId: "skill_mana",
@@ -142,6 +143,7 @@ async function main() {
     category: "practica_basica_1h_solo",
     modifiers: { aquaBlessing: true },
     currentEnergy: 80,
+    currentPhase: "Principiante",
   });
   const lowEnergy = validateSkillPatch({
     skillId: "skill_resistencia",
@@ -149,12 +151,13 @@ async function main() {
     category: "entreno_intenso",
     modifiers: {},
     currentEnergy: 25,
+    currentPhase: "Principiante",
   });
 
-  assertEqual(issues, "Aqua physical effective EXP", aquaPhysical.effectiveExpDelta, 10);
+  assertEqual(issues, "Aqua physical effective EXP", aquaPhysical.effectiveExpDelta, 50);
   assertTrue(issues, "Aqua physical is noted as not applied", aquaPhysical.multiplierParts.some((part) => part.id === "aqua" && part.applied === false));
-  assertEqual(issues, "Aqua magic effective EXP", aquaMagic.effectiveExpDelta, 20);
-  assertEqual(issues, "low energy effective EXP", lowEnergy.effectiveExpDelta, 6);
+  assertEqual(issues, "Aqua magic effective EXP", aquaMagic.effectiveExpDelta, 40);
+  assertEqual(issues, "low energy effective EXP", lowEnergy.effectiveExpDelta, 30);
 
   const servicePreview = previewSkillProgression({
     skill: {
@@ -171,7 +174,7 @@ async function main() {
     currentEnergy: 80,
   });
 
-  assertEqual(issues, "service preview mana after exp", servicePreview.progression.after.exp, 55);
+  assertEqual(issues, "service preview mana after exp", servicePreview.progression.after.exp, 75);
 
   const [beforeContext, activeCombats, apiLevelPreview, apiAquaPhysical, apiAquaMagic] = await Promise.all([
     request("/api/context/full"),
@@ -226,9 +229,9 @@ async function main() {
   );
 
   assertEqual(issues, "api level-up after level", apiLevelPreview.preview?.progression?.after?.level, 7);
-  assertEqual(issues, "api level-up after exp", apiLevelPreview.preview?.progression?.after?.exp, 6);
-  assertEqual(issues, "api Aqua physical effective", apiAquaPhysical.preview?.validation?.effectiveExpDelta, 10);
-  assertEqual(issues, "api Aqua magic effective", apiAquaMagic.preview?.validation?.effectiveExpDelta, 20);
+  assertEqual(issues, "api level-up after exp", apiLevelPreview.preview?.progression?.after?.exp, 46);
+  assertEqual(issues, "api Aqua physical effective", apiAquaPhysical.preview?.validation?.effectiveExpDelta, 50);
+  assertEqual(issues, "api Aqua magic effective", apiAquaMagic.preview?.validation?.effectiveExpDelta, 40);
   assertTrue(issues, "api day is valid", Number.isInteger(beforeState.currentDay) && beforeState.currentDay >= 1, String(beforeState.currentDay));
   assertTrue(issues, "api time is valid", /^([01]\d|2[0-3]):[0-5]\d$/.test(beforeState.time || ""), beforeState.time);
   assertTrue(issues, "api locationId is present", typeof beforeState.locationId === "string" && beforeState.locationId.length > 0, beforeState.locationId);
