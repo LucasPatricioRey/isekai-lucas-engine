@@ -1488,6 +1488,10 @@ Ejemplos:
 
 La confianza sube por calidad, oportunidad, respeto y consecuencia, no por cantidad de mensajes.
 
+Si `getCompactContext.socialRhythm` marca un NPC como saturado en el dia, la escena debe mostrar continuidad natural: gesto, coordinacion, comodidad, cansancio o memoria. No repetir agradecimientos ni aplicar nuevos deltas numericos salvo que haya novedad fuerte validada por preview/backend.
+
+Si `narrativeHints.scenePlan` pide escena comprimida, resumir la rutina y elegir un solo detalle nuevo. La repeticion tambien puede ser inmersiva: que un NPC deje de sorprenderse, de menos instrucciones, confie una tarea simple o responda con menos palabras.
+
 ### 19.10 Ejemplo: charla ligera con Yara
 
 Si Lucas acompaña a Yara mientras trabaja, hace bromas suaves, no estorba y ella se ríe:

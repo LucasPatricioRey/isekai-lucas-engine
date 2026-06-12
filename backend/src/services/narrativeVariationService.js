@@ -1,6 +1,6 @@
 const EventLog = require("../models/EventLog");
 
-const SCHEMA_VERSION = "narrative_hints_v1";
+const SCHEMA_VERSION = "narrative_hints_v2";
 const RECENT_WINDOW_DAYS = 5;
 
 const ACTION_FAMILIES = {
@@ -179,6 +179,43 @@ const VARIATION_LEVERS = {
   social: ["silencio", "gesto", "limite", "cansancio", "continuidad de confianza"],
   travel: ["clima", "barro", "luz", "sonidos", "demora"],
   general_action: ["estado corporal", "lugar", "hora", "detalle nuevo", "consecuencia inmediata"],
+};
+
+const REACTION_PALETTES = {
+  combat: ["ajuste tactico", "riesgo inmediato", "lectura del enemigo", "impacto fisico"],
+  job_shift: ["indicacion breve", "coordinacion sin palabras", "correccion concreta", "reconocimiento seco"],
+  magic_practice: ["sensacion interna", "limite de control", "duda prudente", "microprogreso silencioso"],
+  meal: ["pausa compartida", "gesto cotidiano", "comentario minimo", "silencio comodo o cansado"],
+  mission: ["dato util", "advertencia practica", "testigo", "prueba concreta"],
+  physical_training: ["fatiga localizada", "ajuste de tecnica", "terreno", "respiracion"],
+  rest: ["despertar", "cuerpo recuperado", "hambre", "ruido ambiente"],
+  shopping: ["trato del vendedor", "calidad visible", "precio", "stock"],
+  social: ["gesto", "pausa", "respuesta breve", "limite personal", "cambio sutil de trato"],
+  travel: ["clima", "barro", "luz", "demora", "ruido del camino"],
+  general_action: ["detalle nuevo", "estado corporal", "reaccion breve", "consecuencia inmediata"],
+};
+
+const SCENE_PLAN_BY_MODE = {
+  compressed_with_new_detail: {
+    paragraphTarget: "1-2 parrafos antes de Cambios relevantes",
+    pacing: "resumen con un unico momento nuevo",
+    dialoguePolicy: "usar dialogo directo solo si aporta informacion nueva o revela cambio de trato",
+  },
+  micro_scene: {
+    paragraphTarget: "2-3 parrafos antes de Cambios relevantes",
+    pacing: "microescena con foco concreto",
+    dialoguePolicy: "permitir una frase breve de NPC o un gesto claro, no ambos si no hace falta",
+  },
+  brief_scene: {
+    paragraphTarget: "1-2 parrafos",
+    pacing: "transicion breve y situada",
+    dialoguePolicy: "evitar dialogo si la accion es puramente funcional",
+  },
+  full_scene_allowed: {
+    paragraphTarget: "3-5 parrafos si la accion tiene peso real",
+    pacing: "escena completa permitida si hay novedad, riesgo o decision",
+    dialoguePolicy: "dialogo natural segun NPCs presentes, sin convertir rutina en discurso",
+  },
 };
 
 function unique(values) {
@@ -462,6 +499,38 @@ function buildVariationGuidance({ actionFamily, repetition, seedText }) {
   };
 }
 
+function buildScenePlan({ actionFamily, repetition, sceneMode, socialGuidance, seedText }) {
+  const familyPalette = REACTION_PALETTES[actionFamily] || REACTION_PALETTES.general_action;
+  const reactionFocus = pickStable(familyPalette, `${seedText}:reaction`);
+  const fallbackFocus = pickStable(
+    familyPalette.filter((entry) => entry !== reactionFocus),
+    `${seedText}:fallback`,
+    ""
+  );
+  const modePlan = SCENE_PLAN_BY_MODE[sceneMode] || SCENE_PLAN_BY_MODE.full_scene_allowed;
+  const repeated = ["medium", "high"].includes(repetition.level);
+
+  return {
+    schemaVersion: "scene_plan_v1",
+    paragraphTarget: modePlan.paragraphTarget,
+    pacing: modePlan.pacing,
+    dialoguePolicy: modePlan.dialoguePolicy,
+    reactionFocus,
+    fallbackFocus,
+    noveltyRule: repeated
+      ? "Debe haber una diferencia observable respecto de escenas parecidas recientes; si no la hay, resumir."
+      : "Puede presentar la accion con mas aire si hay decision, riesgo o informacion nueva.",
+    npcReactionRule:
+      socialGuidance?.outcome === "memory_or_texture_only"
+        ? "Mostrar continuidad del vinculo con gesto, coordinacion o comodidad; no sumar otra recompensa social por rutina."
+        : "Reaccion NPC segun personalidad, tarea actual y conocimiento; no forzar agradecimiento ni exposicion emocional.",
+    consequenceRule:
+      "Si no hubo cambio mecanico guardado, narrar solo textura, intencion o preparacion; no inventar beneficio persistente.",
+    stateCalloutRule:
+      "En Cambios relevantes mostrar solo datos guardados, displayLines del backend, compromisos cerrados o motivo claro de +0.",
+  };
+}
+
 function buildNarrativeHintsFromRecentLogs({
   gameState = {},
   actionSummary = "",
@@ -502,6 +571,7 @@ function buildNarrativeHintsFromRecentLogs({
   const seedText = `${gameState.gameId || ""}|${gameState.currentDay || ""}|${gameState.time || ""}|${actionFingerprint}|${repetition.level}|${seed}`;
   const microBeat = pickStable(MICRO_BEATS[resolvedFamily] || MICRO_BEATS.general_action, seedText);
   const sceneMode = sceneModeForRepetition(repetition.level, resolvedFamily);
+  const socialGuidance = socialGuidanceFor({ actionFamily: resolvedFamily, repetition, changes });
 
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -513,7 +583,14 @@ function buildNarrativeHintsFromRecentLogs({
     repetition,
     microBeat,
     npcBeats: buildNpcBeats({ actionFamily: resolvedFamily, repetition, involvedNpcIds: npcIds }),
-    socialGuidance: socialGuidanceFor({ actionFamily: resolvedFamily, repetition, changes }),
+    socialGuidance,
+    scenePlan: buildScenePlan({
+      actionFamily: resolvedFamily,
+      repetition,
+      sceneMode,
+      socialGuidance,
+      seedText,
+    }),
     avoidRepeating: buildAvoidRepeating({ actionFamily: resolvedFamily, repetition }),
     variationGuidance: buildVariationGuidance({ actionFamily: resolvedFamily, repetition, seedText }),
     mechanicsBoundary:

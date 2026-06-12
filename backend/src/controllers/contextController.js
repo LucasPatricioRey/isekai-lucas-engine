@@ -73,6 +73,7 @@ function summarizeTechnicalReadiness({
   stalePendingBiologicalAccumulations,
   alerts,
   narrativeContext,
+  socialRhythm,
 } = {}) {
   const warningAlerts = (alerts || []).filter((alert) => alert.severity === "warning");
   const infoAlerts = (alerts || []).filter((alert) => alert.severity !== "warning");
@@ -153,6 +154,13 @@ function summarizeTechnicalReadiness({
         }
       : null,
     narrativeState: narrativeContext || null,
+    socialRhythmState: socialRhythm
+      ? {
+          saturatedNpcIds: socialRhythm.saturatedNpcIds || [],
+          npcCount: (socialRhythm.npcs || []).length,
+          globalGuidance: socialRhythm.globalGuidance || "",
+        }
+      : null,
     alertSummary: {
       warnings: warningAlerts.map((alert) => alert.type || alert.code || alert.message),
       infos: infoAlerts.map((alert) => alert.type || alert.code || alert.message),
@@ -164,6 +172,9 @@ function summarizeTechnicalReadiness({
       mainEventSummary?.status === "active" ? "Si el evento principal se atiende, cerrarlo con worldEventPatches y resolutionSummary." : "",
       (pendingCommitmentSummaries || []).some((commitment) => commitment.consequencePreview?.pastGrace)
         ? "Cerrar compromisos vencidos con fulfill/fail/cancel/expire antes de saltar mas tiempo."
+        : "",
+      (socialRhythm?.saturatedNpcIds || []).length > 0
+        ? "Evitar nuevos deltas sociales por rutina con NPCs saturados hoy; usar textura o memoria."
         : "",
     ].filter(Boolean),
   };
@@ -235,6 +246,126 @@ function buildCommitmentAgenda(commitments = []) {
     ),
     needsResolution,
     next: commitments.slice(0, 5),
+  };
+}
+
+function summarizePositiveSocialDeltas(entries = []) {
+  const totals = {};
+  for (const entry of entries) {
+    for (const [field, value] of Object.entries(entry.appliedDeltas || {})) {
+      const delta = Number(value) || 0;
+      if (delta > 0) totals[field] = (totals[field] || 0) + delta;
+    }
+  }
+  return totals;
+}
+
+function countSocialActionTypes(entries = []) {
+  const counts = {};
+  for (const entry of entries) {
+    const actionType = entry.actionType || "general";
+    counts[actionType] = (counts[actionType] || 0) + 1;
+  }
+  return counts;
+}
+
+function buildNpcSocialSceneGuidance({ npc, entries, actionTypeCounts, positiveDeltas }) {
+  const repeatedActionTypes = Object.entries(actionTypeCounts)
+    .filter(([, count]) => count >= 2)
+    .map(([actionType]) => actionType);
+  const cappedWarnings = entries.flatMap((entry) => entry.caps?.warnings || []);
+  const availabilityStatus = npc.availability?.status || "";
+  const busy = ["busy", "working", "unavailable"].includes(availabilityStatus);
+  const entryCount = entries.length;
+  const positiveFieldCount = Object.keys(positiveDeltas).length;
+
+  let mode = "open";
+  let guidance = "Puede reaccionar segun personalidad y contexto; avance numerico solo si hay novedad real.";
+
+  if (cappedWarnings.length > 0 || repeatedActionTypes.length > 0 || entryCount >= 3) {
+    mode = "saturated_today";
+    guidance = "Ya hubo interaccion social suficiente hoy; preferir gesto, continuidad o memoria sin subir numeros.";
+  } else if (entryCount > 0 || positiveFieldCount > 0) {
+    mode = "warm_continuity";
+    guidance = "Mostrar continuidad del trato sin repetir el mismo agradecimiento ni volver cada ayuda una sorpresa.";
+  }
+
+  if (busy) {
+    guidance = `${guidance} El NPC esta ocupado: usar respuestas breves, practicas o no verbales.`;
+  }
+
+  return {
+    mode,
+    repeatedActionTypes,
+    cappedWarnings,
+    busy,
+    guidance,
+    dialogueMode:
+      mode === "saturated_today"
+        ? "gesture_or_short_line"
+        : busy
+          ? "brief_practical_line"
+          : "natural_if_scene_needs_it",
+  };
+}
+
+function buildSocialRhythm({ nearbyNpcSummaries = [], todaySocialLedger = [], gameState = {} } = {}) {
+  const ledgerByNpc = new Map();
+  for (const entry of todaySocialLedger || []) {
+    if (!entry?.npcId) continue;
+    if (!ledgerByNpc.has(entry.npcId)) ledgerByNpc.set(entry.npcId, []);
+    ledgerByNpc.get(entry.npcId).push(entry);
+  }
+
+  const npcs = nearbyNpcSummaries.slice(0, 10).map((npc) => {
+    const entries = ledgerByNpc.get(npc.npcId) || [];
+    const actionTypeCounts = countSocialActionTypes(entries);
+    const positiveDeltas = summarizePositiveSocialDeltas(entries);
+    const guidance = buildNpcSocialSceneGuidance({
+      npc,
+      entries,
+      actionTypeCounts,
+      positiveDeltas,
+    });
+
+    return {
+      npcId: npc.npcId,
+      name: npc.name,
+      currentTask: npc.currentTask || "",
+      availability: {
+        status: npc.availability?.status || "",
+        reason: npc.availability?.reason || "",
+      },
+      relationshipBands: {
+        trust: npc.relationshipBands?.trust?.label || "",
+        familiarity: npc.relationshipBands?.familiarity?.label || "",
+        respect: npc.relationshipBands?.respect?.label || "",
+      },
+      today: {
+        entryCount: entries.length,
+        actionTypeCounts,
+        positiveDeltas,
+      },
+      sceneGuidance: guidance,
+      nextThresholds: (npc.relationshipState?.nextThresholds || []).slice(0, 3),
+      narrativeGuidance: (npc.relationshipState?.narrativeGuidance || []).slice(0, 3),
+    };
+  });
+
+  const saturatedNpcIds = npcs
+    .filter((npc) => npc.sceneGuidance.mode === "saturated_today")
+    .map((npc) => npc.npcId);
+
+  return {
+    schemaVersion: "social_rhythm_v1",
+    day: gameState.currentDay,
+    time: gameState.time,
+    saturatedNpcIds,
+    npcs,
+    globalGuidance:
+      saturatedNpcIds.length > 0
+        ? "Hay NPCs con interaccion social repetida hoy: si la escena es rutina, usar textura o memoria y evitar nuevos deltas numericos."
+        : "No hay saturacion social cercana; aun asi, los cambios numericos requieren accion significativa y validacion.",
   };
 }
 
@@ -747,6 +878,11 @@ async function getCompactContext(req, res) {
       .filter((mission) => !mission.expiredByCurrentTime)
       .slice(0, limits.missionLimit);
     const nearbyNpcSummaries = nearbyNpcs.map(responseShaping.summarizeNpc);
+    const socialRhythm = buildSocialRhythm({
+      nearbyNpcSummaries,
+      todaySocialLedger,
+      gameState,
+    });
     const directPresentNpcIds = new Set(
       nearbyNpcs
         .filter((npc) => npc.currentLocationId === currentLocationId)
@@ -788,6 +924,15 @@ async function getCompactContext(req, res) {
     }
     const npcById = new Map(nearbyNpcs.map((npc) => [npc.npcId, npc]));
     const alerts = [];
+
+    if (socialRhythm.saturatedNpcIds.length > 0) {
+      alerts.push({
+        type: "social_rhythm_saturated",
+        severity: "info",
+        message: "Hay NPCs cercanos con interacciones sociales repetidas hoy; conviene variar la escena y evitar deltas numericos rutinarios.",
+        npcIds: socialRhythm.saturatedNpcIds,
+      });
+    }
 
     const currentDayDailyEvent = dailyEvents.find((event) =>
       (event.tags || []).includes(`daily_event_day_${gameState.currentDay}`)
@@ -986,6 +1131,7 @@ async function getCompactContext(req, res) {
           stalePendingBiologicalAccumulations,
           alerts,
           narrativeContext,
+          socialRhythm,
         })
       : undefined;
 
@@ -1022,6 +1168,7 @@ async function getCompactContext(req, res) {
         backgroundEvents: backgroundEventSummaries,
         activeRumors: activeRumors.map(responseShaping.summarizeRumor),
         socialLedgerToday: todaySocialLedger.map(responseShaping.summarizeNpcSocialLedger),
+        socialRhythm,
         pendingCommitments: pendingCommitmentSummaries,
         commitmentAgenda,
         activeMissions: activeMissionSummaries,

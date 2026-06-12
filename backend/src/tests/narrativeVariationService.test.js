@@ -63,10 +63,14 @@ describe("narrative variation service", () => {
       seed: "shift_grulla_morning_0700_1200",
     });
 
-    assert.equal(hints.schemaVersion, "narrative_hints_v1");
+    assert.equal(hints.schemaVersion, "narrative_hints_v2");
     assert.equal(hints.actionFamily, ACTION_FAMILIES.JOB_SHIFT);
     assert.equal(hints.repetition.level, "high");
     assert.equal(hints.sceneMode, "compressed_with_new_detail");
+    assert.equal(hints.scenePlan.schemaVersion, "scene_plan_v1");
+    assert.match(hints.scenePlan.paragraphTarget, /1-2/);
+    assert.match(hints.scenePlan.noveltyRule, /diferencia observable/);
+    assert.match(hints.scenePlan.stateCalloutRule, /displayLines/);
     assert.ok(hints.avoidRepeating.some((entry) => entry.includes("mesas")));
     assert.ok(hints.variationGuidance.primaryLever);
     assert.match(hints.variationGuidance.compression, /Comprimir/);
@@ -108,6 +112,8 @@ describe("narrative variation service", () => {
     assert.equal(hints.actionFamily, ACTION_FAMILIES.SOCIAL);
     assert.equal(hints.repetition.level, "medium");
     assert.equal(hints.socialGuidance.outcome, "memory_or_texture_only");
+    assert.match(hints.scenePlan.npcReactionRule, /no sumar otra recompensa social/);
+    assert.ok(hints.scenePlan.reactionFocus);
     assert.equal(hints.npcBeats[0].npcId, "npc_yara_mils");
     assert.ok(["brief_line", "gesture"].includes(hints.npcBeats[0].dialogueMode));
     assert.ok(["silencio", "gesto", "limite", "cansancio", "continuidad de confianza"].includes(

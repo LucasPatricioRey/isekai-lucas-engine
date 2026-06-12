@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Compact",
-    "version": "2.15.0",
-    "description": "Schema compacto con hasta 30 operaciones para GPT Builder. Incluye ApplyTurn con missionPatch, activityCost, gameStatePatch y parches de economia/memoria/relacion social. Incluye previewSocialImpact con proyeccion de relationshipState y excluye rollback y mutadores peligrosos directos. El backend separa evento principal unico, rumores menores y eventos de fondo; el scheduler solo genera otro evento principal cuando no hay uno abierto. applyTurn, completeJobShift y context/compact pueden devolver narrativeHints/narrativeContext para variar escenas repetidas sin crear mecanicas nuevas. Las comidas de contrato en completeJobShift son explicitas: solo se aplican si se envian en consumeIncludedMealIds. applyTurn.commitmentPatches guarda promesas, planes y obligaciones pendientes como estado formal con agenda, urgencia y consecuencias previstas."
+    "version": "2.16.0",
+    "description": "Schema compacto con hasta 30 operaciones para GPT Builder. Incluye ApplyTurn con missionPatch, activityCost, gameStatePatch y parches de economia/memoria/relacion social. Incluye previewSocialImpact con proyeccion de relationshipState y excluye rollback y mutadores peligrosos directos. El backend separa evento principal unico, rumores menores y eventos de fondo; el scheduler solo genera otro evento principal cuando no hay uno abierto. applyTurn, completeJobShift y context/compact devuelven narrativeHints/narrativeContext/socialRhythm y scenePlan para variar escenas repetidas sin crear mecanicas nuevas. Las comidas de contrato en completeJobShift son explicitas: solo se aplican si se envian en consumeIncludedMealIds. applyTurn.commitmentPatches guarda promesas, planes y obligaciones pendientes como estado formal con agenda, urgencia y consecuencias previstas."
   },
   "servers": [
     {
