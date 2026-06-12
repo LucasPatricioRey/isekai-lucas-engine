@@ -12,6 +12,7 @@ const EVENT_LAYERS = {
   BACKGROUND: "background",
 };
 const MAIN_EVENT_OPEN_STATUSES = ["scheduled", "active"];
+const MAIN_EVENT_CLOSED_STATUSES = ["resolved", "expired", "consequences_applied", "cancelled"];
 
 const BLOCK_ROLLS = [
   { roll: 1, key: "morning", block: "Mañana", startTime: "06:00", endTime: "12:00" },
@@ -691,6 +692,18 @@ function isOpenMainEvent(event = {}) {
   return isMainEvent(event) && MAIN_EVENT_OPEN_STATUSES.includes(event.status);
 }
 
+function getMainEventClosedDay(event = {}) {
+  if (!event) return null;
+
+  const resolutionDay = Number(event.resolution?.day || event.resolution?.resolvedDay || event.resolution?.closedDay);
+  if (Number.isInteger(resolutionDay) && resolutionDay > 0) return resolutionDay;
+
+  const nextEligibleDay = Number(event.resolution?.nextMainEventEligibleDay);
+  if (Number.isInteger(nextEligibleDay) && nextEligibleDay > 1) return nextEligibleDay - 1;
+
+  return null;
+}
+
 function unique(values) {
   return Array.from(new Set((values || []).filter(Boolean)));
 }
@@ -899,6 +912,19 @@ async function findOpenMainEvent({ gameId = DEFAULT_GAME_ID, session = null } = 
     .lean();
 }
 
+async function findMostRecentClosedMainEvent({ gameId = DEFAULT_GAME_ID, session = null } = {}) {
+  return WorldEvent.findOne({
+    ...eventGameFilter(gameId),
+    $and: [
+      mainEventQuery(),
+      { status: { $in: MAIN_EVENT_CLOSED_STATUSES } },
+    ],
+  })
+    .sort({ "resolution.day": -1, updatedAt: -1, startDay: -1, startTime: -1 })
+    .session(session)
+    .lean();
+}
+
 async function ensureDailyEventForGameState(gameState, { session = null, rng = Math.random, rolls = null } = {}) {
   if (!shouldEnsureDailyEvent(gameState)) {
     return {
@@ -925,6 +951,17 @@ async function ensureDailyEventForGameState(gameState, { session = null, rng = M
       generated: false,
       reason: "main_event_already_open",
       event: openMainEvent,
+    };
+  }
+
+  const lastClosedMainEvent = await findMostRecentClosedMainEvent({ gameId, session });
+  const closedDay = getMainEventClosedDay(lastClosedMainEvent);
+  if (closedDay && Number(gameState.currentDay) <= closedDay) {
+    return {
+      generated: false,
+      reason: "main_event_closed_today_next_generation_tomorrow",
+      event: lastClosedMainEvent,
+      nextEligibleDay: closedDay + 1,
     };
   }
 
@@ -1048,6 +1085,7 @@ module.exports = {
   DAILY_EVENT_TEMPLATE_COOLDOWN_DAYS,
   EVENT_LAYERS,
   IMPORTANT_TEMPLATES,
+  MAIN_EVENT_CLOSED_STATUSES,
   MINOR_TEMPLATES,
   MAIN_EVENT_OPEN_STATUSES,
   BLOCK_ROLLS,
@@ -1057,7 +1095,9 @@ module.exports = {
   eventGameFilter,
   extractDailyEventTemplateId,
   findDailyEventForDay,
+  findMostRecentClosedMainEvent,
   findOpenMainEvent,
+  getMainEventClosedDay,
   getExcludedDailyEventTemplateIds,
   getEventStatusAt,
   isMainEvent,

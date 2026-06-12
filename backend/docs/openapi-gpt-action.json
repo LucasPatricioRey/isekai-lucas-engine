@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions",
-    "version": "2.11.0",
+    "version": "2.12.0",
     "description": "Schema normal para GPT Actions. Expone endpoints de lectura, busqueda, preview y mutacion central controlada. Incluye previewSocialImpact, relationshipState efectivo y applyTurn.npcRelationshipPatches para vinculos sociales. Incluye lectura read-only de WorldEvents para auditoria tecnica. No expone rollback, admin ni mutadores peligrosos de combate/misiones. El backend separa evento principal unico, rumores menores y eventos de fondo; el scheduler solo genera otro evento principal cuando no hay uno abierto. applyTurn, completeJobShift y context/compact pueden devolver narrativeHints/narrativeContext para variar escenas repetidas sin crear mecanicas nuevas."
   },
   "servers": [
@@ -444,7 +444,11 @@
           "op": {
             "type": "string",
             "enum": [
-              "update_shift_schedule"
+              "update_shift_schedule",
+              "create_contract",
+              "update_contract_status",
+              "record_shift_absence",
+              "record_shift_late"
             ],
             "default": "update_shift_schedule"
           },
@@ -496,6 +500,216 @@
             "items": {
               "type": "string"
             }
+          },
+          "characterId": {
+            "type": "string",
+            "default": "char_lucas"
+          },
+          "jobId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "employerNpcId": {
+            "type": "string"
+          },
+          "locationId": {
+            "type": "string"
+          },
+          "factionId": {
+            "type": "string"
+          },
+          "startDay": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "pay": {
+            "type": "object",
+            "properties": {
+              "dailyCopper": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "notes": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "includesMeals": {
+            "type": "boolean"
+          },
+          "mealBenefits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "mealId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "satietyBonus": {
+                  "type": "integer"
+                },
+                "energyBonus": {
+                  "type": "integer"
+                },
+                "notes": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "mealId",
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "shifts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "shiftId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "startTime": {
+                  "type": "string",
+                  "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                },
+                "endTime": {
+                  "type": "string",
+                  "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                },
+                "activityCategory": {
+                  "type": "string"
+                },
+                "expectedMinutes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "payCopper": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "inactive",
+                    "ended"
+                  ]
+                },
+                "activeFromDay": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "activeUntilDay": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "inactiveFromDay": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "inactiveReason": {
+                  "type": "string"
+                },
+                "lateGraceMinutes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "absenceConsequences": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "scheduleNotes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "includedMealIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "typicalTasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "rules": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "shiftId",
+                "name",
+                "startTime",
+                "endTime",
+                "expectedMinutes"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "typicalTasks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "absenceRules": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowExisting": {
+            "type": "boolean"
+          },
+          "day": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "time": {
+            "type": "string",
+            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          },
+          "minutesLate": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "excused": {
+            "type": "boolean"
+          },
+          "consequenceApplied": {
+            "type": "boolean"
+          },
+          "consequenceSummary": {
+            "type": "string"
           }
         },
         "required": [
@@ -503,7 +717,8 @@
           "shiftId",
           "reason"
         ],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "description": "Mutaciones formales de contrato laboral: crear contrato, cambiar estado, actualizar turnos o registrar ausencia/tardanza. Los campos requeridos dependen de op."
       },
       "MoneyPatch": {
         "type": "object",
@@ -1180,6 +1395,21 @@
               "none"
             ],
             "description": "Resultado social opcional del evento diario. Si se omite, se infiere desde status."
+          },
+          "reason": {
+            "type": "string"
+          },
+          "resolutionSummary": {
+            "type": "string",
+            "description": "Resumen del resultado al resolver/cerrar el evento."
+          },
+          "consequenceSummary": {
+            "type": "string",
+            "description": "Consecuencia concreta si se resolvio parcial, vencio o se ignor?."
+          },
+          "resolvedByCharacterId": {
+            "type": "string",
+            "default": "char_lucas"
           }
         },
         "additionalProperties": false
@@ -2344,6 +2574,16 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 10
+            }
+          },
+          {
+            "name": "includeTechnicalSummary",
+            "in": "query",
+            "required": false,
+            "description": "Solo modo tecnico/debug: incluye resumen tecnico compacto con riesgos, eventos, misiones, trabajo y alertas.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
           }
         ],

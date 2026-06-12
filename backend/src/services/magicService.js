@@ -142,6 +142,61 @@ function getBlockingReasons({ technique, gameState, knownTechniqueIds, minutes }
   return reasons;
 }
 
+function buildSelfTrainingGuidance({ technique, canPractice, blockingReasons, guide, requestedMinutes, skillPreviews }) {
+  const kind = technique.kind || "practice";
+  const isSpell = kind === "spell";
+  const hasGuide = Boolean(guide);
+  const stage =
+    isSpell
+      ? "spell_locked"
+      : kind === "theory"
+        ? "theory"
+        : kind === "trick"
+          ? "first_control"
+          : "foundation_control";
+
+  const safeSolo = canPractice && !hasGuide && !isSpell;
+  const nextSkillMilestone = (skillPreviews || []).find((preview) => preview.levelUps?.length > 0) || null;
+  const guidance = [
+    hasGuide
+      ? "Practica guiada: puede corregir errores pequenos, pero no permite saltar requisitos."
+      : "Practica autodidacta: avance lento, seguro y sin desbloqueos automaticos.",
+    isSpell
+      ? "Hechizo: no debe narrarse como usable si el backend no lo marco como conocido/desbloqueado."
+      : "Sin hechizo visible: narrar sensaciones internas, respiracion, pulso de mana y control.",
+    requestedMinutes > 30
+      ? "Sesion larga: vigilar energia, hambre y frustracion; conviene dividir entrenamientos."
+      : "Sesion corta/media: adecuada para control basico sin forzar el cuerpo.",
+  ];
+
+  if (!canPractice) {
+    guidance.push("Bloqueado: resolver requisitos antes de otorgar EXP o progreso narrativo fuerte.");
+  }
+
+  return {
+    schemaVersion: "magic_self_training_v1",
+    mode: hasGuide ? "guided" : "solo",
+    stage,
+    canPracticeSoloSafely: safeSolo,
+    canProduceVisibleEffect: canPractice && isSpell && technique.status === "available",
+    shouldLearnSpell: false,
+    safePracticeLimitMinutes: Math.min(Number(technique.maxMinutes || requestedMinutes || 30), hasGuide ? 60 : 30),
+    nextMilestone: nextSkillMilestone
+      ? {
+          skillId: nextSkillMilestone.skillId,
+          levelUps: nextSkillMilestone.levelUps,
+          reason: "La practica podria empujar esta habilidad si luego se aplica una mutacion validada.",
+        }
+      : {
+          skillId: "",
+          levelUps: [],
+          reason: "Acumular practicas basicas antes de esperar un salto claro.",
+        },
+    blockingReasons,
+    guidance,
+  };
+}
+
 async function previewMagicPractice({
   gameId = DEFAULT_GAME_ID,
   characterId = DEFAULT_CHARACTER_ID,
@@ -251,6 +306,14 @@ async function previewMagicPractice({
     },
     biologicalPreview,
     skillPreviews,
+    selfTrainingGuidance: buildSelfTrainingGuidance({
+      technique,
+      canPractice,
+      blockingReasons,
+      guide,
+      requestedMinutes,
+      skillPreviews,
+    }),
     unlocks: {
       willUnlockTechnique: false,
       willLearnSpell: false,

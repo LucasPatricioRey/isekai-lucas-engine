@@ -41,6 +41,20 @@ describe("read-only API coverage", () => {
     );
   });
 
+  it("can include a compact technical readiness summary on demand", async () => {
+    const compact = await get("/api/context/compact?includeTechnicalSummary=true");
+    assert.equal(compact.status, 200);
+    assert.equal(compact.data.ok, true);
+    assert.equal(compact.data.context.technicalSummary.schemaVersion, "technical_summary_v1");
+    assert.ok(compact.data.context.technicalSummary.clock.time);
+    assert.ok(compact.data.context.technicalSummary.eventState);
+    assert.ok(Array.isArray(compact.data.context.technicalSummary.recommendedChecks));
+
+    const defaultCompact = await get("/api/context/compact");
+    assert.equal(defaultCompact.status, 200);
+    assert.equal(defaultCompact.data.context.technicalSummary, undefined);
+  });
+
   it("serves public OpenAPI schemas for GPT Builder import", async () => {
     const compact = await get("/docs/openapi-gpt-action-compact.json");
     assert.equal(compact.status, 200);

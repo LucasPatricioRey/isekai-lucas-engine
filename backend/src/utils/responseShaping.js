@@ -339,6 +339,7 @@ function summarizeWorldEvent(event) {
         "consequence_applied",
         "social_consequence_rules",
         "social_consequence_applied",
+        "event_resolution",
       ].includes(effect.type)
     );
 
@@ -358,9 +359,12 @@ function summarizeWorldEvent(event) {
     type: event.type,
     eventLayer,
     countsAsMainEvent,
-    blocksMainEventGeneration: event.blocksMainEventGeneration === true || countsAsMainEvent,
+    blocksMainEventGeneration:
+      ["scheduled", "active"].includes(event.status) &&
+      (event.blocksMainEventGeneration === true || countsAsMainEvent),
     scope: event.scope,
     status: event.status,
+    resolution: event.resolution || {},
     startDay: event.startDay,
     startTime: event.startTime,
     endDay: event.endDay,

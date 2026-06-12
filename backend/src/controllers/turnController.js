@@ -50,6 +50,7 @@ const VALID_EVENT_LOG_SOURCES = new Set([
 ]);
 
 const VALID_EVENT_LOG_VISIBILITIES = new Set(["hidden", "private", "local", "public"]);
+const CLOSED_WORLD_EVENT_STATUSES = new Set(["resolved", "expired", "consequences_applied", "cancelled"]);
 
 function validationError(message, details = {}) {
   const error = new Error(message);
@@ -198,6 +199,39 @@ function buildSocialMilestoneLines(npcName, fieldChanges = []) {
     .map((entry) => {
       const direction = entry.after > entry.before ? "subio" : "cambio";
       return `Hito de vínculo — ${npcName}: ${entry.label} ${direction} de ${entry.beforeBand} a ${entry.afterBand}.`;
+    });
+}
+
+function buildSocialMilestoneSceneCues(npcName, fieldChanges = []) {
+  return fieldChanges
+    .filter((entry) => entry.bandChanged && entry.milestone)
+    .map((entry) => {
+      const wentUp = entry.after > entry.before;
+      const axis = entry.field;
+      let cue = "Mostrar un cambio sutil de trato en la proxima escena.";
+
+      if (axis === "trust" && wentUp) {
+        cue = "El NPC puede mostrarse un poco mas relajado, delegar algo simple o responder con menos defensa.";
+      } else if (axis === "familiarity" && wentUp) {
+        cue = "El NPC puede tratar a Lucas como presencia mas cotidiana, sin volver cada gesto una sorpresa.";
+      } else if (axis === "respect" && wentUp) {
+        cue = "El NPC puede reconocer competencia con menos explicacion y corregirlo de forma mas directa.";
+      } else if (axis === "affection" && wentUp) {
+        cue = "Puede aparecer calidez leve, pero no convertirlo en romance ni avance intenso.";
+      } else if (["suspicion", "fear", "jealousy"].includes(axis) && wentUp) {
+        cue = "El NPC debe mostrar mas cautela, distancia o lectura tensa de la escena.";
+      } else if (axis === "socialDebt" && wentUp) {
+        cue = "El NPC puede sentir que Lucas hizo algo que merece devolverse, sin crear recompensa automatica.";
+      }
+
+      return {
+        npcName,
+        field: axis,
+        label: entry.label,
+        beforeBand: entry.beforeBand,
+        afterBand: entry.afterBand,
+        cue,
+      };
     });
 }
 
@@ -770,6 +804,7 @@ async function applyNpcRelationshipPatches(gameState, patches, session = null) {
       appliedDeltas: capped.appliedDeltas,
     });
     const milestoneLines = buildSocialMilestoneLines(npc.name, fieldChanges);
+    const milestoneSceneCues = buildSocialMilestoneSceneCues(npc.name, fieldChanges);
     const ledgerEntry = await createSocialLedgerEntry({
       gameId: gameState.gameId,
       characterId: gameState.characterId,
@@ -800,6 +835,7 @@ async function applyNpcRelationshipPatches(gameState, patches, session = null) {
       fieldChanges,
       displayLines: fieldChanges.map((entry) => entry.display),
       milestoneLines,
+      milestoneSceneCues,
       caps: capped.caps,
       ledgerId: ledgerEntry?.ledgerId || "",
       skippedByDailyCap: hasNonZeroDelta(capped.requestedDeltas) && !hasNonZeroDelta(capped.appliedDeltas),
@@ -898,6 +934,63 @@ async function applyRumorPatches(gameState, patches, session = null) {
   return results;
 }
 
+function inferWorldEventOutcome(status, patch = {}) {
+  if (patch.socialOutcome && patch.socialOutcome !== "none") return patch.socialOutcome;
+  if (status === "resolved") return "resolved";
+  if (status === "consequences_applied") return "ignored";
+  if (status === "expired") return "ignored";
+  if (status === "cancelled") return "cancelled";
+  return "none";
+}
+
+function buildWorldEventResolution({ existingEvent = null, eventPayload, patch = {}, gameState }) {
+  if (!CLOSED_WORLD_EVENT_STATUSES.has(eventPayload.status)) return null;
+
+  const outcome = inferWorldEventOutcome(eventPayload.status, patch);
+  const summary =
+    patch.resolutionSummary ||
+    patch.consequenceSummary ||
+    patch.reason ||
+    existingEvent?.resolution?.summary ||
+    "";
+  const consequenceSummary =
+    patch.consequenceSummary ||
+    existingEvent?.resolution?.consequenceSummary ||
+    "";
+  const isMain =
+    eventPayload.countsAsMainEvent ||
+    eventPayload.eventLayer === "main_event" ||
+    (eventPayload.tags || []).includes("daily_event");
+  const nextMainEventEligibleDay = isMain ? Number(gameState.currentDay || 1) + 1 : null;
+  const statusLabel = {
+    resolved: "resuelto",
+    expired: "vencido",
+    consequences_applied: "con consecuencias aplicadas",
+    cancelled: "cancelado",
+  }[eventPayload.status] || eventPayload.status;
+  const displayLines = [
+    `Evento ${eventPayload.title}: ${statusLabel}.`,
+  ];
+
+  if (summary) displayLines.push(`Resultado: ${summary}`);
+  if (consequenceSummary) displayLines.push(`Consecuencia: ${consequenceSummary}`);
+  if (nextMainEventEligibleDay) {
+    displayLines.push(`Proximo evento principal elegible: Dia ${nextMainEventEligibleDay} desde las 06:00.`);
+  }
+
+  return {
+    status: eventPayload.status,
+    outcome,
+    day: gameState.currentDay,
+    time: gameState.time,
+    summary,
+    consequenceSummary,
+    nextMainEventEligibleDay,
+    resolvedByCharacterId: patch.resolvedByCharacterId || gameState.characterId || "char_lucas",
+    displayLines,
+  };
+}
+
 async function applyWorldEventPatches(gameState, patches, session = null) {
   const results = {
     events: [],
@@ -955,7 +1048,34 @@ async function applyWorldEventPatches(gameState, patches, session = null) {
       severity: patch.severity || existingEvent?.severity || "minor",
       createdBy: patch.createdBy || existingEvent?.createdBy || "system",
       tags: unique([...(existingEvent?.tags || []), ...(patch.tags || [])]),
+      resolution: existingEvent?.resolution || {},
     };
+
+    const resolution = buildWorldEventResolution({
+      existingEvent,
+      eventPayload,
+      patch,
+      gameState,
+    });
+
+    if (resolution) {
+      eventPayload.resolution = resolution;
+      eventPayload.blocksMainEventGeneration = false;
+      eventPayload.tags = unique([
+        ...(eventPayload.tags || []),
+        `event_${eventPayload.status}`,
+        `event_outcome_${resolution.outcome}`,
+      ]);
+      eventPayload.effects = [
+        ...(eventPayload.effects || []),
+        {
+          type: "event_resolution",
+          target: "world_event",
+          value: resolution,
+          reason: "Cierre formal de evento de mundo.",
+        },
+      ];
+    }
 
     const socialPlan = buildWorldEventSocialConsequencePlan({
       before: existingEvent,
@@ -973,6 +1093,10 @@ async function applyWorldEventPatches(gameState, patches, session = null) {
       { $set: eventPayload },
       { upsert: true, returnDocument: "after", runValidators: true, session }
     ).lean();
+
+    if (resolution && eventPayload.countsAsMainEvent) {
+      gameState.activeEventIds = (gameState.activeEventIds || []).filter((id) => id !== worldEvent.eventId);
+    }
 
     results.events.push(worldEvent);
 
@@ -1371,6 +1495,79 @@ async function applyMissionReward({ gameState, mission, session = null }) {
   };
 }
 
+function formatCopper(moneyCopper = 0) {
+  const total = Math.max(0, Number(moneyCopper) || 0);
+  const gold = Math.floor(total / 10000);
+  const silver = Math.floor((total % 10000) / 100);
+  const copper = total % 100;
+  return `${gold} oro, ${silver} plata, ${copper} cobre`;
+}
+
+function buildMissionOutcome({ op, mission, before, reward = null, patch = {} } = {}) {
+  const statusChanged = before.status !== mission.status;
+  const proofChanged = before.proofStatus !== mission.proofStatus;
+  const displayLines = [];
+  const nextSteps = [];
+  const rewardLines = [];
+  const consequenceLines = [];
+
+  if (statusChanged) {
+    displayLines.push(`Mision ${mission.title}: ${before.status}->${mission.status}.`);
+  }
+
+  if (proofChanged) {
+    displayLines.push(`Prueba de mision: ${before.proofStatus}->${mission.proofStatus}.`);
+  }
+
+  if (op === "accept") {
+    nextSteps.push(mission.proofRequired ? "Conseguir prueba y reportar al cliente/gremio." : "Completar el objetivo y reportar.");
+  } else if (op === "report") {
+    nextSteps.push("Esperar verificacion formal antes de cobrar recompensa.");
+  } else if (op === "verify" && mission.proofStatus === "verified") {
+    nextSteps.push("La prueba esta verificada; la mision ya puede completarse y pagarse.");
+  } else if (op === "verify" && mission.proofStatus === "rejected") {
+    consequenceLines.push("La prueba fue rechazada; no se puede completar hasta corregir el problema.");
+  } else if (op === "complete") {
+    nextSteps.push("Mision cerrada; no pagar de nuevo si se reintenta.");
+  } else if (op === "fail") {
+    consequenceLines.push(patch.failureReason || patch.reason || "La mision fallo y sale de misiones activas.");
+  } else if (op === "expire") {
+    consequenceLines.push(patch.overrideReason || "La mision expiro y sale de opciones vigentes.");
+  }
+
+  if (reward?.money && !reward.alreadyPaid) {
+    rewardLines.push(`Recompensa pagada: ${formatCopper(reward.money.delta)}.`);
+  }
+  if (reward?.mg && !reward.alreadyPaid) {
+    rewardLines.push(`MG: ${reward.mg.before}->${reward.mg.after} (+${reward.mg.delta}).`);
+  }
+  if (reward?.alreadyPaid) {
+    rewardLines.push("Recompensa no duplicada: ya estaba pagada o la mision ya estaba cerrada.");
+  }
+
+  return {
+    op,
+    statusChanged,
+    proofChanged,
+    outcome:
+      mission.status === "completed"
+        ? "completed"
+        : mission.status === "failed"
+          ? "failed"
+          : mission.status === "expired"
+            ? "expired"
+            : mission.proofStatus === "verified"
+              ? "ready_to_complete"
+              : mission.proofStatus === "submitted"
+                ? "awaiting_verification"
+                : mission.status,
+    displayLines,
+    rewardLines,
+    consequenceLines,
+    nextSteps,
+  };
+}
+
 async function applyMissionPatches(gameState, missionPatch, session = null) {
   const patches = normalizeMissionPatches(missionPatch);
   const results = [];
@@ -1546,6 +1743,13 @@ async function applyMissionPatches(gameState, missionPatch, session = null) {
         const flags = getMissionFlags(mission);
         flags.completedTime = gameState.time;
         flags.completionSummary = patch.completionSummary || patch.reportSummary || "";
+        flags.resolution = {
+          status: "completed",
+          day: gameState.currentDay,
+          time: gameState.time,
+          summary: flags.completionSummary,
+          rewardSource: "missionPatch.complete",
+        };
         setMissionFlags(mission, flags);
 
         reward = await applyMissionReward({ gameState, mission, session });
@@ -1564,6 +1768,12 @@ async function applyMissionPatches(gameState, missionPatch, session = null) {
         flags.failedDay = gameState.currentDay;
         flags.failedTime = gameState.time;
         flags.failureReason = patch.failureReason || patch.reason || "";
+        flags.resolution = {
+          status: "failed",
+          day: gameState.currentDay,
+          time: gameState.time,
+          summary: flags.failureReason,
+        };
         setMissionFlags(mission, flags);
       }
     }
@@ -1591,11 +1801,18 @@ async function applyMissionPatches(gameState, missionPatch, session = null) {
         flags.expiredAtDay = gameState.currentDay;
         flags.expiredAtTime = gameState.time;
         flags.expireReason = patch.overrideReason || "expired_by_time";
+        flags.resolution = {
+          status: "expired",
+          day: gameState.currentDay,
+          time: gameState.time,
+          summary: flags.expireReason,
+        };
         setMissionFlags(mission, flags);
       }
     }
 
     await mission.save({ session });
+    const outcome = buildMissionOutcome({ op, mission, before, reward, patch });
 
     results.push({
       op,
@@ -1614,6 +1831,7 @@ async function applyMissionPatches(gameState, missionPatch, session = null) {
         moneyCopper: gameState.moneyCopper,
       },
       reward,
+      outcome,
     });
   }
 

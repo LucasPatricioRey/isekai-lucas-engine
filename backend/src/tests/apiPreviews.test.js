@@ -111,6 +111,11 @@ describe("preview and rejection API coverage", () => {
     assert.equal(magic.status, 200);
     assert.equal(magic.data.preview.canPractice, true);
     assert.equal(magic.data.preview.projectedMp.willMutate, false);
+    assert.equal(magic.data.preview.selfTrainingGuidance.schemaVersion, "magic_self_training_v1");
+    assert.equal(magic.data.preview.selfTrainingGuidance.mode, "solo");
+    assert.equal(magic.data.preview.selfTrainingGuidance.shouldLearnSpell, false);
+    assert.equal(magic.data.preview.selfTrainingGuidance.canProduceVisibleEffect, false);
+    assert.ok(magic.data.preview.selfTrainingGuidance.guidance.some((line) => line.includes("Sin hechizo visible")));
 
     const combat = await post("/api/combat/encounters/fixture_enemy_lobo_borde/actions/preview", {
       actionType: "attack",

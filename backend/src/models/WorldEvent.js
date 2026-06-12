@@ -160,6 +160,11 @@ const worldEventSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+
+    resolution: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
   },
   {
     timestamps: true,

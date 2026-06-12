@@ -68,6 +68,9 @@ describe("narrative variation service", () => {
     assert.equal(hints.repetition.level, "high");
     assert.equal(hints.sceneMode, "compressed_with_new_detail");
     assert.ok(hints.avoidRepeating.some((entry) => entry.includes("mesas")));
+    assert.ok(hints.variationGuidance.primaryLever);
+    assert.match(hints.variationGuidance.compression, /Comprimir/);
+    assert.match(hints.variationGuidance.consequenceFocus, /No repetir recompensa/);
     assert.match(hints.mechanicsBoundary, /No agregan dinero/);
   });
 
@@ -107,5 +110,8 @@ describe("narrative variation service", () => {
     assert.equal(hints.socialGuidance.outcome, "memory_or_texture_only");
     assert.equal(hints.npcBeats[0].npcId, "npc_yara_mils");
     assert.ok(["brief_line", "gesture"].includes(hints.npcBeats[0].dialogueMode));
+    assert.ok(["silencio", "gesto", "limite", "cansancio", "continuidad de confianza"].includes(
+      hints.variationGuidance.primaryLever
+    ));
   });
 });

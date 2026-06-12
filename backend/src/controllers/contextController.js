@@ -58,6 +58,100 @@ function isBackgroundEvent(event = {}) {
   return event.eventLayer === EVENT_LAYERS.BACKGROUND;
 }
 
+function summarizeTechnicalReadiness({
+  gameState,
+  weatherSummary,
+  jobContractSummary,
+  activeMissionSummaries,
+  availableMissionPreview,
+  mainEventSummary,
+  minorRumorEventSummaries,
+  backgroundEventSummaries,
+  pendingBiologicalAccumulations,
+  stalePendingBiologicalAccumulations,
+  alerts,
+  narrativeContext,
+} = {}) {
+  const warningAlerts = (alerts || []).filter((alert) => alert.severity === "warning");
+  const infoAlerts = (alerts || []).filter((alert) => alert.severity !== "warning");
+  const nextShift = jobContractSummary?.schedule?.nextShift || null;
+  const openMissionNeedingProof = (activeMissionSummaries || []).filter(
+    (mission) => mission.status === "accepted" && ["pending", "submitted"].includes(mission.proofStatus)
+  );
+
+  return {
+    schemaVersion: "technical_summary_v1",
+    generatedFor: "modo_tecnico_o_debug",
+    clock: {
+      day: gameState.currentDay,
+      date: gameState.diegeticDate,
+      block: gameState.block,
+      time: gameState.time,
+      locationId: gameState.locationId,
+    },
+    eventState: {
+      mainEvent: mainEventSummary
+        ? {
+            eventId: mainEventSummary.eventId,
+            title: mainEventSummary.title,
+            status: mainEventSummary.status,
+            severity: mainEventSummary.severity,
+            start: {
+              day: mainEventSummary.startDay,
+              time: mainEventSummary.startTime,
+            },
+            end: {
+              day: mainEventSummary.endDay,
+              time: mainEventSummary.endTime,
+            },
+          }
+        : null,
+      minorRumorCount: (minorRumorEventSummaries || []).length,
+      backgroundEventCount: (backgroundEventSummaries || []).length,
+    },
+    missionState: {
+      activeCount: (activeMissionSummaries || []).length,
+      availableCount: (availableMissionPreview || []).length,
+      proofOrReportPendingMissionIds: openMissionNeedingProof.map((mission) => mission.missionId),
+    },
+    jobState: jobContractSummary
+      ? {
+          contractId: jobContractSummary.contractId,
+          title: jobContractSummary.title,
+          nextShiftId: nextShift?.shiftId || "",
+          futureShiftChanges: (jobContractSummary.schedule?.futureChanges || []).map((shift) => ({
+            shiftId: shift.shiftId,
+            inactiveFromDay: shift.inactiveFromDay,
+            reason: shift.reason || shift.inactiveReason || "",
+          })),
+        }
+      : null,
+    biologyState: {
+      pendingCount: (pendingBiologicalAccumulations || []).length,
+      stalePendingCount: (stalePendingBiologicalAccumulations || []).length,
+    },
+    weatherState: weatherSummary
+      ? {
+          condition: weatherSummary.currentCondition,
+          staleByCurrentTime: Boolean(weatherSummary.staleByCurrentTime),
+          expectedUntilDay: weatherSummary.expectedUntilDay,
+          expectedUntilTime: weatherSummary.expectedUntilTime,
+        }
+      : null,
+    narrativeState: narrativeContext || null,
+    alertSummary: {
+      warnings: warningAlerts.map((alert) => alert.type || alert.code || alert.message),
+      infos: infoAlerts.map((alert) => alert.type || alert.code || alert.message),
+    },
+    recommendedChecks: [
+      warningAlerts.length > 0 ? "Resolver o tener en cuenta alertas warning antes de acciones largas." : "",
+      weatherSummary?.staleByCurrentTime ? "Actualizar clima antes de viajes o escenas exteriores." : "",
+      (pendingBiologicalAccumulations || []).length > 0 ? "Cerrar acumuladores biologicos al cruzar la proxima hora exacta." : "",
+      mainEventSummary?.status === "active" ? "Si el evento principal se atiende, cerrarlo con worldEventPatches y resolutionSummary." : "",
+    ].filter(Boolean),
+  };
+}
+
 function timeToMinutes(time) {
   const [hours, minutes] = String(time || "00:00").split(":").map(Number);
   return hours * 60 + minutes;
@@ -343,6 +437,7 @@ async function getCompactContext(req, res) {
     }
 
     const gameId = req.query.gameId || "isekai_lucas_main";
+    const includeTechnicalSummary = responseShaping.queryBoolean(req.query.includeTechnicalSummary, false);
     const limits = {
       npcLimit: responseShaping.toIntQuery(req.query.npcLimit, 20, 1, 30),
       memoryLimit: responseShaping.toIntQuery(req.query.memoryLimit, 6, 0, 12),
@@ -775,6 +870,22 @@ async function getCompactContext(req, res) {
       gameState,
       limit: 30,
     });
+    const technicalSummary = includeTechnicalSummary
+      ? summarizeTechnicalReadiness({
+          gameState,
+          weatherSummary,
+          jobContractSummary,
+          activeMissionSummaries,
+          availableMissionPreview,
+          mainEventSummary,
+          minorRumorEventSummaries,
+          backgroundEventSummaries,
+          pendingBiologicalAccumulations,
+          stalePendingBiologicalAccumulations,
+          alerts,
+          narrativeContext,
+        })
+      : undefined;
 
     return res.json({
       ok: true,
@@ -814,6 +925,7 @@ async function getCompactContext(req, res) {
         pendingBiology: pendingBiologicalAccumulations,
         pendingBiologicalAccumulations,
         narrativeContext,
+        ...(includeTechnicalSummary ? { technicalSummary } : {}),
         weather: weatherSummary,
         jobContract: jobContractSummary,
         activeCombatEncounters: activeCombatEncounters.map(responseShaping.summarizeCombatEncounter),

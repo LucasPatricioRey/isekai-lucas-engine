@@ -167,6 +167,20 @@ const TONE_BY_FAMILY = {
   general_action: "natural y directo",
 };
 
+const VARIATION_LEVERS = {
+  combat: ["posicion", "lectura del enemigo", "terreno", "fatiga", "riesgo inmediato"],
+  job_shift: ["cliente concreto", "tarea distinta", "correccion breve", "ritmo de sala", "cierre del turno"],
+  magic_practice: ["sensacion interna", "control de respiracion", "interferencia emocional", "limite de seguridad", "microprogreso"],
+  meal: ["sabor", "pausa corporal", "compania", "ruido del lugar", "efecto directo de comida"],
+  mission: ["evidencia", "riesgo", "ruta", "testigo", "prueba para reportar"],
+  physical_training: ["tecnica", "respiracion", "terreno", "clima", "limite fisico"],
+  rest: ["hora de despertar", "hambre", "ruido ambiente", "cansancio residual", "quietud"],
+  shopping: ["stock", "precio", "trato del vendedor", "calidad visible", "rumor de mercado"],
+  social: ["silencio", "gesto", "limite", "cansancio", "continuidad de confianza"],
+  travel: ["clima", "barro", "luz", "sonidos", "demora"],
+  general_action: ["estado corporal", "lugar", "hora", "detalle nuevo", "consecuencia inmediata"],
+};
+
 function unique(values) {
   return Array.from(new Set((values || []).filter(Boolean)));
 }
@@ -423,6 +437,31 @@ function buildAvoidRepeating({ actionFamily, repetition } = {}) {
   return unique(avoid);
 }
 
+function buildVariationGuidance({ actionFamily, repetition, seedText }) {
+  const levers = VARIATION_LEVERS[actionFamily] || VARIATION_LEVERS.general_action;
+  const primaryLever = pickStable(levers, `${seedText}:primary`);
+  const secondaryLever = pickStable(
+    levers.filter((lever) => lever !== primaryLever),
+    `${seedText}:secondary`,
+    ""
+  );
+
+  return {
+    primaryLever,
+    secondaryLever,
+    compression:
+      repetition.level === "high"
+        ? "Comprimir la accion y narrar solo una diferencia concreta."
+        : repetition.level === "medium"
+          ? "Usar una microescena con un foco nuevo."
+          : "Puede narrarse completa si la accion lo merece.",
+    consequenceFocus:
+      repetition.level === "high"
+        ? "No repetir recompensa social o mecanica; mostrar continuidad, cansancio o textura."
+        : "Conectar el resultado a estado vivo, NPCs presentes y evento/mision si corresponde.",
+  };
+}
+
 function buildNarrativeHintsFromRecentLogs({
   gameState = {},
   actionSummary = "",
@@ -476,6 +515,7 @@ function buildNarrativeHintsFromRecentLogs({
     npcBeats: buildNpcBeats({ actionFamily: resolvedFamily, repetition, involvedNpcIds: npcIds }),
     socialGuidance: socialGuidanceFor({ actionFamily: resolvedFamily, repetition, changes }),
     avoidRepeating: buildAvoidRepeating({ actionFamily: resolvedFamily, repetition }),
+    variationGuidance: buildVariationGuidance({ actionFamily: resolvedFamily, repetition, seedText }),
     mechanicsBoundary:
       "Estas pistas solo guian narracion. No agregan dinero, EXP, loot, relacion, daño, curacion ni consecuencias.",
     tracking: {

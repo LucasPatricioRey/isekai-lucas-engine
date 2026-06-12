@@ -11,6 +11,7 @@ const NpcSocialLedger = require("../models/NpcSocialLedger");
 const WeatherState = require("../models/WeatherState");
 const WorldEvent = require("../models/WorldEvent");
 const { pruneAutomaticCheckpoints } = require("../services/checkpointService");
+const { ensureDailyEventForGameState } = require("../services/dailyEventSchedulerService");
 const { ensureCurrentWeatherForGameState } = require("../services/weatherService");
 const {
   assert,
@@ -29,6 +30,7 @@ let tempMissionId = "";
 let tempExpiredMissionId = "";
 let tempGuildMissionId = "";
 let tempJobContractId = "";
+let tempCreatedJobContractId = "";
 let tempNpcId = "";
 let tempRemoteNpcId = "";
 let tempWeatherRegionId = "";
@@ -225,7 +227,9 @@ async function cleanupIsolatedState() {
   await Mission.deleteMany({
     missionId: { $in: [tempMissionId, tempExpiredMissionId, tempGuildMissionId].filter(Boolean) },
   });
-  if (tempJobContractId) await JobContract.deleteOne({ contractId: tempJobContractId });
+  await JobContract.deleteMany({
+    contractId: { $in: [tempJobContractId, tempCreatedJobContractId].filter(Boolean) },
+  });
   if (tempNpcId) await Npc.deleteOne({ npcId: tempNpcId });
   if (tempNpcId) await NpcSocialLedger.deleteMany({ npcId: tempNpcId });
   if (tempRemoteNpcId) await Npc.deleteOne({ npcId: tempRemoteNpcId });
@@ -591,7 +595,7 @@ describe("turn hardening coverage", () => {
       ],
     });
 
-    assert.equal(patched.status, 200);
+    assert.equal(patched.status, 200, JSON.stringify(patched.data));
     assert.equal(patched.data.ok, true);
     assert.equal(patched.data.changes.jobContracts[0].shiftId, "shift_test_morning_0700_1200");
     assert.equal(patched.data.changes.jobContracts[0].after.status, "ended");
@@ -786,6 +790,236 @@ describe("turn hardening coverage", () => {
     );
   });
 
+  it("closes main events formally and delays the next main event until the next day", async () => {
+    const eventId = `event_${tempGameId}_main_resolution`;
+    const originalState = await GameState.findOne({ gameId: tempGameId }).lean();
+    await WorldEvent.deleteMany({ gameId: tempGameId, tags: "daily_event" });
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: 15,
+          "diegeticDate.day": 15,
+          block: "Tarde",
+          time: "15:00",
+          activeEventIds: [eventId],
+          biologicalClock: {
+            lastProcessedTime: "15:00",
+            currentHourBlock: "15:00-16:00",
+            pendingAccumulation: [],
+            pendingAccumulations: [],
+          },
+        },
+      }
+    );
+
+    await WorldEvent.create({
+      eventId,
+      gameId: tempGameId,
+      templateId: "test_main_event_resolution",
+      title: "Evento principal temporal de test",
+      type: "test_main_event",
+      scope: "local",
+      status: "active",
+      eventLayer: "main_event",
+      countsAsMainEvent: true,
+      blocksMainEventGeneration: true,
+      startDay: 15,
+      startTime: "14:00",
+      endDay: 15,
+      endTime: "18:00",
+      affectedLocationIds: ["loc_hoshimori_grulla_azul"],
+      affectedNpcIds: ["npc_roberto_valen"],
+      affectedFactionIds: ["faction_grulla_azul"],
+      effects: [],
+      visibility: "local",
+      cause: "Fixture temporal para cierre de evento principal.",
+      severity: "minor",
+      createdBy: "system",
+      tags: ["test_turn_hardening", "daily_event", "daily_event_day_15"],
+    });
+
+    const closed = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: cerrar evento principal.",
+      worldEventPatches: [
+        {
+          eventId,
+          status: "resolved",
+          reason: "Fixture: Lucas resolvio el evento principal.",
+          resolutionSummary: "Lucas resolvio el asunto sin consecuencias mayores.",
+          consequenceSummary: "La siguiente tirada principal queda para el dia siguiente.",
+          socialOutcome: "resolved",
+          resolvedByCharacterId: "char_lucas",
+        },
+      ],
+      biologicalCostExemptReason: "Cierre tecnico de evento sin actividad fisica.",
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de cierre formal de evento principal.",
+          visibility: "hidden",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+    });
+
+    assert.equal(closed.status, 200);
+    assert.equal(closed.data.ok, true);
+    const eventChange = closed.data.changes.worldEvents[0];
+    assert.equal(eventChange.eventId, eventId);
+    assert.equal(eventChange.status, "resolved");
+    assert.equal(eventChange.blocksMainEventGeneration, false);
+    assert.equal(eventChange.resolution.outcome, "resolved");
+    assert.equal(eventChange.resolution.day, 15);
+    assert.equal(eventChange.resolution.nextMainEventEligibleDay, 16);
+    assert.ok(eventChange.tags.includes("event_resolved"));
+    assert.ok(eventChange.tags.includes("event_outcome_resolved"));
+    assert.ok(eventChange.effects.some((effect) => effect.type === "event_resolution"));
+
+    const stateAfterClose = await GameState.findOne({ gameId: tempGameId }).lean();
+    assert.equal(stateAfterClose.activeEventIds.includes(eventId), false);
+
+    const sameDayEnsure = await ensureDailyEventForGameState(stateAfterClose, {
+      rolls: { blockRoll: 1, importanceRoll: 1, durationRoll: 1, importance: "minor" },
+    });
+    assert.equal(sameDayEnsure.generated, false);
+    assert.ok(
+      ["daily_event_already_exists_for_day", "main_event_closed_today_next_generation_tomorrow"].includes(
+        sameDayEnsure.reason
+      )
+    );
+    if (sameDayEnsure.reason === "daily_event_already_exists_for_day") {
+      assert.equal(sameDayEnsure.event.eventId, eventId);
+    } else {
+      assert.equal(sameDayEnsure.nextEligibleDay, 16);
+    }
+
+    const nextDayState = {
+      ...stateAfterClose,
+      currentDay: 16,
+      time: "06:00",
+      block: "MaÃ±ana",
+      activeEventIds: [],
+    };
+    const nextDayEnsure = await ensureDailyEventForGameState(nextDayState, {
+      rolls: { blockRoll: 2, importanceRoll: 8, durationRoll: 2, importance: "important" },
+    });
+    assert.equal(nextDayEnsure.generated, true);
+    assert.equal(nextDayEnsure.event.startDay, 16);
+    assert.ok(nextDayEnsure.event.tags.includes("daily_event_day_16"));
+
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: originalState.currentDay,
+          diegeticDate: originalState.diegeticDate,
+          block: originalState.block,
+          time: originalState.time,
+          locationId: originalState.locationId,
+          activeEventIds: originalState.activeEventIds || [],
+          activeMissionIds: originalState.activeMissionIds || [],
+          lucasStatus: originalState.lucasStatus,
+          moneyCopper: originalState.moneyCopper,
+          biologicalClock: originalState.biologicalClock,
+        },
+      }
+    );
+  });
+
+  it("creates generic job contracts and records attendance formally", async () => {
+    tempCreatedJobContractId = `contract_test_secondary_${Date.now()}`;
+
+    const created = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: crear un contrato laboral generico.",
+      jobContractPatch: {
+        op: "create_contract",
+        contractId: tempCreatedJobContractId,
+        jobId: "job_test_market_helper",
+        title: "Ayudante temporal del mercado",
+        employerNpcId: "npc_irma",
+        locationId: "loc_hoshimori_market",
+        factionId: "faction_hoshimori_merchants",
+        startDay: 10,
+        pay: { dailyCopper: 50, notes: "Pago temporal de test." },
+        includesMeals: false,
+        shifts: [
+          {
+            shiftId: "shift_test_market_0800_1000",
+            name: "Turno temporal de mercado",
+            startTime: "08:00",
+            endTime: "10:00",
+            expectedMinutes: 120,
+            activityCategory: "trabajo_normal",
+            payCopper: 50,
+            lateGraceMinutes: 10,
+            absenceConsequences: ["Perder confianza comercial si falta sin avisar."],
+            typicalTasks: ["Ordenar cajones", "llevar recados simples"],
+          },
+        ],
+        typicalTasks: ["Apoyo simple de mercado."],
+        absenceRules: ["Avisar antes del inicio si no puede ir."],
+        source: "test_turn_hardening",
+        tags: ["test_turn_hardening"],
+        reason: "Fixture de contrato laboral generico.",
+      },
+      biologicalCostExemptReason: "Alta administrativa de contrato sin actividad fisica.",
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de create_contract.",
+          visibility: "hidden",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+    });
+
+    assert.equal(created.status, 200);
+    assert.equal(created.data.ok, true);
+    assert.equal(created.data.changes.jobContracts[0].op, "create_contract");
+    assert.equal(created.data.changes.jobContracts[0].contractId, tempCreatedJobContractId);
+    assert.ok(created.data.changes.jobContracts[0].displayLines[0].includes("Contrato laboral creado"));
+
+    const recordedLate = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: registrar llegada tarde a un trabajo generico.",
+      jobContractPatch: {
+        op: "record_shift_late",
+        contractId: tempCreatedJobContractId,
+        shiftId: "shift_test_market_0800_1000",
+        day: 11,
+        time: "08:12",
+        minutesLate: 12,
+        excused: true,
+        consequenceApplied: false,
+        reason: "Fixture: Lucas aviso y llego tarde por causa justificada.",
+      },
+      biologicalCostExemptReason: "Registro administrativo sin actividad fisica.",
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de asistencia laboral.",
+          visibility: "hidden",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+    });
+
+    assert.equal(recordedLate.status, 200);
+    assert.equal(recordedLate.data.ok, true);
+    const attendanceChange = recordedLate.data.changes.jobContracts[0];
+    assert.equal(attendanceChange.op, "record_shift_late");
+    assert.equal(attendanceChange.attendance.status, "late");
+    assert.equal(attendanceChange.attendance.minutesLate, 12);
+    assert.equal(attendanceChange.attendance.excused, true);
+
+    const contract = await JobContract.findOne({ contractId: tempCreatedJobContractId }).lean();
+    assert.equal(contract.flags.attendance.day_11.shift_test_market_0800_1000.status, "late");
+    assert.equal(contract.flags.attendance.day_11.shift_test_market_0800_1000.minutesLate, 12);
+  });
+
   it("applies skill patches only through validated progression ranges", async () => {
     const beforeState = await getCanonicalState(tempGameId);
     const beforeSkill = await GameState.findOne(
@@ -959,6 +1193,8 @@ describe("turn hardening coverage", () => {
     assert.ok(relationship.data.changes.npcRelationships[0].displayLines.includes("Confianza: 10->12 (+2)"));
     assert.ok(Array.isArray(relationship.data.changes.npcRelationships[0].milestoneLines));
     assert.equal(relationship.data.changes.npcRelationships[0].milestoneLines.length, 0);
+    assert.ok(Array.isArray(relationship.data.changes.npcRelationships[0].milestoneSceneCues));
+    assert.equal(relationship.data.changes.npcRelationships[0].milestoneSceneCues.length, 0);
     assert.ok(relationship.data.changes.npcRelationships[0].ledgerId);
 
     const firstLedger = await NpcSocialLedger.findOne({
@@ -1047,6 +1283,10 @@ describe("turn hardening coverage", () => {
     assert.equal(relationship.fieldChanges[0].afterBandKey, "moderate");
     assert.ok(relationship.milestoneLines[0].includes("Confianza"));
     assert.ok(relationship.milestoneLines[0].includes("moderado"));
+    assert.equal(relationship.milestoneSceneCues[0].npcName, "NPC Test Relacion");
+    assert.equal(relationship.milestoneSceneCues[0].field, "trust");
+    assert.equal(relationship.milestoneSceneCues[0].afterBand, "moderado");
+    assert.ok(relationship.milestoneSceneCues[0].cue);
   });
 
   it("creates automatic checkpoints before direct combat mutations", async () => {
@@ -1320,6 +1560,12 @@ describe("turn hardening coverage", () => {
     assert.equal(reportedMission.data.ok, true);
     assert.equal(reportedMission.data.changes.missions[0].op, "report");
     assert.equal(reportedMission.data.changes.missions[0].after.proofStatus, "submitted");
+    assert.equal(reportedMission.data.changes.missions[0].outcome.outcome, "awaiting_verification");
+    assert.ok(
+      reportedMission.data.changes.missions[0].outcome.nextSteps.some((line) =>
+        line.includes("verificacion formal")
+      )
+    );
 
     const completeWithoutVerification = await post("/api/turn/apply", {
       gameId: tempGameId,
@@ -1355,6 +1601,7 @@ describe("turn hardening coverage", () => {
     assert.equal(verifiedMission.data.ok, true);
     assert.equal(verifiedMission.data.changes.missions[0].op, "verify");
     assert.equal(verifiedMission.data.changes.missions[0].after.proofStatus, "verified");
+    assert.equal(verifiedMission.data.changes.missions[0].outcome.outcome, "ready_to_complete");
 
     const beforeComplete = await GameState.findOne({ gameId: tempGameId }).lean();
     const completedMission = await post("/api/turn/apply", {
@@ -1381,6 +1628,10 @@ describe("turn hardening coverage", () => {
     assert.equal(completedMission.data.changes.missions[0].after.completedDay, 10);
     assert.equal(completedMission.data.changes.missions[0].reward.money.delta, 1);
     assert.equal(completedMission.data.changes.missions[0].reward.alreadyPaid, false);
+    assert.equal(completedMission.data.changes.missions[0].outcome.outcome, "completed");
+    assert.ok(
+      completedMission.data.changes.missions[0].outcome.rewardLines.includes("Recompensa pagada: 0 oro, 0 plata, 1 cobre.")
+    );
     assert.equal(completedMission.data.gameState.moneyCopper, beforeComplete.moneyCopper + 1);
     assert.equal(completedMission.data.gameState.activeMissionIds.includes(tempMissionId), false);
 
@@ -1396,6 +1647,11 @@ describe("turn hardening coverage", () => {
     assert.equal(repeatedComplete.status, 200);
     assert.equal(repeatedComplete.data.ok, true);
     assert.equal(repeatedComplete.data.changes.missions[0].reward.alreadyPaid, true);
+    assert.ok(
+      repeatedComplete.data.changes.missions[0].outcome.rewardLines.includes(
+        "Recompensa no duplicada: ya estaba pagada o la mision ya estaba cerrada."
+      )
+    );
     assert.equal(repeatedComplete.data.gameState.moneyCopper, beforeComplete.moneyCopper + 1);
 
     const applied = await post("/api/turn/apply", {
