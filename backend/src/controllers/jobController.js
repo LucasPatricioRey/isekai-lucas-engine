@@ -76,6 +76,7 @@ async function completeShiftController(req, res) {
       characterId: body.characterId || "char_lucas",
       contractId: body.contractId || "",
       alreadyConsumedMealIds: body.alreadyConsumedMealIds || [],
+      consumeIncludedMealIds: body.consumeIncludedMealIds || [],
       skipMealIds: body.skipMealIds || [],
       completionSummary: body.completionSummary || "",
       allowLateCompletion: Boolean(body.allowLateCompletion),

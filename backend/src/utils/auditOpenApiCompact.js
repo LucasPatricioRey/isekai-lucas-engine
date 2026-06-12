@@ -226,6 +226,16 @@ function main() {
   );
   assertCondition(
     issues,
+    "full CompleteJobShiftRequest supports explicit contract meal consumption",
+    Boolean(full.components?.schemas?.CompleteJobShiftRequest?.properties?.consumeIncludedMealIds)
+  );
+  assertCondition(
+    issues,
+    "compact CompleteJobShiftRequest supports explicit contract meal consumption",
+    Boolean(compact.components?.schemas?.CompleteJobShiftRequest?.properties?.consumeIncludedMealIds)
+  );
+  assertCondition(
+    issues,
     "full ApplyTurnRequest rejects unknown top-level properties",
     full.components?.schemas?.ApplyTurnRequest?.additionalProperties === false
   );

@@ -338,6 +338,10 @@ async function previewShift({
     availableMealBenefits: mealAvailability.availableMealBenefits,
     grossMealDelta: mealAvailability.grossMealDelta,
     directMealDelta: mealAvailability.directMealDelta,
+    mealConsumptionPolicy: "explicit_only",
+    requiresExplicitMealConsumption: true,
+    mealConsumptionInstructions:
+      "completeJobShift no aplica comidas incluidas por defecto. Para consumir una comida incluida en este cierre, enviar consumeIncludedMealIds.",
     inferredConsumedMealIds: mealAvailability.inferredConsumedMealIds,
     inferredConsumedEvidence: mealAvailability.inferredConsumedEvidence,
     biologicalPreview,
@@ -384,7 +388,7 @@ function applyMealBenefit(gameState, meal) {
   };
 }
 
-function buildPhysicalBreakdown({ before, mealChanges = [], activityCost }) {
+function buildPhysicalBreakdown({ before, mealChanges = [], activityCost, unappliedMealNames = [] }) {
   const afterMeals = {
     satiety: activityCost?.satiety?.before ?? before.satiety,
     energy: activityCost?.energy?.before ?? before.energy,
@@ -416,6 +420,19 @@ function buildPhysicalBreakdown({ before, mealChanges = [], activityCost }) {
     `Saciedad: ${before.satiety}->${afterMeals.satiety} por comida de contrato ->${final.satiety} tras trabajo`,
     `Energía: ${before.energy}->${afterMeals.energy} por comida de contrato ->${final.energy} tras trabajo`,
   ];
+
+  if (mealChanges.length === 0) {
+    displayLines.splice(
+      0,
+      displayLines.length,
+      `Saciedad: ${before.satiety}->${final.satiety} tras trabajo (sin comida de contrato aplicada)`,
+      `Energia: ${before.energy}->${final.energy} tras trabajo (sin comida de contrato aplicada)`
+    );
+  }
+
+  if (mealChanges.length === 0 && unappliedMealNames.length > 0) {
+    displayLines.push(`Comida de contrato disponible no consumida: ${unappliedMealNames.join(", ")}.`);
+  }
 
   if (mealTotals.satietyLostToCap > 0 || mealTotals.energyLostToCap > 0) {
     displayLines.push(
@@ -561,6 +578,7 @@ async function completeShift({
   characterId = "char_lucas",
   contractId = "",
   alreadyConsumedMealIds = [],
+  consumeIncludedMealIds = [],
   skipMealIds = [],
   completionSummary = "",
   allowLateCompletion = false,
@@ -671,7 +689,34 @@ async function completeShift({
       const includedMealIds = new Set(shift.includedMealIds || []);
       const skipMeals = new Set(unique(skipMealIds));
       const markConsumedOnly = new Set(unique(alreadyConsumedMealIds));
+      const consumeMeals = new Set(unique(consumeIncludedMealIds));
       const includedMeals = (contract.mealBenefits || []).filter((meal) => includedMealIds.has(meal.mealId));
+      const invalidMealIds = unique([...skipMeals, ...markConsumedOnly, ...consumeMeals]).filter(
+        (mealId) => !includedMealIds.has(mealId)
+      );
+      if (invalidMealIds.length > 0) {
+        const error = new Error("La peticion incluye comidas que no pertenecen al turno laboral.");
+        error.statusCode = 400;
+        error.details = {
+          invalidMealIds,
+          shiftId: shift.shiftId,
+          includedMealIds: [...includedMealIds],
+        };
+        throw error;
+      }
+
+      const conflictingMealIds = [...consumeMeals].filter(
+        (mealId) => skipMeals.has(mealId) || markConsumedOnly.has(mealId)
+      );
+      if (conflictingMealIds.length > 0) {
+        const error = new Error("Una comida de contrato no puede consumirse y marcarse como omitida/ya consumida a la vez.");
+        error.statusCode = 400;
+        error.details = {
+          conflictingMealIds,
+        };
+        throw error;
+      }
+
       const inferredConsumed = await inferConsumedContractMealsFromLogs({
         gameId,
         currentDay: gameState.currentDay,
@@ -682,11 +727,25 @@ async function completeShift({
       for (const mealId of inferredConsumed.mealIds) {
         markConsumedOnly.add(mealId);
       }
+      const unavailableConsumedMealIds = [...consumeMeals].filter(
+        (mealId) => Boolean(mealLedger[mealId]) || markConsumedOnly.has(mealId)
+      );
+      if (unavailableConsumedMealIds.length > 0) {
+        const error = new Error("La peticion intenta consumir comidas de contrato que ya fueron consumidas o inferidas.");
+        error.statusCode = 400;
+        error.details = {
+          unavailableConsumedMealIds,
+          inferredConsumedMealIds: inferredConsumed.mealIds,
+        };
+        throw error;
+      }
       const mealChanges = [];
       const mealAppliedIds = [];
       const mealMarkedConsumedIds = [];
       const mealInferredConsumedIds = [];
       const mealSkippedIds = [];
+      const mealAvailableNotConsumedIds = [];
+      const mealAvailableNotConsumedNames = [];
 
       for (const meal of includedMeals) {
         if (mealLedger[meal.mealId]) {
@@ -717,6 +776,12 @@ async function completeShift({
           continue;
         }
 
+        if (!consumeMeals.has(meal.mealId)) {
+          mealAvailableNotConsumedIds.push(meal.mealId);
+          mealAvailableNotConsumedNames.push(meal.name || meal.mealId);
+          continue;
+        }
+
         const mealChange = applyMealBenefit(gameState, meal);
         mealLedger[meal.mealId] = {
           mealId: meal.mealId,
@@ -736,6 +801,7 @@ async function completeShift({
         before,
         mealChanges,
         activityCost,
+        unappliedMealNames: mealAvailableNotConsumedNames,
       });
       const coveredPendingAccumulations = markPendingAccumulationsCoveredByShift(gameState, shift);
       const beforeMoney = gameState.moneyCopper;
@@ -759,6 +825,7 @@ async function completeShift({
         mealMarkedConsumedIds,
         mealInferredConsumedIds,
         mealSkippedIds,
+        mealAvailableNotConsumedIds,
         activityCategory: shift.activityCategory,
         expectedMinutes: shift.expectedMinutes,
         completionSummary,
@@ -789,10 +856,13 @@ async function completeShift({
           after: gameState.moneyCopper,
         },
         meals: {
+          policy: "explicit_only",
+          requiresExplicitConsumption: true,
           applied: mealAppliedIds,
           markedConsumed: mealMarkedConsumedIds,
           inferredConsumed: mealInferredConsumedIds,
           skipped: mealSkippedIds,
+          availableNotConsumed: mealAvailableNotConsumedIds,
           details: mealChanges,
         },
         activityCost,

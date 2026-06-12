@@ -1577,6 +1577,8 @@ Consumir raciones, pociones u objetos debe actualizar inventario y estado.
 
 Comida de contrato no consume raciones personales.
 
+Una comida incluida por contrato es un derecho disponible, no un consumo automatico. Solo aplicar su bono si Lucas decide comerla, si la escena la narra de forma explicita, o si `completeJobShift` recibe `consumeIncludedMealIds`. Completar un turno laboral por si solo no consume desayuno/almuerzo/cena.
+
 ### 21.3 Objetos mágicos
 
 No inventar objetos mágicos ni efectos especiales sin base. Requieren fuente, identificación, propiedad y reglas.
@@ -1781,7 +1783,7 @@ No subir confianza automáticamente.
 12. NPCs no son omniscientes.
 13. Cartelera activa de misiones vive en MongoDB; reglas/pool base viven en archivos/seed.
 14. No loot/recompensa automática.
-15. Comida de contrato no consume raciones.
+15. Comida de contrato no consume raciones ni se aplica automaticamente; requiere decision explicita de comer.
 16. Acciones relevantes de 10+ minutos deben evaluarse para EXP, pero no toda acción da EXP.
 17. Cansancio extremo no es farmeo eficiente.
 18. Compañeros pueden morir permanentemente si la situación lo justifica.

@@ -414,6 +414,133 @@ describe("turn hardening coverage", () => {
     assert.ok(manual);
   });
 
+  it("keeps included contract meals available unless explicitly consumed", async () => {
+    const originalState = await GameState.findOne({ gameId: tempGameId }).lean();
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: 10,
+          "diegeticDate.day": 10,
+          block: "MaÃ±ana",
+          time: "07:00",
+          moneyCopper: 100,
+          "lucasStatus.satiety.current": 66,
+          "lucasStatus.satiety.label": "hambre leve",
+          "lucasStatus.energy.current": 100,
+          "lucasStatus.energy.label": "rendimiento normal",
+          biologicalClock: {
+            lastProcessedTime: "07:00",
+            currentHourBlock: "07:00-08:00",
+            pendingAccumulation: [],
+            pendingAccumulations: [],
+          },
+        },
+      }
+    );
+    await JobContract.updateOne({ contractId: tempJobContractId }, { $set: { flags: { testSuite: true } } });
+
+    const completed = await post("/api/jobs/shifts/shift_test_morning_0700_1200/complete", {
+      gameId: tempGameId,
+      contractId: tempJobContractId,
+      completionSummary: "Test controlado: completar turno sin consumir comida disponible.",
+    });
+
+    assert.equal(completed.status, 200, JSON.stringify(completed.data));
+    assert.equal(completed.data.ok, true);
+    assert.deepEqual(completed.data.result.changes.meals.applied, []);
+    assert.deepEqual(completed.data.result.changes.meals.availableNotConsumed, ["meal_test_breakfast"]);
+    assert.equal(completed.data.result.changes.meals.policy, "explicit_only");
+    assert.equal(completed.data.result.after.satiety, 51);
+    assert.equal(completed.data.result.after.energy, 70);
+    assert.ok(
+      completed.data.result.changes.physicalBreakdown.displayLines.some((line) =>
+        line.includes("sin comida de contrato aplicada")
+      )
+    );
+
+    const contractAfter = await JobContract.findOne({ contractId: tempJobContractId }).lean();
+    assert.equal(contractAfter.flags.consumedMeals?.day_10?.meal_test_breakfast, undefined);
+
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: originalState.currentDay,
+          diegeticDate: originalState.diegeticDate,
+          block: originalState.block,
+          time: originalState.time,
+          locationId: originalState.locationId,
+          moneyCopper: originalState.moneyCopper,
+          lucasStatus: originalState.lucasStatus,
+          biologicalClock: originalState.biologicalClock,
+        },
+      }
+    );
+    await JobContract.updateOne({ contractId: tempJobContractId }, { $set: { flags: { testSuite: true } } });
+  });
+
+  it("applies included contract meals only when consumeIncludedMealIds requests them", async () => {
+    const originalState = await GameState.findOne({ gameId: tempGameId }).lean();
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: 10,
+          "diegeticDate.day": 10,
+          block: "MaÃ±ana",
+          time: "07:00",
+          moneyCopper: 100,
+          "lucasStatus.satiety.current": 66,
+          "lucasStatus.satiety.label": "hambre leve",
+          "lucasStatus.energy.current": 98,
+          "lucasStatus.energy.label": "rendimiento normal",
+          biologicalClock: {
+            lastProcessedTime: "07:00",
+            currentHourBlock: "07:00-08:00",
+            pendingAccumulation: [],
+            pendingAccumulations: [],
+          },
+        },
+      }
+    );
+    await JobContract.updateOne({ contractId: tempJobContractId }, { $set: { flags: { testSuite: true } } });
+
+    const completed = await post("/api/jobs/shifts/shift_test_morning_0700_1200/complete", {
+      gameId: tempGameId,
+      contractId: tempJobContractId,
+      consumeIncludedMealIds: ["meal_test_breakfast"],
+      completionSummary: "Test controlado: completar turno consumiendo desayuno explicitamente.",
+    });
+
+    assert.equal(completed.status, 200, JSON.stringify(completed.data));
+    assert.equal(completed.data.ok, true);
+    assert.deepEqual(completed.data.result.changes.meals.applied, ["meal_test_breakfast"]);
+    assert.deepEqual(completed.data.result.changes.meals.availableNotConsumed, []);
+    assert.equal(completed.data.result.after.satiety, 71);
+    assert.equal(completed.data.result.after.energy, 70);
+
+    const contractAfter = await JobContract.findOne({ contractId: tempJobContractId }).lean();
+    assert.equal(contractAfter.flags.consumedMeals.day_10.meal_test_breakfast.status, "applied_by_complete_shift");
+
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: originalState.currentDay,
+          diegeticDate: originalState.diegeticDate,
+          block: originalState.block,
+          time: originalState.time,
+          locationId: originalState.locationId,
+          moneyCopper: originalState.moneyCopper,
+          lucasStatus: originalState.lucasStatus,
+          biologicalClock: originalState.biologicalClock,
+        },
+      }
+    );
+    await JobContract.updateOne({ contractId: tempJobContractId }, { $set: { flags: { testSuite: true } } });
+  });
+
   it("completes job shifts without duplicating consumed meals or pay", async () => {
     const originalState = await GameState.findOne({ gameId: tempGameId }).lean();
     await GameState.updateOne(
@@ -489,7 +616,7 @@ describe("turn hardening coverage", () => {
     });
     assert.ok(
       completed.data.result.changes.physicalBreakdown.displayLines.some((line) =>
-        line.includes("Saciedad: 66->66 por comida de contrato ->51 tras trabajo")
+        line.includes("Saciedad: 66->51 tras trabajo (sin comida de contrato aplicada)")
       )
     );
     assert.deepEqual(

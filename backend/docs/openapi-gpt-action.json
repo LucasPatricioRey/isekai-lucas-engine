@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions",
-    "version": "2.12.0",
-    "description": "Schema normal para GPT Actions. Expone endpoints de lectura, busqueda, preview y mutacion central controlada. Incluye previewSocialImpact, relationshipState efectivo y applyTurn.npcRelationshipPatches para vinculos sociales. Incluye lectura read-only de WorldEvents para auditoria tecnica. No expone rollback, admin ni mutadores peligrosos de combate/misiones. El backend separa evento principal unico, rumores menores y eventos de fondo; el scheduler solo genera otro evento principal cuando no hay uno abierto. applyTurn, completeJobShift y context/compact pueden devolver narrativeHints/narrativeContext para variar escenas repetidas sin crear mecanicas nuevas."
+    "version": "2.13.0",
+    "description": "Schema normal para GPT Actions. Expone endpoints de lectura, busqueda, preview y mutacion central controlada. Incluye previewSocialImpact, relationshipState efectivo y applyTurn.npcRelationshipPatches para vinculos sociales. Incluye lectura read-only de WorldEvents para auditoria tecnica. No expone rollback, admin ni mutadores peligrosos de combate/misiones. El backend separa evento principal unico, rumores menores y eventos de fondo; el scheduler solo genera otro evento principal cuando no hay uno abierto. applyTurn, completeJobShift y context/compact pueden devolver narrativeHints/narrativeContext para variar escenas repetidas sin crear mecanicas nuevas. Las comidas de contrato en completeJobShift son explicitas: solo se aplican si se envian en consumeIncludedMealIds."
   },
   "servers": [
     {
@@ -62,6 +62,13 @@
               "type": "string"
             },
             "description": "Comidas de contrato ya consumidas antes de completar el turno; se marcan en ledger y no aplican bonus otra vez."
+          },
+          "consumeIncludedMealIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Comidas incluidas que Lucas consume explicitamente durante este cierre de turno. Si no se envia, completeJobShift no aplica comida aunque este disponible."
           },
           "skipMealIds": {
             "type": "array",
@@ -2194,7 +2201,7 @@
     "/api/jobs/shifts/{shiftId}/complete": {
       "post": {
         "operationId": "completeJobShift",
-        "summary": "Completa un turno laboral real validado: avanza tiempo, procesa comida/pago/coste biologico y guarda ledger idempotente.",
+        "summary": "Completa un turno laboral real validado: avanza tiempo, procesa pago/coste biologico y solo aplica comida si se envia consumeIncludedMealIds.",
         "parameters": [
           {
             "name": "shiftId",
