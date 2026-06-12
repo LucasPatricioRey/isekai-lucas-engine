@@ -172,6 +172,7 @@ function main() {
     "moneyPatch",
     "inventoryPatch",
     "evidencePatches",
+    "knowledgePatches",
     "skillPatch",
     "shopStockPatches",
     "npcMemoryPatches",

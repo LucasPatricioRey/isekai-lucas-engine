@@ -21,8 +21,10 @@ const WeatherState = require("../models/WeatherState");
 const JobContract = require("../models/JobContract");
 const Commitment = require("../models/Commitment");
 const Evidence = require("../models/Evidence");
+const KnowledgeRecord = require("../models/KnowledgeRecord");
 const responseShaping = require("../utils/responseShaping");
 const { buildNarrativeContextSummary } = require("../services/narrativeVariationService");
+const { buildNpcKnowledgeContext } = require("../services/knowledgeService");
 const { annotateMissionForBoard } = require("../services/missionService");
 const {
   DAILY_EVENT_TAG,
@@ -70,6 +72,7 @@ function summarizeTechnicalReadiness({
   missionAgenda,
   guildState,
   worldFriction,
+  npcKnowledgeContext,
   mainEventSummary,
   minorRumorEventSummaries,
   backgroundEventSummaries,
@@ -188,6 +191,13 @@ function summarizeTechnicalReadiness({
           saturatedNpcIds: socialRhythm.saturatedNpcIds || [],
           npcCount: (socialRhythm.npcs || []).length,
           globalGuidance: socialRhythm.globalGuidance || "",
+        }
+      : null,
+    knowledgeState: npcKnowledgeContext
+      ? {
+          scheduleUnconfirmedNpcIds: npcKnowledgeContext.scheduleUnconfirmedNpcIds || [],
+          mechanicalOnlyBoundaries: npcKnowledgeContext.mechanicalOnlyBoundaries || [],
+          npcCount: (npcKnowledgeContext.perNpc || []).length,
         }
       : null,
     alertSummary: {
@@ -802,6 +812,12 @@ async function getCompactContext(req, res) {
           .lean()
       : [];
     const nearbyShopIds = nearbyShops.map((shop) => shop.shopId);
+    const nearbyFactionIds = unique([
+      currentLocation?.controllingFactionId,
+      parentLocation?.controllingFactionId,
+      ...nearbyShops.map((shop) => shop.factionId),
+      ...nearbyNpcs.flatMap((npc) => (npc.factionLinks || []).map((link) => link.factionId)),
+    ]);
     const nearbyShopStocks = nearbyShopIds.length
       ? await ShopStock.find({
           shopId: { $in: nearbyShopIds },
@@ -839,6 +855,14 @@ async function getCompactContext(req, res) {
     ];
     if (activeMissionIds.length > 0) activeMissionClauses.push({ missionId: { $in: activeMissionIds } });
 
+    const characterId = gameState.characterId || "char_lucas";
+    const knowledgeClauses = [{ visibility: "public" }];
+    if (nearbyNpcIds.length > 0) knowledgeClauses.push({ holderNpcIds: { $in: nearbyNpcIds } });
+    if (nearbyFactionIds.length > 0) knowledgeClauses.push({ holderFactionIds: { $in: nearbyFactionIds } });
+    knowledgeClauses.push({ holderCharacterIds: { $in: [characterId] } });
+    if (activeEventIds.length > 0) knowledgeClauses.push({ relatedEventIds: { $in: activeEventIds } });
+    if (activeMissionIds.length > 0) knowledgeClauses.push({ relatedMissionIds: { $in: activeMissionIds } });
+
     const [
       inventoryItems,
       relevantNpcMemories,
@@ -856,6 +880,7 @@ async function getCompactContext(req, res) {
       todaySocialLedger,
       pendingCommitments,
       carriedEvidence,
+      knowledgeRecords,
       guildFaction,
     ] = await Promise.all([
       inventoryItemIds.length
@@ -1020,6 +1045,15 @@ async function getCompactContext(req, res) {
         .limit(8)
         .lean(),
 
+      KnowledgeRecord.find({
+        gameId,
+        status: "active",
+        $or: knowledgeClauses,
+      })
+        .sort({ createdDay: -1, createdTime: -1, updatedAt: -1 })
+        .limit(40)
+        .lean(),
+
       Faction.findOne({ factionId: "faction_hoshimori_guild" }).lean(),
     ]);
 
@@ -1050,6 +1084,13 @@ async function getCompactContext(req, res) {
       availableMissions: availableMissionPreview,
     });
     const guildState = buildGuildState(gameState, guildFaction);
+    const npcKnowledgeContext = buildNpcKnowledgeContext({
+      nearbyNpcs,
+      relevantNpcMemories,
+      knowledgeRecords,
+      jobContract,
+      guildState,
+    });
     const nearbyNpcSummaries = nearbyNpcs.map(responseShaping.summarizeNpc);
     const socialRhythm = buildSocialRhythm({
       nearbyNpcSummaries,
@@ -1097,6 +1138,16 @@ async function getCompactContext(req, res) {
     }
     const npcById = new Map(nearbyNpcs.map((npc) => [npc.npcId, npc]));
     const alerts = [];
+
+    if ((npcKnowledgeContext.scheduleUnconfirmedNpcIds || []).length > 0) {
+      alerts.push({
+        type: "npc_knowledge_boundary",
+        severity: "info",
+        message:
+          "Hay NPCs cercanos sin fuente confirmada para datos mecanicos como el horario exacto de Lucas; deben hablar como inferencia, pregunta o incertidumbre.",
+        npcIds: npcKnowledgeContext.scheduleUnconfirmedNpcIds,
+      });
+    }
 
     if (socialRhythm.saturatedNpcIds.length > 0) {
       alerts.push({
@@ -1365,6 +1416,7 @@ async function getCompactContext(req, res) {
           missionAgenda,
           guildState,
           worldFriction,
+          npcKnowledgeContext,
           mainEventSummary,
           minorRumorEventSummaries,
           backgroundEventSummaries,
@@ -1411,6 +1463,7 @@ async function getCompactContext(req, res) {
         activeRumors: activeRumors.map(responseShaping.summarizeRumor),
         socialLedgerToday: todaySocialLedger.map(responseShaping.summarizeNpcSocialLedger),
         socialRhythm,
+        npcKnowledgeContext,
         pendingCommitments: pendingCommitmentSummaries,
         commitmentAgenda,
         guildState,

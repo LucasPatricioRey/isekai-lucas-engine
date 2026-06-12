@@ -611,6 +611,53 @@ function summarizeLocation(location) {
   };
 }
 
+function buildNpcVoiceProfile(npc) {
+  if (!npc) return null;
+  const personality = unique(npc.personality || []).slice(0, 6);
+  const values = unique(npc.values || []).slice(0, 5);
+  const tolerates = unique(npc.tolerates || []).slice(0, 5);
+  const rejects = unique(npc.rejects || []).slice(0, 5);
+  const socialProfile = npc.socialProfile || {};
+  const boundaries = unique(socialProfile.boundaries || []).slice(0, 5);
+  const speechStyle = truncateText(npc.speechStyle || "", 180);
+  const isDry =
+    /seco|seca|breve|aspero|fria|formal|directa|directo/i.test(
+      `${speechStyle} ${personality.join(" ")}`
+    );
+  const isWarm =
+    /amable|calida|gentil|afectuosa|simpatica|suave|maternal/i.test(
+      `${speechStyle} ${personality.join(" ")}`
+    );
+  const isInstitutional = (npc.factionLinks || []).some((link) =>
+    ["faction_hoshimori_guild", "faction_hoshimori_guard"].includes(link.factionId)
+  );
+
+  return {
+    speechStyle,
+    personality,
+    values,
+    tolerates,
+    rejects,
+    boundaries,
+    dialogueGuidance: [
+      speechStyle ? `Voz: ${speechStyle}.` : "",
+      isDry
+        ? "Seco no significa identico ni sin emociones: variar con silencios, gestos practicos, correcciones, humor breve o distancia profesional."
+        : "",
+      isWarm ? "La calidez debe sentirse en pequenos gestos y no solo en agradecimientos repetidos." : "",
+      isInstitutional
+        ? "Distinguir registro confirmado, inferencia y rumor; no convertir datos mecanicos en certeza diegetica."
+        : "",
+      "No hacer que sus reacciones giren siempre alrededor de Lucas; usar rol, rutina, intereses y cansancio propios.",
+    ].filter(Boolean),
+    avoid: [
+      "repetir la misma frase de aprobacion o advertencia en escenas similares",
+      "dar informacion que no tenga fuente diegetica clara",
+      "convertir ayuda rutinaria en emocion fuerte sin motivo social suficiente",
+    ],
+  };
+}
+
 function summarizeNpc(npc) {
   if (!npc) return null;
   const relationship = normalizeRelationship(npc.relationshipWithLucas || {});
@@ -623,6 +670,7 @@ function summarizeNpc(npc) {
     availability: npc.availability || {},
     persistenceLevel: npc.persistenceLevel || "",
     socialProfile: summarizeNpcSocialProfile(npc),
+    voiceProfile: buildNpcVoiceProfile(npc),
     relationshipWithLucas: relationship,
     relationshipBands: {
       trust: relationshipBand(relationship.trust),
@@ -1002,6 +1050,7 @@ module.exports = {
   summarizeLucasState,
   summarizeGameState,
   summarizeLocation,
+  buildNpcVoiceProfile,
   summarizeNpc,
   summarizeNpcPresenceRef,
   summarizeNpcSocialLedger,

@@ -27,6 +27,7 @@ const {
   buildNarrativeHints,
 } = require("../services/narrativeVariationService");
 const { applyJobContractPatches } = require("../services/jobScheduleService");
+const { applyKnowledgePatches } = require("../services/knowledgeService");
 const {
   SOCIAL_FIELD_RANGES,
   SOCIAL_RELATIONSHIP_FIELDS,
@@ -337,6 +338,10 @@ function buildApplyTurnAutoCheckpointPlan(changes = {}) {
     addAutoCheckpointTrigger(triggers, "evidence", "evidencia u objeto narrativo persistente");
   }
 
+  if (Array.isArray(changes.knowledge) && changes.knowledge.length > 0) {
+    addAutoCheckpointTrigger(triggers, "knowledge", "conocimiento diegetico actualizado");
+  }
+
   if (Array.isArray(changes.factions) && changes.factions.length > 0) {
     addAutoCheckpointTrigger(triggers, "faction", "reputacion o credito institucional modificado");
   }
@@ -381,6 +386,7 @@ function buildApplyTurnAutoCheckpointPlan(changes = {}) {
     "progression",
     "commitment",
     "evidence",
+    "knowledge",
     "faction",
     "economy",
     "major_travel",
@@ -3369,6 +3375,11 @@ async function applyTurn(req, res) {
       if (Array.isArray(body.npcMemoryPatches)) {
         const memoryChanges = await applyNpcMemoryPatches(updatedGameState, body.npcMemoryPatches, session);
         if (memoryChanges.length > 0) changes.npcMemories = memoryChanges;
+      }
+
+      if (body.knowledgePatches !== undefined) {
+        const knowledgeChanges = await applyKnowledgePatches(gameState, body.knowledgePatches, session);
+        if (knowledgeChanges.length > 0) changes.knowledge = knowledgeChanges;
       }
 
       if (Array.isArray(body.rumorPatches)) {

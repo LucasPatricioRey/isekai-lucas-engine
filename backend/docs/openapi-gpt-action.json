@@ -488,6 +488,13 @@
             "items": {
               "$ref": "#/components/schemas/EvidencePatchItem"
             }
+          },
+          "knowledgePatches": {
+            "type": "array",
+            "description": "Conocimiento diegetico persistente: quien sabe un dato, con que fuente y certeza. Usar para secretos, horarios conocidos, reportes comunicados o registros institucionales. No reemplaza memoria social ni logs.",
+            "items": {
+              "$ref": "#/components/schemas/KnowledgePatchItem"
+            }
           }
         },
         "additionalProperties": false
@@ -1841,6 +1848,186 @@
         "required": [
           "op"
         ],
+        "additionalProperties": false
+      },
+      "KnowledgePatchItem": {
+        "type": "object",
+        "description": "Registra o actualiza conocimiento diegetico: quien sabe un dato, como lo sabe y con que certeza. Evita que el narrador convierta estado mecanico en conocimiento NPC.",
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "retire",
+              "dispute"
+            ],
+            "default": "create"
+          },
+          "knowledgeId": {
+            "type": "string",
+            "description": "Opcional al crear; obligatorio para update/retire/dispute."
+          },
+          "gameId": {
+            "type": "string",
+            "default": "isekai_lucas_main"
+          },
+          "subjectType": {
+            "type": "string",
+            "enum": [
+              "character",
+              "npc",
+              "faction",
+              "location",
+              "job_contract",
+              "mission",
+              "world_event",
+              "evidence",
+              "secret",
+              "other"
+            ]
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "factKey": {
+            "type": "string",
+            "description": "Clave estable, por ejemplo lucas_job_schedule_change o lucas_origin_secret."
+          },
+          "fact": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "sourceType": {
+            "type": "string",
+            "enum": [
+              "saw",
+              "heard",
+              "told_by_lucas",
+              "told_by_npc",
+              "public_record",
+              "institutional_record",
+              "rumor",
+              "inference",
+              "system"
+            ]
+          },
+          "sourceId": {
+            "type": "string"
+          },
+          "certainty": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "probable",
+              "rumor",
+              "doubtful"
+            ]
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "semi_private",
+              "private",
+              "secret",
+              "mechanical_only"
+            ],
+            "default": "private"
+          },
+          "holderNpcIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "holderFactionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "holderCharacterIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "canShare": {
+            "type": "boolean"
+          },
+          "shareConditions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expiresDay": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expiresTime": {
+            "type": "string",
+            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          },
+          "relatedNpcIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "relatedFactionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "relatedLocationIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "relatedMissionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "relatedEventIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "relatedEvidenceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "relatedJobContractIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "flags": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "allowExisting": {
+            "type": "boolean"
+          }
+        },
         "additionalProperties": false
       },
       "WorldEventProgressPatch": {
