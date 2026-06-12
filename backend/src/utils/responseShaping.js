@@ -54,6 +54,17 @@ function isWeatherStale(weather, currentDay, currentTime) {
   return timeToMinutes(currentTime) >= timeToMinutes(weather.expectedUntilTime);
 }
 
+function commitmentDueStatus(commitment, currentDay, currentTime) {
+  if (!commitment?.dueDay) return "unscheduled";
+  const currentAbs = (Number(currentDay || 1) - 1) * 1440 + timeToMinutes(currentTime);
+  const dueAbs = (Number(commitment.dueDay || 1) - 1) * 1440 + timeToMinutes(commitment.dueTime || "23:59");
+
+  if (currentAbs > dueAbs) return "overdue";
+  if (currentAbs === dueAbs) return "due_now";
+  if (dueAbs - currentAbs <= 180) return "due_soon";
+  return "future";
+}
+
 function summarizeStat(stat) {
   if (!stat) return null;
   return {
@@ -380,6 +391,38 @@ function summarizeWorldEvent(event) {
   };
 }
 
+function summarizeCommitment(commitment, currentDay, currentTime) {
+  if (!commitment) return null;
+  return {
+    commitmentId: commitment.commitmentId,
+    gameId: commitment.gameId || "isekai_lucas_main",
+    characterId: commitment.characterId || "char_lucas",
+    title: commitment.title,
+    summary: truncateText(commitment.summary || "", 700),
+    type: commitment.type || "plan",
+    status: commitment.status || "pending",
+    priority: commitment.priority || "normal",
+    visibility: commitment.visibility || "private",
+    createdDay: commitment.createdDay,
+    createdTime: commitment.createdTime,
+    dueDay: commitment.dueDay,
+    dueTime: commitment.dueTime || "",
+    dueStatus: commitmentDueStatus(commitment, currentDay, currentTime),
+    windowStartDay: commitment.windowStartDay,
+    windowStartTime: commitment.windowStartTime || "",
+    windowEndDay: commitment.windowEndDay,
+    windowEndTime: commitment.windowEndTime || "",
+    targetNpcIds: commitment.targetNpcIds || [],
+    relatedNpcIds: commitment.relatedNpcIds || [],
+    relatedLocationIds: commitment.relatedLocationIds || [],
+    relatedMissionIds: commitment.relatedMissionIds || [],
+    relatedEventIds: commitment.relatedEventIds || [],
+    resolution: commitment.resolution || {},
+    sourceEventLogId: commitment.sourceEventLogId || "",
+    tags: commitment.tags || [],
+  };
+}
+
 function summarizeWeather(weather, currentDay, currentTime) {
   if (!weather) return null;
   return {
@@ -462,6 +505,7 @@ module.exports = {
   summarizeNpcMemory,
   summarizeRumor,
   summarizeWorldEvent,
+  summarizeCommitment,
   summarizeWeather,
   summarizeJobContract,
   summarizeCombatEncounter,

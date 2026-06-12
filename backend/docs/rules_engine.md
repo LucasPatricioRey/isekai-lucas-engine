@@ -1716,6 +1716,12 @@ Actualizar si hay cambio persistente:
 - ubicación;
 - checkpoint.
 
+### P7. Compromisos, promesas y pendientes
+
+No dejar promesas, citas, planes importantes u obligaciones futuras solo como EventLog narrativo. Si Lucas promete, acuerda, pospone o fija una accion futura relevante, guardar `commitmentPatches` con `op:create`, tipo, prioridad, NPCs relacionados y fecha/hora objetivo si existe.
+
+Cerrar el compromiso con `op:fulfill`, `op:fail`, `op:cancel` u `op:expire` cuando se cumpla, falle, se cancele o venza. No crear compromiso por cada frase casual: usarlo para continuidad real, consecuencias sociales, trabajo, misiones, secretos, citas, planes de viaje o decisiones diferidas.
+
 ---
 
 ## 24. Ejemplos de resolución
@@ -1784,15 +1790,16 @@ No subir confianza automáticamente.
 13. Cartelera activa de misiones vive en MongoDB; reglas/pool base viven en archivos/seed.
 14. No loot/recompensa automática.
 15. Comida de contrato no consume raciones ni se aplica automaticamente; requiere decision explicita de comer.
-16. Acciones relevantes de 10+ minutos deben evaluarse para EXP, pero no toda acción da EXP.
-17. Cansancio extremo no es farmeo eficiente.
-18. Compañeros pueden morir permanentemente si la situación lo justifica.
-19. No matar NPCs importantes de forma barata.
-20. El mundo avanza por tiempo de partida, no por tiempo real.
-21. Diálogo directo de NPC siempre usa `Nombre: "mensaje"` o `Rol: "mensaje"`.
-22. NPCs pueden expresarse con libertad creativa solo dentro de personalidad, memoria, conocimiento y contexto.
-23. Si una acción busca vínculo o afecta relación, mostrar confianza con cambio o motivo de +0.
-24. Memoria NPC no reemplaza confianza numérica ni romance.
+16. Promesas, citas, planes importantes y obligaciones futuras usan `commitmentPatches`; no quedan solo en logs.
+17. Acciones relevantes de 10+ minutos deben evaluarse para EXP, pero no toda acción da EXP.
+18. Cansancio extremo no es farmeo eficiente.
+19. Compañeros pueden morir permanentemente si la situación lo justifica.
+20. No matar NPCs importantes de forma barata.
+21. El mundo avanza por tiempo de partida, no por tiempo real.
+22. Diálogo directo de NPC siempre usa `Nombre: "mensaje"` o `Rol: "mensaje"`.
+23. NPCs pueden expresarse con libertad creativa solo dentro de personalidad, memoria, conocimiento y contexto.
+24. Si una acción busca vínculo o afecta relación, mostrar confianza con cambio o motivo de +0.
+25. Memoria NPC no reemplaza confianza numérica ni romance.
 
 ---
 

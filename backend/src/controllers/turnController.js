@@ -10,6 +10,7 @@ const Location = require("../models/Location");
 const ShopStock = require("../models/ShopStock");
 const Item = require("../models/Item");
 const Mission = require("../models/Mission");
+const Commitment = require("../models/Commitment");
 const { syncNpcRoutines } = require("../services/routineService");
 const { calculateActivityCost, normalizeCategory } = require("../services/biologicalClockService");
 const { reconcileDailyEventsForGameState } = require("../services/dailyEventSchedulerService");
@@ -51,6 +52,21 @@ const VALID_EVENT_LOG_SOURCES = new Set([
 
 const VALID_EVENT_LOG_VISIBILITIES = new Set(["hidden", "private", "local", "public"]);
 const CLOSED_WORLD_EVENT_STATUSES = new Set(["resolved", "expired", "consequences_applied", "cancelled"]);
+const VALID_COMMITMENT_TYPES = new Set([
+  "promise",
+  "plan",
+  "obligation",
+  "appointment",
+  "follow_up",
+  "job",
+  "mission_intention",
+  "personal_goal",
+  "secret",
+  "other",
+]);
+const VALID_COMMITMENT_STATUSES = new Set(["pending", "active", "fulfilled", "failed", "cancelled", "expired"]);
+const VALID_COMMITMENT_PRIORITIES = new Set(["low", "normal", "high", "critical"]);
+const VALID_COMMITMENT_VISIBILITIES = new Set(["hidden", "private", "local", "public"]);
 
 function validationError(message, details = {}) {
   const error = new Error(message);
@@ -293,6 +309,10 @@ function buildApplyTurnAutoCheckpointPlan(changes = {}) {
     addAutoCheckpointTrigger(triggers, "job_contract", "cambio formal de contrato laboral");
   }
 
+  if (Array.isArray(changes.commitments) && changes.commitments.length > 0) {
+    addAutoCheckpointTrigger(triggers, "commitment", "compromiso o promesa formal");
+  }
+
   if (elapsedMinutes >= 120) {
     addAutoCheckpointTrigger(triggers, "long_scene", "escena larga");
   }
@@ -319,6 +339,7 @@ function buildApplyTurnAutoCheckpointPlan(changes = {}) {
     "major_social",
     "long_scene",
     "progression",
+    "commitment",
     "economy",
     "major_travel",
   ];
@@ -1568,6 +1589,265 @@ function buildMissionOutcome({ op, mission, before, reward = null, patch = {} } 
   };
 }
 
+function normalizeCommitmentPatches(commitmentPatches) {
+  if (!commitmentPatches) return [];
+  return Array.isArray(commitmentPatches) ? commitmentPatches : [commitmentPatches];
+}
+
+function validateCommitmentDayTime({ day, time, fieldPrefix }) {
+  if (day !== undefined && day !== null && (!Number.isInteger(day) || day < 1)) {
+    throw validationError(`${fieldPrefix}Day debe ser un entero positivo o null.`, { day });
+  }
+
+  if (time && !isValidTime(time)) {
+    throw validationError(`${fieldPrefix}Time debe tener formato HH:MM.`, { time });
+  }
+
+  if (time && (day === undefined || day === null)) {
+    throw validationError(`${fieldPrefix}Time requiere ${fieldPrefix}Day.`);
+  }
+}
+
+function normalizeCommitmentPayloadArray(value) {
+  return unique(Array.isArray(value) ? value : []);
+}
+
+function validateCommitmentPatchShape(patch = {}) {
+  if (patch.type && !VALID_COMMITMENT_TYPES.has(patch.type)) {
+    throw validationError("commitmentPatches.type invalido.", {
+      type: patch.type,
+      allowed: Array.from(VALID_COMMITMENT_TYPES),
+    });
+  }
+
+  if (patch.status && !VALID_COMMITMENT_STATUSES.has(patch.status)) {
+    throw validationError("commitmentPatches.status invalido.", {
+      status: patch.status,
+      allowed: Array.from(VALID_COMMITMENT_STATUSES),
+    });
+  }
+
+  if (patch.priority && !VALID_COMMITMENT_PRIORITIES.has(patch.priority)) {
+    throw validationError("commitmentPatches.priority invalido.", {
+      priority: patch.priority,
+      allowed: Array.from(VALID_COMMITMENT_PRIORITIES),
+    });
+  }
+
+  if (patch.visibility && !VALID_COMMITMENT_VISIBILITIES.has(patch.visibility)) {
+    throw validationError("commitmentPatches.visibility invalida.", {
+      visibility: patch.visibility,
+      allowed: Array.from(VALID_COMMITMENT_VISIBILITIES),
+    });
+  }
+
+  validateCommitmentDayTime({ day: patch.dueDay, time: patch.dueTime, fieldPrefix: "due" });
+  validateCommitmentDayTime({ day: patch.windowStartDay, time: patch.windowStartTime, fieldPrefix: "windowStart" });
+  validateCommitmentDayTime({ day: patch.windowEndDay, time: patch.windowEndTime, fieldPrefix: "windowEnd" });
+}
+
+function commitmentSnapshot(commitment) {
+  if (!commitment) return null;
+  return {
+    commitmentId: commitment.commitmentId,
+    title: commitment.title,
+    summary: commitment.summary || "",
+    type: commitment.type,
+    status: commitment.status,
+    priority: commitment.priority,
+    visibility: commitment.visibility,
+    createdDay: commitment.createdDay,
+    createdTime: commitment.createdTime,
+    dueDay: commitment.dueDay,
+    dueTime: commitment.dueTime || "",
+    windowStartDay: commitment.windowStartDay,
+    windowStartTime: commitment.windowStartTime || "",
+    windowEndDay: commitment.windowEndDay,
+    windowEndTime: commitment.windowEndTime || "",
+    targetNpcIds: commitment.targetNpcIds || [],
+    relatedNpcIds: commitment.relatedNpcIds || [],
+    relatedLocationIds: commitment.relatedLocationIds || [],
+    relatedMissionIds: commitment.relatedMissionIds || [],
+    relatedEventIds: commitment.relatedEventIds || [],
+    resolution: commitment.resolution || {},
+    tags: commitment.tags || [],
+  };
+}
+
+function applyCommitmentPatchFields(commitment, patch = {}) {
+  for (const field of [
+    "title",
+    "summary",
+    "type",
+    "status",
+    "priority",
+    "visibility",
+    "dueDay",
+    "dueTime",
+    "windowStartDay",
+    "windowStartTime",
+    "windowEndDay",
+    "windowEndTime",
+    "ownerCharacterId",
+    "sourceEventLogId",
+  ]) {
+    if (patch[field] !== undefined) commitment[field] = patch[field];
+  }
+
+  for (const field of [
+    "targetNpcIds",
+    "relatedNpcIds",
+    "relatedLocationIds",
+    "relatedMissionIds",
+    "relatedEventIds",
+    "tags",
+  ]) {
+    if (patch[field] !== undefined) commitment[field] = normalizeCommitmentPayloadArray(patch[field]);
+  }
+
+  if (patch.flags && typeof patch.flags === "object") {
+    commitment.flags = {
+      ...(commitment.flags || {}),
+      ...patch.flags,
+    };
+  }
+}
+
+function closeCommitment(commitment, status, patch, gameState) {
+  if (["fulfilled", "failed", "cancelled", "expired"].includes(commitment.status)) {
+    throw validationError("El compromiso ya esta cerrado; usar op update si realmente se necesita corregirlo.", {
+      commitmentId: commitment.commitmentId,
+      status: commitment.status,
+    });
+  }
+
+  commitment.status = status;
+  commitment.resolution = {
+    day: gameState.currentDay,
+    time: gameState.time,
+    status,
+    summary: patch.resolutionSummary || patch.summary || "",
+    reason: patch.reason || patch.failureReason || patch.cancelReason || "",
+  };
+}
+
+function buildCommitmentDisplayLines({ op, before, after }) {
+  const lines = [];
+  if (op === "create") {
+    lines.push(`Compromiso creado: ${after.title}.`);
+  } else if (before?.status !== after?.status) {
+    lines.push(`Compromiso ${after.title}: ${before.status}->${after.status}.`);
+  } else {
+    lines.push(`Compromiso actualizado: ${after.title}.`);
+  }
+
+  if (after?.dueDay) {
+    lines.push(`Objetivo: Dia ${after.dueDay}${after.dueTime ? ` ${after.dueTime}` : ""}.`);
+  }
+
+  return lines;
+}
+
+async function applyCommitmentPatches(gameState, commitmentPatches, session = null) {
+  const patches = normalizeCommitmentPatches(commitmentPatches);
+  const results = [];
+
+  for (const patch of patches) {
+    const op = patch.op || patch.operation;
+    if (!["create", "update", "fulfill", "fail", "cancel", "expire"].includes(op)) {
+      throw validationError("commitmentPatches.op debe ser create, update, fulfill, fail, cancel o expire.", { op });
+    }
+
+    validateCommitmentPatchShape(patch);
+
+    let commitment = null;
+    let before = null;
+
+    if (op === "create") {
+      if (!patch.title || String(patch.title).trim().length < 3) {
+        throw validationError("commitmentPatches.title es obligatorio para crear compromisos.");
+      }
+
+      const commitmentId = patch.commitmentId || createId("commitment");
+      const existing = await Commitment.findOne({ commitmentId }).session(session).lean();
+      if (existing) {
+        throw validationError("commitmentPatches.commitmentId ya existe.", { commitmentId });
+      }
+
+      commitment = new Commitment({
+        commitmentId,
+        gameId: gameState.gameId,
+        characterId: patch.characterId || gameState.characterId || "char_lucas",
+        title: String(patch.title).trim(),
+        summary: patch.summary || "",
+        type: patch.type || "plan",
+        status: patch.status || "pending",
+        priority: patch.priority || "normal",
+        visibility: patch.visibility || "private",
+        createdDay: patch.createdDay || gameState.currentDay,
+        createdTime: patch.createdTime || gameState.time,
+        dueDay: patch.dueDay ?? null,
+        dueTime: patch.dueTime || "",
+        windowStartDay: patch.windowStartDay ?? null,
+        windowStartTime: patch.windowStartTime || "",
+        windowEndDay: patch.windowEndDay ?? null,
+        windowEndTime: patch.windowEndTime || "",
+        ownerCharacterId: patch.ownerCharacterId || gameState.characterId || "char_lucas",
+        targetNpcIds: normalizeCommitmentPayloadArray(patch.targetNpcIds),
+        relatedNpcIds: normalizeCommitmentPayloadArray(patch.relatedNpcIds),
+        relatedLocationIds: normalizeCommitmentPayloadArray(patch.relatedLocationIds),
+        relatedMissionIds: normalizeCommitmentPayloadArray(patch.relatedMissionIds),
+        relatedEventIds: normalizeCommitmentPayloadArray(patch.relatedEventIds),
+        sourceEventLogId: patch.sourceEventLogId || "",
+        tags: normalizeCommitmentPayloadArray(patch.tags),
+        flags: patch.flags || {},
+      });
+    } else {
+      if (!patch.commitmentId) {
+        throw validationError("commitmentPatches.commitmentId es obligatorio para actualizar/cerrar compromisos.");
+      }
+
+      commitment = await Commitment.findOne({
+        gameId: gameState.gameId,
+        commitmentId: patch.commitmentId,
+      }).session(session);
+
+      if (!commitment) {
+        throw validationError("No existe commitmentId para este gameId.", {
+          commitmentId: patch.commitmentId,
+        });
+      }
+
+      before = commitmentSnapshot(commitment);
+
+      if (op === "update") {
+        applyCommitmentPatchFields(commitment, patch);
+      } else {
+        const statusByOp = {
+          fulfill: "fulfilled",
+          fail: "failed",
+          cancel: "cancelled",
+          expire: "expired",
+        };
+        closeCommitment(commitment, statusByOp[op], patch, gameState);
+      }
+    }
+
+    await commitment.save({ session });
+    const after = commitmentSnapshot(commitment);
+
+    results.push({
+      op,
+      commitmentId: commitment.commitmentId,
+      before,
+      after,
+      displayLines: buildCommitmentDisplayLines({ op, before, after }),
+    });
+  }
+
+  return results;
+}
+
 async function applyMissionPatches(gameState, missionPatch, session = null) {
   const patches = normalizeMissionPatches(missionPatch);
   const results = [];
@@ -2620,6 +2900,11 @@ async function applyTurn(req, res) {
       if (body.jobContractPatch) {
         const jobContractChanges = await applyJobContractPatches(gameState, body.jobContractPatch, session);
         if (jobContractChanges.length > 0) changes.jobContracts = jobContractChanges;
+      }
+
+      if (Array.isArray(body.commitmentPatches) || body.commitmentPatches) {
+        const commitmentChanges = await applyCommitmentPatches(gameState, body.commitmentPatches, session);
+        if (commitmentChanges.length > 0) changes.commitments = commitmentChanges;
       }
 
       const missionExpiry = await expireAvailableMissionsForGameState(gameState, {

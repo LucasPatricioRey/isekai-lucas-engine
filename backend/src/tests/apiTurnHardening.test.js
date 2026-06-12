@@ -2,6 +2,7 @@ const { after, before, describe, it } = require("node:test");
 
 const Checkpoint = require("../models/Checkpoint");
 const CombatEncounter = require("../models/CombatEncounter");
+const Commitment = require("../models/Commitment");
 const EventLog = require("../models/EventLog");
 const GameState = require("../models/GameState");
 const JobContract = require("../models/JobContract");
@@ -223,6 +224,7 @@ async function cleanupIsolatedState() {
   if (tempGameId) await GameState.deleteOne({ gameId: tempGameId });
   if (tempGameId) await Checkpoint.deleteMany({ gameId: tempGameId });
   if (tempGameId) await CombatEncounter.deleteMany({ gameId: tempGameId });
+  if (tempGameId) await Commitment.deleteMany({ gameId: tempGameId });
   if (tempGameId) await WorldEvent.deleteMany({ gameId: tempGameId });
   await Mission.deleteMany({
     missionId: { $in: [tempMissionId, tempExpiredMissionId, tempGuildMissionId].filter(Boolean) },
@@ -774,6 +776,67 @@ describe("turn hardening coverage", () => {
           biologicalClock: originalState.biologicalClock,
         },
       }
+    );
+  });
+
+  it("tracks narrative commitments formally and removes them from pending context when fulfilled", async () => {
+    const commitmentId = `commitment_test_${Date.now()}`;
+
+    const created = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: Lucas promete preguntar en el gremio manana.",
+      biologicalCostExemptReason: "Cambio formal de agenda sin actividad fisica.",
+      commitmentPatches: {
+        op: "create",
+        commitmentId,
+        title: "Preguntar en el gremio por los rastros del bosque",
+        summary: "Lucas dijo que verificara el rumor con el gremio por la manana.",
+        type: "promise",
+        priority: "high",
+        visibility: "private",
+        dueDay: 11,
+        dueTime: "09:00",
+        targetNpcIds: [tempNpcId],
+        tags: ["test_turn_hardening", "forest_tracks"],
+      },
+    });
+
+    assert.equal(created.status, 200, JSON.stringify(created.data));
+    assert.equal(created.data.ok, true);
+    assert.equal(created.data.changes.commitments[0].commitmentId, commitmentId);
+    assert.equal(created.data.changes.commitments[0].after.status, "pending");
+    assert.equal(created.data.changes.autoCheckpoint.created, true);
+
+    const compactWithPending = await get(`/api/context/compact?gameId=${encodeURIComponent(tempGameId)}`);
+    assert.equal(compactWithPending.status, 200);
+    assert.ok(
+      compactWithPending.data.context.pendingCommitments.some(
+        (commitment) => commitment.commitmentId === commitmentId && commitment.status === "pending"
+      )
+    );
+
+    const fulfilled = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: Lucas cumplio la promesa de consultar el gremio.",
+      biologicalCostExemptReason: "Cierre formal de compromiso sin actividad fisica.",
+      commitmentPatches: {
+        op: "fulfill",
+        commitmentId,
+        resolutionSummary: "Lucas consulto al gremio sobre los rastros del bosque.",
+        reason: "Promesa cumplida.",
+      },
+    });
+
+    assert.equal(fulfilled.status, 200, JSON.stringify(fulfilled.data));
+    assert.equal(fulfilled.data.ok, true);
+    assert.equal(fulfilled.data.changes.commitments[0].before.status, "pending");
+    assert.equal(fulfilled.data.changes.commitments[0].after.status, "fulfilled");
+
+    const compactAfterFulfill = await get(`/api/context/compact?gameId=${encodeURIComponent(tempGameId)}`);
+    assert.equal(compactAfterFulfill.status, 200);
+    assert.equal(
+      compactAfterFulfill.data.context.pendingCommitments.some((commitment) => commitment.commitmentId === commitmentId),
+      false
     );
   });
 

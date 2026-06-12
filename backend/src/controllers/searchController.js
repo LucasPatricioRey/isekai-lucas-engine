@@ -10,6 +10,7 @@ const Shop = require("../models/Shop");
 const Faction = require("../models/Faction");
 const EnemyTemplate = require("../models/EnemyTemplate");
 const CombatEncounter = require("../models/CombatEncounter");
+const Commitment = require("../models/Commitment");
 const NpcRelationship = require("../models/NpcRelationship");
 const WorldDocumentIndex = require("../models/WorldDocumentIndex");
 const { eventGameFilter } = require("../services/dailyEventSchedulerService");
@@ -102,6 +103,7 @@ async function searchDb(req, res) {
     factions,
     enemyTemplates,
     combatEncounters,
+    commitments,
     npcRelationships,
   ] = await Promise.all([
     Npc.find({
@@ -231,6 +233,19 @@ async function searchDb(req, res) {
       ],
     }).limit(10).lean(),
 
+    Commitment.find({
+      gameId,
+      $or: [
+        { commitmentId: regex },
+        { title: regex },
+        { summary: regex },
+        { type: regex },
+        { status: regex },
+        { targetNpcIds: regex },
+        { tags: regex },
+      ],
+    }).limit(10).lean(),
+
     NpcRelationship.find({
       $or: [
         { relationshipId: regex },
@@ -261,6 +276,7 @@ async function searchDb(req, res) {
       factions,
       enemyTemplates,
       combatEncounters,
+      commitments,
       npcRelationships,
     },
   });

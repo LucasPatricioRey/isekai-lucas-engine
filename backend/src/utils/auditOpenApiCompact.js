@@ -181,6 +181,7 @@ function main() {
     "missionPatch",
     "worldEventPatches",
     "jobContractPatch",
+    "commitmentPatches",
     "eventLogs",
   ]) {
     assertCondition(
@@ -223,6 +224,16 @@ function main() {
     issues,
     "compact has JobContractPatchItem",
     Boolean(compact.components?.schemas?.JobContractPatchItem)
+  );
+  assertCondition(
+    issues,
+    "full has CommitmentPatchItem",
+    Boolean(full.components?.schemas?.CommitmentPatchItem)
+  );
+  assertCondition(
+    issues,
+    "compact has CommitmentPatchItem",
+    Boolean(compact.components?.schemas?.CommitmentPatchItem)
   );
   assertCondition(
     issues,

@@ -19,6 +19,7 @@ const NpcRelationship = require("../models/NpcRelationship");
 const NpcSocialLedger = require("../models/NpcSocialLedger");
 const WeatherState = require("../models/WeatherState");
 const JobContract = require("../models/JobContract");
+const Commitment = require("../models/Commitment");
 const responseShaping = require("../utils/responseShaping");
 const { buildNarrativeContextSummary } = require("../services/narrativeVariationService");
 const {
@@ -67,6 +68,7 @@ function summarizeTechnicalReadiness({
   mainEventSummary,
   minorRumorEventSummaries,
   backgroundEventSummaries,
+  pendingCommitmentSummaries,
   pendingBiologicalAccumulations,
   stalePendingBiologicalAccumulations,
   alerts,
@@ -113,6 +115,12 @@ function summarizeTechnicalReadiness({
       activeCount: (activeMissionSummaries || []).length,
       availableCount: (availableMissionPreview || []).length,
       proofOrReportPendingMissionIds: openMissionNeedingProof.map((mission) => mission.missionId),
+    },
+    commitmentState: {
+      pendingCount: (pendingCommitmentSummaries || []).length,
+      dueNowOrOverdueIds: (pendingCommitmentSummaries || [])
+        .filter((commitment) => ["due_now", "overdue"].includes(commitment.dueStatus))
+        .map((commitment) => commitment.commitmentId),
     },
     jobState: jobContractSummary
       ? {
@@ -445,6 +453,7 @@ async function getCompactContext(req, res) {
       missionLimit: responseShaping.toIntQuery(req.query.missionLimit, 8, 0, 15),
       eventLimit: responseShaping.toIntQuery(req.query.eventLimit, 6, 0, 12),
       logLimit: responseShaping.toIntQuery(req.query.logLimit, 5, 0, 10),
+      commitmentLimit: responseShaping.toIntQuery(req.query.commitmentLimit, 8, 0, 15),
     };
 
     const gameState = await GameState.findOne({ gameId }).lean();
@@ -545,6 +554,7 @@ async function getCompactContext(req, res) {
       weather,
       jobContract,
       todaySocialLedger,
+      pendingCommitments,
     ] = await Promise.all([
       inventoryItemIds.length
         ? Item.find({ itemId: { $in: inventoryItemIds } }).sort({ name: 1 }).lean()
@@ -674,11 +684,33 @@ async function getCompactContext(req, res) {
             .limit(20)
             .lean()
         : Promise.resolve([]),
+
+      limits.commitmentLimit > 0
+        ? Commitment.find({
+            gameId,
+            status: { $in: ["pending", "active"] },
+          })
+            .sort({ dueDay: 1, dueTime: 1, priority: -1, createdDay: -1, createdTime: -1 })
+            .limit(Math.max(limits.commitmentLimit * 4, limits.commitmentLimit))
+            .lean()
+        : Promise.resolve([]),
     ]);
 
     const activeMissionSummaries = activeMissions.map((mission) =>
       responseShaping.summarizeMission(mission, gameState.currentDay, gameState.time)
     );
+    const priorityWeight = { critical: 4, high: 3, normal: 2, low: 1 };
+    const pendingCommitmentSummaries = pendingCommitments
+      .map((commitment) => responseShaping.summarizeCommitment(commitment, gameState.currentDay, gameState.time))
+      .sort((left, right) => {
+        const leftDue = left.dueDay ? toAbsoluteMinutes(left.dueDay, left.dueTime || "23:59") : Number.MAX_SAFE_INTEGER;
+        const rightDue = right.dueDay
+          ? toAbsoluteMinutes(right.dueDay, right.dueTime || "23:59")
+          : Number.MAX_SAFE_INTEGER;
+        if (leftDue !== rightDue) return leftDue - rightDue;
+        return (priorityWeight[right.priority] || 0) - (priorityWeight[left.priority] || 0);
+      })
+      .slice(0, limits.commitmentLimit);
     const availableMissionSummaries = availableMissions.map((mission) =>
       responseShaping.summarizeMission(mission, gameState.currentDay, gameState.time)
     );
@@ -808,6 +840,26 @@ async function getCompactContext(req, res) {
       });
     }
 
+    const overdueCommitments = pendingCommitmentSummaries.filter((commitment) => commitment.dueStatus === "overdue");
+    if (overdueCommitments.length > 0) {
+      alerts.push({
+        type: "commitments_overdue",
+        severity: "warning",
+        message: "Hay compromisos/promesas pendientes cuya hora objetivo ya paso.",
+        commitmentIds: overdueCommitments.map((commitment) => commitment.commitmentId),
+      });
+    }
+
+    const dueNowCommitments = pendingCommitmentSummaries.filter((commitment) => commitment.dueStatus === "due_now");
+    if (dueNowCommitments.length > 0) {
+      alerts.push({
+        type: "commitments_due_now",
+        severity: "info",
+        message: "Hay compromisos/promesas que vencen en este momento.",
+        commitmentIds: dueNowCommitments.map((commitment) => commitment.commitmentId),
+      });
+    }
+
     const eventSummaryCandidates = uniqueByEventId([
       ...activeEvents.filter(isMainEvent),
       openMainEvent,
@@ -880,6 +932,7 @@ async function getCompactContext(req, res) {
           mainEventSummary,
           minorRumorEventSummaries,
           backgroundEventSummaries,
+          pendingCommitmentSummaries,
           pendingBiologicalAccumulations,
           stalePendingBiologicalAccumulations,
           alerts,
@@ -920,6 +973,7 @@ async function getCompactContext(req, res) {
         backgroundEvents: backgroundEventSummaries,
         activeRumors: activeRumors.map(responseShaping.summarizeRumor),
         socialLedgerToday: todaySocialLedger.map(responseShaping.summarizeNpcSocialLedger),
+        pendingCommitments: pendingCommitmentSummaries,
         activeMissions: activeMissionSummaries,
         availableMissionPreview,
         pendingBiology: pendingBiologicalAccumulations,

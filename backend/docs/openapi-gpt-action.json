@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions",
-    "version": "2.13.0",
-    "description": "Schema normal para GPT Actions. Expone endpoints de lectura, busqueda, preview y mutacion central controlada. Incluye previewSocialImpact, relationshipState efectivo y applyTurn.npcRelationshipPatches para vinculos sociales. Incluye lectura read-only de WorldEvents para auditoria tecnica. No expone rollback, admin ni mutadores peligrosos de combate/misiones. El backend separa evento principal unico, rumores menores y eventos de fondo; el scheduler solo genera otro evento principal cuando no hay uno abierto. applyTurn, completeJobShift y context/compact pueden devolver narrativeHints/narrativeContext para variar escenas repetidas sin crear mecanicas nuevas. Las comidas de contrato en completeJobShift son explicitas: solo se aplican si se envian en consumeIncludedMealIds."
+    "version": "2.14.0",
+    "description": "Schema normal para GPT Actions. Expone endpoints de lectura, busqueda, preview y mutacion central controlada. Incluye previewSocialImpact, relationshipState efectivo y applyTurn.npcRelationshipPatches para vinculos sociales. Incluye lectura read-only de WorldEvents para auditoria tecnica. No expone rollback, admin ni mutadores peligrosos de combate/misiones. El backend separa evento principal unico, rumores menores y eventos de fondo; el scheduler solo genera otro evento principal cuando no hay uno abierto. applyTurn, completeJobShift y context/compact pueden devolver narrativeHints/narrativeContext para variar escenas repetidas sin crear mecanicas nuevas. Las comidas de contrato en completeJobShift son explicitas: solo se aplican si se envian en consumeIncludedMealIds. applyTurn.commitmentPatches guarda promesas, planes y obligaciones pendientes como estado formal."
   },
   "servers": [
     {
@@ -441,8 +441,162 @@
                 }
               }
             ]
+          },
+          "commitmentPatches": {
+            "description": "Promesas, planes, citas, obligaciones o pendientes narrativos que deben persistir como estado formal. Usar cuando Lucas promete, acuerda, pospone o cierra algo importante.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CommitmentPatchItem"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CommitmentPatchItem"
+                }
+              }
+            ]
           }
         },
+        "additionalProperties": false
+      },
+      "CommitmentPatchItem": {
+        "type": "object",
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "fulfill",
+              "fail",
+              "cancel",
+              "expire"
+            ]
+          },
+          "commitmentId": {
+            "type": "string",
+            "description": "Obligatorio salvo op=create. Si se omite al crear, backend genera id."
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "promise",
+              "plan",
+              "obligation",
+              "appointment",
+              "follow_up",
+              "job",
+              "mission_intention",
+              "personal_goal",
+              "secret",
+              "other"
+            ],
+            "default": "plan"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "active",
+              "fulfilled",
+              "failed",
+              "cancelled",
+              "expired"
+            ]
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "low",
+              "normal",
+              "high",
+              "critical"
+            ],
+            "default": "normal"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "hidden",
+              "private",
+              "local",
+              "public"
+            ],
+            "default": "private"
+          },
+          "dueDay": {
+            "type": "integer"
+          },
+          "dueTime": {
+            "type": "string",
+            "description": "HH:MM; requiere dueDay."
+          },
+          "windowStartDay": {
+            "type": "integer"
+          },
+          "windowStartTime": {
+            "type": "string",
+            "description": "HH:MM; requiere windowStartDay."
+          },
+          "windowEndDay": {
+            "type": "integer"
+          },
+          "windowEndTime": {
+            "type": "string",
+            "description": "HH:MM; requiere windowEndDay."
+          },
+          "targetNpcIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "relatedNpcIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "relatedLocationIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "relatedMissionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "relatedEventIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "resolutionSummary": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "op"
+        ],
         "additionalProperties": false
       },
       "JobContractPatchItem": {
