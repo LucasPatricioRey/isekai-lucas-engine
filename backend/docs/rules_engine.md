@@ -1740,6 +1740,16 @@ El backend puede inferir `consequenceLevel` y dejar `requiresFollowUp`, `consequ
 
 Una tardanza leve y justificada puede quedar sin consecuencia numerica. Una falta injustificada, repetida o que perjudica a otros debe dejar seguimiento pendiente hasta resolverse. `getCompactContext` debe mostrar estas asistencias pendientes para no depender de memoria del GPT.
 
+### P9. Misiones, reportes y gremio
+
+Las misiones viven en MongoDB. Aceptar, reportar, verificar, completar, fallar o expirar siempre debe pasar por `missionPatch`; no pagar con `moneyPatch` ni dar MG/loot por narracion.
+
+Un reporte de mision debe guardar resumen, evidencia, calidad, testigos y ubicaciones relevantes cuando existan. EventLog no reemplaza el reporte formal. Si una prueba queda `submitted`, no completar ni pagar hasta `verify` con `proofStatus:"verified"`. Si queda `rejected`, corregir, fallar o dejar consecuencia pendiente; nunca pagar.
+
+`getCompactContext.missionAgenda` marca misiones listas para completar, reportes pendientes de verificacion, pruebas rechazadas, misiones aceptadas vencidas y misiones disponibles que vencen pronto. No saltar escenas largas si hay `acceptedExpired` o `proofRejected` sin resolver.
+
+Si `guildState.formalGuildRegistrationPending` esta activo, las misiones de rango que requieren registro formal solo se aceptan con permiso/supervision explicita y `registrationOverrideReason`; si no, el backend debe bloquearlas.
+
 ---
 
 ## 24. Ejemplos de resolución

@@ -46,6 +46,169 @@ function isExpiredAt(entity, currentDay, currentTime) {
   return timeToMinutes(currentTime) >= timeToMinutes(entity.expiresTime);
 }
 
+function toAbsoluteMinutes(day, time) {
+  return (Number(day || 1) - 1) * 1440 + timeToMinutes(time || "00:00");
+}
+
+function missionExpirationState(mission, currentDay, currentTime) {
+  if (!mission?.expiresDay) {
+    return {
+      key: "none",
+      minutesUntil: null,
+      expired: false,
+      urgency: "none",
+      label: "Sin vencimiento formal.",
+    };
+  }
+
+  const expiresAt = toAbsoluteMinutes(mission.expiresDay, mission.expiresTime || "23:59");
+  const currentAt = toAbsoluteMinutes(currentDay, currentTime);
+  const minutesUntil = expiresAt - currentAt;
+
+  if (minutesUntil <= 0) {
+    return {
+      key: "expired",
+      minutesUntil: 0,
+      expired: true,
+      urgency: "warning",
+      label: "Vencida por tiempo de partida.",
+    };
+  }
+
+  if (minutesUntil <= 180) {
+    return {
+      key: "due_soon",
+      minutesUntil,
+      expired: false,
+      urgency: "warning",
+      label: "Vence pronto.",
+    };
+  }
+
+  if (Number(mission.expiresDay) === Number(currentDay)) {
+    return {
+      key: "today",
+      minutesUntil,
+      expired: false,
+      urgency: "info",
+      label: "Vence hoy.",
+    };
+  }
+
+  return {
+    key: "future",
+    minutesUntil,
+    expired: false,
+    urgency: "none",
+    label: "Vencimiento futuro.",
+  };
+}
+
+function missionActionState(mission, currentDay, currentTime) {
+  if (!mission) return null;
+  const expiration = missionExpirationState(mission, currentDay, currentTime);
+  const proofStatus = mission.proofStatus || "not_required";
+  const proofRequired = Boolean(mission.proofRequired && proofStatus !== "not_required");
+  const base = {
+    expiration,
+    blocksReward: false,
+    requiresFormalClosure: false,
+    recommendedAction: "",
+  };
+
+  if (expiration.expired && ["available", "accepted"].includes(mission.status)) {
+    return {
+      ...base,
+      key: mission.status === "accepted" ? "accepted_expired" : "available_expired",
+      urgency: "warning",
+      requiresFormalClosure: true,
+      recommendedAction:
+        mission.status === "accepted"
+          ? "Resolver como fail/expire segun la ficcion antes de pagar recompensa."
+          : "No ofrecer como opcion vigente; expirar formalmente si aparece en tablero.",
+    };
+  }
+
+  if (mission.status === "available") {
+    return {
+      ...base,
+      key: expiration.key === "due_soon" ? "available_expiring_soon" : "available",
+      urgency: expiration.urgency === "warning" ? "info" : "none",
+      recommendedAction:
+        expiration.key === "due_soon"
+          ? "Avisar que vence pronto si Lucas puede verlo en cartelera."
+          : "Disponible solo si Lucas la consulta o el contexto la hace visible.",
+    };
+  }
+
+  if (mission.status === "accepted") {
+    if (proofStatus === "submitted") {
+      return {
+        ...base,
+        key: "awaiting_verification",
+        urgency: "info",
+        blocksReward: true,
+        recommendedAction: "Verificar prueba/reporte antes de completar o pagar.",
+      };
+    }
+
+    if (proofStatus === "verified" || !proofRequired) {
+      return {
+        ...base,
+        key: "ready_to_complete",
+        urgency: "info",
+        recommendedAction: "Puede completarse formalmente y pagar recompensa una sola vez.",
+      };
+    }
+
+    if (proofStatus === "rejected") {
+      return {
+        ...base,
+        key: "proof_rejected",
+        urgency: "warning",
+        blocksReward: true,
+        requiresFormalClosure: true,
+        recommendedAction: "Corregir prueba, fallar la mision o dejar consecuencia formal; no pagar.",
+      };
+    }
+
+    return {
+      ...base,
+      key: "needs_report",
+      urgency: expiration.urgency === "warning" ? "warning" : "info",
+      blocksReward: proofRequired,
+      recommendedAction: proofRequired
+        ? "Conseguir o presentar prueba/reporte antes de verificar."
+        : "Reportar el resultado antes de completar.",
+    };
+  }
+
+  if (mission.status === "completed") {
+    return {
+      ...base,
+      key: "completed",
+      urgency: "none",
+      recommendedAction: "No pagar ni completar otra vez.",
+    };
+  }
+
+  if (["failed", "expired", "withdrawn", "blocked"].includes(mission.status)) {
+    return {
+      ...base,
+      key: mission.status,
+      urgency: mission.status === "blocked" ? "info" : "none",
+      recommendedAction: "No tratar como mision activa salvo auditoria tecnica.",
+    };
+  }
+
+  return {
+    ...base,
+    key: mission.status || "unknown",
+    urgency: "info",
+    recommendedAction: "Revisar estado de mision antes de narrar recompensas.",
+  };
+}
+
 function isWeatherStale(weather, currentDay, currentTime) {
   if (!weather || weather.expectedUntilDay === null || weather.expectedUntilDay === undefined) return false;
   if (weather.expectedUntilDay < currentDay) return true;
@@ -326,6 +489,7 @@ function summarizeNpcSocialLedger(entry) {
 
 function summarizeMission(mission, currentDay, currentTime) {
   if (!mission) return null;
+  const actionState = missionActionState(mission, currentDay, currentTime);
   return {
     missionId: mission.missionId,
     title: mission.title,
@@ -346,6 +510,7 @@ function summarizeMission(mission, currentDay, currentTime) {
     expiresDay: mission.expiresDay,
     expiresTime: mission.expiresTime || "",
     expiredByCurrentTime: isExpiredAt(mission, currentDay, currentTime),
+    actionState,
     acceptedByCharacterId: mission.acceptedByCharacterId || "",
     acceptedDay: mission.acceptedDay,
     completedDay: mission.completedDay,
@@ -597,4 +762,6 @@ module.exports = {
   summarizeWeather,
   summarizeJobContract,
   summarizeCombatEncounter,
+  missionActionState,
+  missionExpirationState,
 };

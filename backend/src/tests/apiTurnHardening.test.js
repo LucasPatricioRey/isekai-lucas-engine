@@ -1851,6 +1851,11 @@ describe("turn hardening coverage", () => {
         op: "report",
         missionId: tempMissionId,
         reportSummary: "Reporte de prueba controlada.",
+        evidenceSummary: "Evidencia simple de fixture.",
+        investigationSummary: "Ruta y hallazgos de prueba controlada.",
+        reportQuality: "solid",
+        witnessNpcIds: ["npc_garrick"],
+        relatedLocationIds: ["loc_hoshimori_guild"],
       },
       eventLogs: [
         {
@@ -1865,6 +1870,8 @@ describe("turn hardening coverage", () => {
     assert.equal(reportedMission.data.ok, true);
     assert.equal(reportedMission.data.changes.missions[0].op, "report");
     assert.equal(reportedMission.data.changes.missions[0].after.proofStatus, "submitted");
+    assert.equal(reportedMission.data.changes.missions[0].after.flags.lastReport.reportQuality, "solid");
+    assert.deepEqual(reportedMission.data.changes.missions[0].after.flags.lastReport.witnessNpcIds, ["npc_garrick"]);
     assert.equal(reportedMission.data.changes.missions[0].outcome.outcome, "awaiting_verification");
     assert.ok(
       reportedMission.data.changes.missions[0].outcome.nextSteps.some((line) =>

@@ -1989,6 +1989,23 @@ async function applyMissionPatches(gameState, missionPatch, session = null) {
       }
 
       mission.proofStatus = patch.proofStatus || "submitted";
+      const flags = getMissionFlags(mission);
+      const reportEntry = {
+        day: gameState.currentDay,
+        time: gameState.time,
+        proofStatus: mission.proofStatus,
+        summary: patch.reportSummary || "",
+        evidenceSummary: patch.evidenceSummary || "",
+        investigationSummary: patch.investigationSummary || "",
+        reportQuality: patch.reportQuality || "",
+        witnessNpcIds: Array.isArray(patch.witnessNpcIds) ? unique(patch.witnessNpcIds) : [],
+        relatedLocationIds: Array.isArray(patch.relatedLocationIds) ? unique(patch.relatedLocationIds) : [],
+      };
+      flags.lastReport = reportEntry;
+      flags.reportHistory = [...(Array.isArray(flags.reportHistory) ? flags.reportHistory : []), reportEntry].slice(-5);
+      flags.requiresVerification = true;
+      flags.requiresCorrection = false;
+      setMissionFlags(mission, flags);
     }
 
     if (op === "verify") {
@@ -2023,6 +2040,11 @@ async function applyMissionPatches(gameState, missionPatch, session = null) {
         status: nextProofStatus,
         summary: patch.verificationSummary || patch.reportSummary || "",
       };
+      flags.requiresVerification = false;
+      flags.requiresCorrection = nextProofStatus === "rejected";
+      if (nextProofStatus === "rejected") {
+        flags.rejectionReason = patch.verificationSummary || patch.reason || "proof_rejected";
+      }
       setMissionFlags(mission, flags);
     }
 

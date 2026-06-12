@@ -65,6 +65,8 @@ function summarizeTechnicalReadiness({
   jobContractSummary,
   activeMissionSummaries,
   availableMissionPreview,
+  missionAgenda,
+  guildState,
   mainEventSummary,
   minorRumorEventSummaries,
   backgroundEventSummaries,
@@ -116,6 +118,12 @@ function summarizeTechnicalReadiness({
       activeCount: (activeMissionSummaries || []).length,
       availableCount: (availableMissionPreview || []).length,
       proofOrReportPendingMissionIds: openMissionNeedingProof.map((mission) => mission.missionId),
+      awaitingVerificationIds: missionAgenda?.awaitingVerification?.map((mission) => mission.missionId) || [],
+      readyToCompleteIds: missionAgenda?.readyToComplete?.map((mission) => mission.missionId) || [],
+      rejectedProofIds: missionAgenda?.proofRejected?.map((mission) => mission.missionId) || [],
+      acceptedExpiredIds: missionAgenda?.acceptedExpired?.map((mission) => mission.missionId) || [],
+      availableExpiringSoonIds: missionAgenda?.availableExpiringSoon?.map((mission) => mission.missionId) || [],
+      guild: guildState || null,
     },
     commitmentState: {
       pendingCount: (pendingCommitmentSummaries || []).length,
@@ -187,6 +195,12 @@ function summarizeTechnicalReadiness({
       (jobContractSummary?.schedule?.attendance?.unresolved || []).length > 0
         ? "Cerrar seguimientos laborales pendientes con consecuencia explicita o marcar consecuenciaApplied."
         : "",
+      missionAgenda?.proofRejected?.length > 0 || missionAgenda?.acceptedExpired?.length > 0
+        ? "Resolver misiones con prueba rechazada o vencida antes de saltar escenas largas."
+        : "",
+      missionAgenda?.awaitingVerification?.length > 0
+        ? "Verificar reportes de mision antes de completar o pagar recompensa."
+        : "",
     ].filter(Boolean),
   };
 }
@@ -257,6 +271,71 @@ function buildCommitmentAgenda(commitments = []) {
     ),
     needsResolution,
     next: commitments.slice(0, 5),
+  };
+}
+
+function missionAgendaEntry(mission) {
+  return {
+    missionId: mission.missionId,
+    title: mission.title,
+    status: mission.status,
+    proofStatus: mission.proofStatus,
+    rank: mission.rank,
+    riskLevel: mission.riskLevel,
+    clientNpcId: mission.clientNpcId || "",
+    locationId: mission.locationId || "",
+    expiresDay: mission.expiresDay,
+    expiresTime: mission.expiresTime || "",
+    actionState: mission.actionState || null,
+  };
+}
+
+function buildMissionAgenda({ activeMissions = [], availableMissions = [] } = {}) {
+  const byAction = (missions, key) => missions.filter((mission) => mission.actionState?.key === key);
+  const acceptedExpired = byAction(activeMissions, "accepted_expired");
+  const proofRejected = byAction(activeMissions, "proof_rejected");
+  const awaitingVerification = byAction(activeMissions, "awaiting_verification");
+  const readyToComplete = byAction(activeMissions, "ready_to_complete");
+  const needsReport = byAction(activeMissions, "needs_report");
+  const availableExpiringSoon = byAction(availableMissions, "available_expiring_soon");
+
+  return {
+    schemaVersion: "mission_agenda_v1",
+    acceptedExpired: acceptedExpired.map(missionAgendaEntry),
+    proofRejected: proofRejected.map(missionAgendaEntry),
+    awaitingVerification: awaitingVerification.map(missionAgendaEntry),
+    readyToComplete: readyToComplete.map(missionAgendaEntry),
+    needsReport: needsReport.map(missionAgendaEntry),
+    availableExpiringSoon: availableExpiringSoon.map(missionAgendaEntry),
+    next: [
+      ...acceptedExpired,
+      ...proofRejected,
+      ...awaitingVerification,
+      ...readyToComplete,
+      ...needsReport,
+      ...availableExpiringSoon,
+    ]
+      .slice(0, 6)
+      .map(missionAgendaEntry),
+    globalGuidance:
+      acceptedExpired.length || proofRejected.length
+        ? "Hay misiones con cierre o consecuencia pendiente: no saltar escenas largas sin resolver fail/expire/correccion."
+        : awaitingVerification.length
+          ? "Hay reportes entregados: verificar antes de completar o pagar."
+          : readyToComplete.length
+            ? "Hay misiones listas para cierre formal y recompensa idempotente."
+            : "No hay bloqueo critico de mision en la agenda compacta.",
+  };
+}
+
+function buildGuildState(gameState = {}) {
+  const flags = gameState.flags && typeof gameState.flags === "object" ? gameState.flags : {};
+  const guild = flags.guild && typeof flags.guild === "object" ? flags.guild : {};
+  return {
+    formalGuildRegistrationPending: Boolean(flags.formalGuildRegistrationPending),
+    mg: Number.isInteger(guild.mg) ? guild.mg : 0,
+    rank: guild.rank || guild.currentRank || "",
+    registrationStatus: flags.formalGuildRegistrationPending ? "pending" : "available_or_complete",
   };
 }
 
@@ -888,6 +967,11 @@ async function getCompactContext(req, res) {
     const availableMissionPreview = availableMissionSummaries
       .filter((mission) => !mission.expiredByCurrentTime)
       .slice(0, limits.missionLimit);
+    const missionAgenda = buildMissionAgenda({
+      activeMissions: activeMissionSummaries,
+      availableMissions: availableMissionPreview,
+    });
+    const guildState = buildGuildState(gameState);
     const nearbyNpcSummaries = nearbyNpcs.map(responseShaping.summarizeNpc);
     const socialRhythm = buildSocialRhythm({
       nearbyNpcSummaries,
@@ -1032,6 +1116,33 @@ async function getCompactContext(req, res) {
       }
     }
 
+    if (missionAgenda.proofRejected.length > 0) {
+      alerts.push({
+        type: "mission_proof_rejected",
+        severity: "warning",
+        message: "Hay misiones aceptadas con prueba rechazada; no deben pagarse ni completarse sin corregir o fallar.",
+        missionIds: missionAgenda.proofRejected.map((mission) => mission.missionId),
+      });
+    }
+
+    if (missionAgenda.readyToComplete.length > 0) {
+      alerts.push({
+        type: "missions_ready_to_complete",
+        severity: "info",
+        message: "Hay misiones con prueba lista o no requerida; pueden cerrarse formalmente con recompensa idempotente.",
+        missionIds: missionAgenda.readyToComplete.map((mission) => mission.missionId),
+      });
+    }
+
+    if (missionAgenda.availableExpiringSoon.length > 0) {
+      alerts.push({
+        type: "available_missions_expiring_soon",
+        severity: "info",
+        message: "Hay misiones disponibles que vencen pronto; solo narrarlas si Lucas puede ver la cartelera o recibir el aviso.",
+        missionIds: missionAgenda.availableExpiringSoon.map((mission) => mission.missionId),
+      });
+    }
+
     const expiredAvailableMissions = availableMissionSummaries.filter((mission) => mission.expiredByCurrentTime);
     if (expiredAvailableMissions.length > 0) {
       alerts.push({
@@ -1151,6 +1262,8 @@ async function getCompactContext(req, res) {
           jobContractSummary,
           activeMissionSummaries,
           availableMissionPreview,
+          missionAgenda,
+          guildState,
           mainEventSummary,
           minorRumorEventSummaries,
           backgroundEventSummaries,
@@ -1199,8 +1312,10 @@ async function getCompactContext(req, res) {
         socialRhythm,
         pendingCommitments: pendingCommitmentSummaries,
         commitmentAgenda,
+        guildState,
         activeMissions: activeMissionSummaries,
         availableMissionPreview,
+        missionAgenda,
         pendingBiology: pendingBiologicalAccumulations,
         pendingBiologicalAccumulations,
         narrativeContext,
