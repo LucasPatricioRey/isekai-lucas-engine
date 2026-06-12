@@ -60,9 +60,11 @@ en **Configure > Actions > Import from schema** solo si se quiere separar modo t
 
 El schema historico `docs/openapi-gpt-action-admin.json` queda como referencia read-only, pero para el GPT Builder conviene importar `openapi-gpt-action-admin-extra.json`.
 
-Servidor esperado:
+Servidores esperados:
 
-- `https://isekai-lucas-engine.onrender.com`
+- Juego: `https://isekai-lucas-engine.onrender.com`
+- Admin read-only: `https://isekai-lucas-engine-admin.onrender.com`
+- Combate avanzado: `https://isekai-lucas-engine-1.onrender.com`
 
 ## Auth
 
@@ -127,4 +129,8 @@ Action principal compacta:
 
 Action tecnica extra read-only:
 
-- `https://isekai-lucas-engine.onrender.com/docs/openapi-gpt-action-admin-extra.json`
+- `https://isekai-lucas-engine-admin.onrender.com/docs/openapi-gpt-action-admin-extra.json`
+
+Action combate avanzado:
+
+- `https://isekai-lucas-engine-1.onrender.com/docs/openapi-gpt-action-combat.json`
