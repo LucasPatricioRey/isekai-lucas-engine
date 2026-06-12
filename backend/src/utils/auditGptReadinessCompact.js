@@ -367,7 +367,8 @@ async function main() {
   assertCondition(issues, "compact has npcMemoryPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.npcMemoryPatches));
   assertCondition(issues, "compact has npcRelationshipPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.npcRelationshipPatches));
   assertCondition(issues, "compact includes social impact preview", compactOps.includes("POST /api/npcs/social/impact/preview"));
-  assertCondition(issues, "compact applyTurn is consequential", compact.paths?.["/api/turn/apply"]?.post?.["x-openai-isConsequential"] === true);
+  assertCondition(issues, "compact applyTurn is non-consequential for fluid gameplay", compact.paths?.["/api/turn/apply"]?.post?.["x-openai-isConsequential"] === false);
+  assertCondition(issues, "compact completeJobShift is non-consequential for fluid gameplay", compact.paths?.["/api/jobs/shifts/{shiftId}/complete"]?.post?.["x-openai-isConsequential"] === false);
   assertCondition(
     issues,
     "compact ApplyTurnRequest is strict",

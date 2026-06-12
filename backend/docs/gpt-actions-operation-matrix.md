@@ -54,7 +54,7 @@ Notas:
 - `previewSocialImpact` pondera perfil social del NPC (`values/tolerates/rejects/socialProfile`) y sugiere deltas capados de confianza/familiaridad/respeto/afecto/etc.; el guardado real se hace con `applyTurn.npcRelationshipPatches` y crea ledger social diario. Tambien proyecta `relationshipState` para mostrar acceso, riesgos y bloqueos antes de mutar.
 - Mutadores directos de misiones, combate, restock y rollback quedan fuera; misiones se gestionan por `applyTurn.missionPatch` (`accept/report/verify/complete/fail/expire`) y eventos por `applyTurn.worldEventPatches`. Resolver/vencer eventos diarios puede crear consecuencias sociales automaticas sobre NPCs afectados y ledger social.
 - El backend puede separar keys por scope: lecturas/previews aceptan keys validas de lectura, `applyTurn` usa scope gameplay y mutadores directos peligrosos usan scope admin-write. `API_KEY` sigue funcionando como fallback legacy mientras existan despliegues antiguos.
-- `applyTurn` esta marcado como consequential para forzar confirmacion antes de mutar estado real.
+- `applyTurn` y `completeJobShift` no estan marcados como consequential en el schema compacto para modo juego fluido sin confirmacion manual. El backend sigue validando y rechazando mutaciones invalidas.
 - `applyTurn.activityCost` no suma operaciones: todo `timeAdvance` positivo requiere `activityCost` o exencion explicita; acumula automaticamente actividades entre horas y procesa pendientes al llegar a `:00`.
 - `narrativeHints`/`narrativeContext` no suman operaciones: viajan dentro de respuestas existentes para ayudar a variar escenas repetidas sin tocar calculos mecanicos.
 - El schema `admin-extra` es solo lectura, usa `operationId` prefijados por `admin` y no debe usarse para juego normal.

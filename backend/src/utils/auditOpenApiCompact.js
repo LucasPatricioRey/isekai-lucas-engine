@@ -150,8 +150,13 @@ function main() {
   section("Consequential Flags");
   assertCondition(
     issues,
-    "compact applyTurn requires confirmation",
-    compactOps.get("POST /api/turn/apply")?.["x-openai-isConsequential"] === true
+    "compact applyTurn is non-consequential for fluid gameplay",
+    compactOps.get("POST /api/turn/apply")?.["x-openai-isConsequential"] === false
+  );
+  assertCondition(
+    issues,
+    "compact completeJobShift is non-consequential for fluid gameplay",
+    compactOps.get("POST /api/jobs/shifts/{shiftId}/complete")?.["x-openai-isConsequential"] === false
   );
   assertCondition(
     issues,

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Compact",
-    "version": "2.10.1",
+    "version": "2.10.2",
     "description": "Schema compacto con hasta 30 operaciones para GPT Builder. Incluye ApplyTurn con missionPatch, activityCost, gameStatePatch y parches de economia/memoria/relacion social. Incluye previewSocialImpact con proyeccion de relationshipState y excluye rollback y mutadores peligrosos directos. El backend separa evento principal unico, rumores menores y eventos de fondo; el scheduler solo genera otro evento principal cuando no hay uno abierto. applyTurn, completeJobShift y context/compact pueden devolver narrativeHints/narrativeContext para variar escenas repetidas sin crear mecanicas nuevas."
   },
   "servers": [
@@ -1316,7 +1316,7 @@
             "ApiKeyAuth": []
           }
         ],
-        "x-openai-isConsequential": true,
+        "x-openai-isConsequential": false,
         "description": "Usar solo si cambia estado. Todo timeAdvance positivo requiere activityCost o biologicalCostExemptReason. activityCost se acumula entre horas y se procesa en :00. Misiones por missionPatch. Ubicacion por gameStatePatch.locationId."
       }
     },
@@ -1861,7 +1861,7 @@
             "ApiKeyAuth": []
           }
         ],
-        "x-openai-isConsequential": true
+        "x-openai-isConsequential": false
       }
     },
     "/api/needs/activity-cost/preview": {
