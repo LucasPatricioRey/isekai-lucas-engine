@@ -126,6 +126,26 @@ function compactProfileCaps(profile) {
 
 function slimNpcSummaryForProfile(npc, profile) {
   if (!npc || profile === "debug_audit") return npc;
+  const dramaticRole = npc.dialogueProfile?.dramaticRole
+    ? {
+        schemaVersion: npc.dialogueProfile.dramaticRole.schemaVersion,
+        publicMask: responseShaping.truncateText(npc.dialogueProfile.dramaticRole.publicMask || "", 90),
+        sceneWant: responseShaping.truncateText(npc.dialogueProfile.dramaticRole.sceneWant || "", 100),
+        resistanceMove: responseShaping.truncateText(npc.dialogueProfile.dramaticRole.resistanceMove || "", 90),
+        vulnerabilityTell: responseShaping.truncateText(npc.dialogueProfile.dramaticRole.vulnerabilityTell || "", 80),
+        objectAnchor: responseShaping.truncateText(npc.dialogueProfile.dramaticRole.objectAnchor || "", 90),
+        beatLadder: ["mascara", "friccion", "grieta", "giro"],
+        rule: "Usar gesto/objeto/dialogo; no mente privada.",
+      }
+    : null;
+  const emotionalSubtext = npc.dialogueProfile?.emotionalSubtext
+    ? {
+        defaultMood: responseShaping.truncateText(npc.dialogueProfile.emotionalSubtext.defaultMood || "", 80),
+        visibleTells: (npc.dialogueProfile.emotionalSubtext.visibleTells || []).slice(0, 2),
+        contradiction: responseShaping.truncateText(npc.dialogueProfile.emotionalSubtext.contradiction || "", 90),
+        rule: npc.dialogueProfile.emotionalSubtext.rule || "",
+      }
+    : null;
 
   return {
     npcId: npc.npcId,
@@ -137,12 +157,12 @@ function slimNpcSummaryForProfile(npc, profile) {
     persistenceLevel: npc.persistenceLevel || "",
     socialProfile: npc.socialProfile
       ? {
-          values: (npc.socialProfile.values || []).slice(0, 4),
-          tolerates: (npc.socialProfile.tolerates || []).slice(0, 4),
-          rejects: (npc.socialProfile.rejects || []).slice(0, 4),
-          boundaries: (npc.socialProfile.boundaries || []).slice(0, 4),
-          trustTriggers: (npc.socialProfile.trustTriggers || []).slice(0, 3),
-          trustBreakers: (npc.socialProfile.trustBreakers || []).slice(0, 3),
+          values: (npc.socialProfile.values || []).slice(0, 3),
+          tolerates: (npc.socialProfile.tolerates || []).slice(0, 3),
+          rejects: (npc.socialProfile.rejects || []).slice(0, 3),
+          boundaries: (npc.socialProfile.boundaries || []).slice(0, 3),
+          trustTriggers: (npc.socialProfile.trustTriggers || []).slice(0, 2),
+          trustBreakers: (npc.socialProfile.trustBreakers || []).slice(0, 2),
         }
       : null,
     emotionalProfile: npc.emotionalProfile
@@ -152,8 +172,8 @@ function slimNpcSummaryForProfile(npc, profile) {
           coreDrives: (npc.emotionalProfile.coreDrives || []).slice(0, 2),
           coreFears: (npc.emotionalProfile.coreFears || []).slice(0, 1),
           visibleTells: (npc.emotionalProfile.visibleTells || []).slice(0, 2),
-          contradiction: responseShaping.truncateText(npc.emotionalProfile.contradiction || "", 120),
-          sceneHooks: (npc.emotionalProfile.sceneHooks || []).slice(0, 2),
+          contradiction: responseShaping.truncateText(npc.emotionalProfile.contradiction || "", 90),
+          sceneHooks: (npc.emotionalProfile.sceneHooks || []).slice(0, 1),
         }
       : null,
     voiceProfile: npc.voiceProfile
@@ -162,7 +182,9 @@ function slimNpcSummaryForProfile(npc, profile) {
           personality: (npc.voiceProfile.personality || []).slice(0, 4),
           values: (npc.voiceProfile.values || []).slice(0, 3),
           boundaries: (npc.voiceProfile.boundaries || []).slice(0, 3),
-          dialogueGuidance: (npc.voiceProfile.dialogueGuidance || []).slice(0, 2),
+          dialogueGuidance: (npc.voiceProfile.dialogueGuidance || [])
+            .slice(0, 1)
+            .map((line) => responseShaping.truncateText(line, 120)),
         }
       : null,
     dialogueProfile: npc.dialogueProfile
@@ -172,11 +194,15 @@ function slimNpcSummaryForProfile(npc, profile) {
           relationshipRegister: npc.dialogueProfile.relationshipRegister || null,
           emotionalTemperature: npc.dialogueProfile.emotionalTemperature || null,
           currentPressure: npc.dialogueProfile.currentPressure || null,
-          dramaticRole: npc.dialogueProfile.dramaticRole || null,
-          emotionalSubtext: npc.dialogueProfile.emotionalSubtext || null,
+          dramaticRole,
+          emotionalSubtext,
           subtextSeed: npc.dialogueProfile.subtextSeed || "",
-          dialogueMoves: (npc.dialogueProfile.dialogueMoves || []).slice(0, 3),
-          avoid: (npc.dialogueProfile.avoid || []).slice(0, 3),
+          dialogueMoves: (npc.dialogueProfile.dialogueMoves || [])
+            .slice(0, 2)
+            .map((line) => responseShaping.truncateText(line, 120)),
+          avoid: (npc.dialogueProfile.avoid || [])
+            .slice(0, 2)
+            .map((line) => responseShaping.truncateText(line, 100)),
           rule: npc.dialogueProfile.rule || "",
         }
       : null,
@@ -196,10 +222,10 @@ function slimNpcSummaryForProfile(npc, profile) {
           schemaVersion: npc.relationshipState.schemaVersion,
           accessScore: npc.relationshipState.accessScore,
           stance: npc.relationshipState.stance || null,
-          narrativeGuidance: (npc.relationshipState.narrativeGuidance || []).slice(0, 2),
-          nextThresholds: (npc.relationshipState.nextThresholds || []).slice(0, 2),
-          blockers: (npc.relationshipState.blockers || []).slice(0, 2),
-          opportunities: (npc.relationshipState.opportunities || []).slice(0, 2),
+          narrativeGuidance: (npc.relationshipState.narrativeGuidance || []).slice(0, 1),
+          nextThresholds: (npc.relationshipState.nextThresholds || []).slice(0, 1),
+          blockers: (npc.relationshipState.blockers || []).slice(0, 1),
+          opportunities: (npc.relationshipState.opportunities || []).slice(0, 1),
         }
       : null,
     factionLinks: (npc.factionLinks || []).slice(0, 3).map((link) => ({

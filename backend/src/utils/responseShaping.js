@@ -1556,16 +1556,16 @@ function buildEmotionalSceneDirector({
   return {
     schemaVersion: "emotional_scene_director_v1",
     sceneMode: important ? "dramatized_scene" : "living_brief",
-    paragraphTarget: important ? "3-6 parrafos antes del HUD si hay decision o NPC relevante" : "1-3 parrafos con un detalle vivo antes del HUD",
+    paragraphTarget: important ? "3-6 parrafos antes del HUD si hay NPC/decision" : "1-3 parrafos vivos antes del HUD",
     emotionalQuestion: primarySource
       ? `Que mascara, limite o deseo visible se tensa en ${locationName} por ${primarySource.key}?`
       : `Que pequeno cambio visible hace que ${locationName} no se sienta estatica?`,
     beatEngine: [
-      "Anzuelo: abrir con objeto, gesto, sonido, cuerpo o interrupcion; no con resumen administrativo.",
-      "Mascara: el NPC primero protege rol, tarea, orgullo o limite; no concede todo de inmediato.",
-      "Presion: la accion de Lucas debe mover algo visible: pausa, mirada, objeto, distancia, tono o decision.",
-      "Grieta: mostrar una apertura, rechazo mas honesto, condicion o pregunta; no explicar todo el interior.",
-      "Salida: terminar con proxima decision clara y luego HUD mecanico.",
+      "Anzuelo: objeto/gesto/sonido/cuerpo; no resumen.",
+      "Mascara: NPC protege rol, tarea, orgullo o limite.",
+      "Presion: Lucas mueve pausa, mirada, objeto, distancia, tono o decision.",
+      "Grieta: apertura, rechazo honesto, condicion o pregunta; no explicar interior.",
+      "Salida: proxima decision clara y luego HUD.",
     ],
     sensoryAnchors: {
       body: buildBodyAnchor({ satietyPercent, energyPercent, lifePercent, injuries }),
@@ -1577,14 +1577,12 @@ function buildEmotionalSceneDirector({
           : "cuerpo de Lucas, lugar, clima y objetivos abiertos",
     },
     dialogueShape: {
-      importantNpcScene: "2-5 intervenciones con gesto/subtexto si la accion pide respuesta emocional o social.",
-      lineRule: "Una linea puede ser breve, pero debe cargar deseo, miedo, prueba, limite, oferta o consecuencia.",
-      noFlatReply: "Evitar respuesta de una sola frase minima cuando hay pedido, entrenamiento, conflicto o decision.",
+      importantNpcScene: "2-5 intervenciones con gesto/subtexto si hay respuesta emocional.",
+      lineRule: "Linea breve si carga deseo, miedo, prueba, limite, oferta o consecuencia.",
+      noFlatReply: "No una sola frase minima en pedido, entrenamiento, conflicto o decision.",
     },
-    slowBurnRule:
-      "No resolver confianza, intimidad, perdon, miedo o respeto de golpe; avanzar por microcambios visibles y consecuencias guardadas por backend.",
-    boundary:
-      "Dramatizar solo estado confirmado y subtexto visible; no inventar resultados mecanicos, conocimiento secreto ni pensamientos privados como certeza de Lucas.",
+    slowBurnRule: "Confianza, miedo, respeto o perdon avanzan por microcambios y backend.",
+    boundary: "Solo estado confirmado/subtexto visible; no mecanicas, secretos ni mente privada.",
   };
 }
 

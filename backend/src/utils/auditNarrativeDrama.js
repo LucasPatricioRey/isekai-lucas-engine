@@ -209,7 +209,7 @@ async function main() {
   assertCondition(
     issues,
     "emotional scene director keeps mechanics boundary",
-    /no inventar resultados mecanicos/.test(dramaticContext.emotionalScene?.boundary || "")
+    /no mecanicas/.test(dramaticContext.emotionalScene?.boundary || "")
   );
 
   if (warnings.length > 0) {
