@@ -1,9 +1,11 @@
 # world_bible.md — Isekai Lucas
 
-Versión: Fase 3 v0.2  
+Versión: Fase C9 v0.3
 Estado: versión validada por Lucas mediante revisión guiada  
-Uso: archivo de conocimiento/lore estable. No guarda estado vivo.  
-Continuidad canon inicial: Día 10, 12:00, La Grulla Azul, Hoshimori.
+Uso: archivo de conocimiento/lore estable. No guarda estado vivo y nunca reemplaza MongoDB/backend.
+Continuidad canon inicial/importada: Día 10, 12:00, La Grulla Azul, Hoshimori. La continuidad actual se consulta siempre en backend.
+
+Actualización C9: mantener este archivo como biblia de mundo, pero no usarlo para decidir día, hora, ubicación, misiones activas, eventos vivos, NPCs presentes, stock, heridas, conocimiento privado ni recompensas actuales.
 
 ---
 
