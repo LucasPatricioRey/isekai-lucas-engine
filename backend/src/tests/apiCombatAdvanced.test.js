@@ -127,6 +127,16 @@ async function createTempEnemyTemplate(overrides = {}) {
   return enemyId;
 }
 
+async function endEncounterIfActive(encounterId, reason = "Fixture cleanup.") {
+  const encounter = await CombatEncounter.findOne({ gameId: tempGameId, encounterId }).lean();
+  if (!encounter || encounter.status !== "active") return;
+  await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/end`, {
+    gameId: tempGameId,
+    endStatus: "cancelled",
+    reason,
+  });
+}
+
 describe("combat advanced API", () => {
   before(async () => {
     await startApi();
@@ -152,6 +162,7 @@ describe("combat advanced API", () => {
     assert.equal(schema.status, 200);
     assert.equal(schema.data["x-action-role"], "combat-advanced");
     assert.ok(schema.data.paths["/api/combat/advanced/encounters/start"]);
+    assert.ok(schema.data.components.schemas.EncounterType);
   });
 
   it("runs the C4 encounter lifecycle with backend resolution", async () => {
@@ -489,6 +500,259 @@ describe("combat advanced API", () => {
         reason: "Fixture cleanup.",
       });
     }
+  });
+
+  it("exposes C12 encounter policy on preview and start", async () => {
+    const previewStart = await post("/api/combat/advanced/encounters/start/preview", {
+      gameId: tempGameId,
+      enemyId: "enemy_bandido_menor",
+      reason: "Fixture C12: robo con amenaza formal.",
+      encounterType: "bandit_robbery",
+      combatMode: "real",
+    });
+
+    assert.equal(previewStart.status, 200, JSON.stringify(previewStart.data));
+    assert.equal(previewStart.data.preview.encounterDraft.encounterType, "bandit_robbery");
+    assert.equal(previewStart.data.preview.encounterDraft.encounterPolicy.enemyGoal, "intimidate_take_value_and_escape");
+    assert.equal(previewStart.data.preview.encounterDraft.encounterPolicy.gptBoundary.includes("backend"), true);
+
+    const started = await post("/api/combat/advanced/encounters/start", {
+      gameId: tempGameId,
+      enemyId: "enemy_bandido_menor",
+      reason: "Fixture C12: encuentro de robo.",
+      encounterType: "bandit_robbery",
+      terrainTags: ["road"],
+      visibility: "clear",
+      noiseLevel: "normal",
+      surpriseState: "none",
+    });
+
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    assert.equal(started.data.encounter.encounterType, "bandit_robbery");
+    assert.equal(started.data.encounter.encounterPolicy.stakes, "serious_social");
+    assert.equal(started.data.encounter.flags.c12EncounterPolicy, true);
+
+    await endEncounterIfActive(started.data.encounter.encounterId, "Fixture C12 policy cleanup.");
+  });
+
+  it("lets an opportunist bandit intimidate before attacking", async () => {
+    const enemyId = await createTempEnemyTemplate({
+      type: "human_hostile",
+      dangerLevel: "medium",
+      baseStats: {
+        life: 42,
+        hp: 42,
+        attack: 10,
+        defense: 5,
+        agility: 9,
+        perception: 10,
+        endurance: 5,
+        morale: 45,
+        speed: 9,
+      },
+      moraleProfile: {
+        baseState: "confident",
+        breaksAt: 8,
+        fleesAt: 12,
+        surrenderPossible: true,
+      },
+      behaviorProfile: {
+        archetype: "opportunist",
+        preferredActions: ["intimidate", "attack", "flee"],
+        avoidsActions: [],
+        targetPriority: ["weak", "valuable_items"],
+        notes: "Fixture C12: prefiere coercion antes que herirse.",
+      },
+    });
+
+    const started = await post("/api/combat/advanced/encounters/start", {
+      gameId: tempGameId,
+      enemyId,
+      reason: "Fixture C12: bandido amenaza antes de atacar.",
+      encounterType: "bandit_robbery",
+      terrainTags: ["road"],
+    });
+
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    const encounterId = started.data.encounter.encounterId;
+
+    const preparePreview = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/actions/preview`, {
+      gameId: tempGameId,
+      actionType: "prepare",
+    });
+    assert.equal(preparePreview.status, 200, JSON.stringify(preparePreview.data));
+
+    const prepared = await post("/api/combat/advanced/actions/apply", {
+      gameId: tempGameId,
+      previewId: preparePreview.data.preview.preview.previewId,
+    });
+    assert.equal(prepared.status, 200, JSON.stringify(prepared.data));
+    assert.equal(prepared.data.encounter.phase, "npc_turn");
+
+    const npcTurn = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/npc-turn/resolve`, {
+      gameId: tempGameId,
+    });
+    assert.equal(npcTurn.status, 200, JSON.stringify(npcTurn.data));
+    await endEncounterIfActive(encounterId, "Fixture C12 bandit cleanup.");
+
+    assert.equal(npcTurn.data.resolution.actionType, "intimidate");
+    assert.equal(npcTurn.data.resolution.modifiers.npcDecision.policy.encounterType, "bandit_robbery");
+    assert.equal(npcTurn.data.encounter.latestNpcDecision.selectedAction, "intimidate");
+  });
+
+  it("moves a territorial creature closer instead of attacking from poor distance", async () => {
+    const enemyId = await createTempEnemyTemplate({
+      type: "animal",
+      dangerLevel: "medium",
+      baseStats: {
+        life: 50,
+        hp: 50,
+        attack: 12,
+        defense: 7,
+        agility: 8,
+        perception: 7,
+        endurance: 9,
+        morale: 45,
+        speed: 8,
+      },
+      behaviorProfile: {
+        archetype: "territorial",
+        preferredActions: ["attack", "move"],
+        avoidsActions: ["surrender"],
+        targetPriority: ["closest"],
+        notes: "Fixture C12: quiere sacar al intruso de su espacio.",
+      },
+    });
+    const started = await post("/api/combat/advanced/encounters/start", {
+      gameId: tempGameId,
+      enemyId,
+      reason: "Fixture C12: criatura territorial a distancia mala.",
+      encounterType: "territorial_creature",
+      terrainTags: ["forest"],
+    });
+
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    const encounterId = started.data.encounter.encounterId;
+    const lucasId = started.data.encounter.participants.find((entry) => entry.side === "lucas").combatantId;
+    const enemyCombatantId = started.data.encounter.participants.find((entry) => entry.side === "enemy").combatantId;
+
+    await CombatEncounter.updateOne(
+      { gameId: tempGameId, encounterId },
+      {
+        $set: {
+          distanceMap: {
+            [lucasId]: { [enemyCombatantId]: "medium" },
+            [enemyCombatantId]: { [lucasId]: "medium" },
+          },
+        },
+      }
+    );
+
+    const defendPreview = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/actions/preview`, {
+      gameId: tempGameId,
+      actionType: "defend",
+    });
+    assert.equal(defendPreview.status, 200, JSON.stringify(defendPreview.data));
+
+    const defended = await post("/api/combat/advanced/actions/apply", {
+      gameId: tempGameId,
+      previewId: defendPreview.data.preview.preview.previewId,
+    });
+    assert.equal(defended.status, 200, JSON.stringify(defended.data));
+
+    const npcTurn = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/npc-turn/resolve`, {
+      gameId: tempGameId,
+    });
+    assert.equal(npcTurn.status, 200, JSON.stringify(npcTurn.data));
+    await endEncounterIfActive(encounterId, "Fixture C12 territorial cleanup.");
+
+    assert.equal(npcTurn.data.resolution.actionType, "move");
+    assert.equal(npcTurn.data.resolution.modifiers.npcDecision.policy.encounterType, "territorial_creature");
+    assert.equal(npcTurn.data.resolution.modifiers.currentDistance, "medium");
+    assert.equal(npcTurn.data.resolution.modifiers.desiredDistance, "short");
+  });
+
+  it("lets a wounded predator choose retreat pressure through backend AI", async () => {
+    const enemyId = await createTempEnemyTemplate({
+      type: "animal",
+      dangerLevel: "low",
+      baseStats: {
+        life: 36,
+        hp: 36,
+        attack: 8,
+        defense: 3,
+        agility: 12,
+        perception: 10,
+        endurance: 4,
+        morale: 35,
+        speed: 12,
+      },
+      moraleProfile: {
+        baseState: "cautious",
+        breaksAt: 6,
+        fleesAt: 10,
+        surrenderPossible: false,
+      },
+      behaviorProfile: {
+        archetype: "predatory",
+        preferredActions: ["attack", "flee"],
+        avoidsActions: ["surrender"],
+        targetPriority: ["isolated", "wounded"],
+        notes: "Fixture C12: prueba debilidad y evita coste alto.",
+      },
+    });
+    const started = await post("/api/combat/advanced/encounters/start", {
+      gameId: tempGameId,
+      enemyId,
+      reason: "Fixture C12: depredador herido decide si seguir.",
+      encounterType: "predatory_hunt",
+      terrainTags: ["forest"],
+    });
+
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    const encounterId = started.data.encounter.encounterId;
+    const enemyCombatantId = started.data.encounter.participants.find((entry) => entry.side === "enemy").combatantId;
+
+    const defendPreview = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/actions/preview`, {
+      gameId: tempGameId,
+      actionType: "defend",
+    });
+    assert.equal(defendPreview.status, 200, JSON.stringify(defendPreview.data));
+
+    const defended = await post("/api/combat/advanced/actions/apply", {
+      gameId: tempGameId,
+      previewId: defendPreview.data.preview.preview.previewId,
+    });
+    assert.equal(defended.status, 200, JSON.stringify(defended.data));
+
+    await CombatEncounter.updateOne(
+      { gameId: tempGameId, encounterId, "participants.combatantId": enemyCombatantId },
+      {
+        $set: {
+          "participants.$.hp.current": 8,
+          "participants.$.morale.current": 14,
+        },
+      }
+    );
+    await CombatantState.updateOne(
+      { gameId: tempGameId, combatantId: enemyCombatantId },
+      {
+        $set: {
+          "hp.current": 8,
+          "morale.current": 14,
+        },
+      }
+    );
+
+    const npcTurn = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/npc-turn/resolve`, {
+      gameId: tempGameId,
+    });
+    assert.equal(npcTurn.status, 200, JSON.stringify(npcTurn.data));
+    await endEncounterIfActive(encounterId, "Fixture C12 predator cleanup.");
+
+    assert.equal(npcTurn.data.resolution.actionType, "flee");
+    assert.equal(npcTurn.data.resolution.modifiers.npcDecision.policy.encounterType, "predatory_hunt");
+    assert.ok(npcTurn.data.resolution.modifiers.npcDecision.state.hpRatio < 0.3);
   });
 
   it("lets Lucas retreat through backend resolution", async () => {

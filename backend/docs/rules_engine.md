@@ -1,6 +1,6 @@
 # rules_engine.md — Motor Isekai Lucas
 
-Versión: Fase C11 v0.6 — balance fino de combate, equipo defensivo y matriz de auditoria
+Versión: Fase C12 v0.7 — conducta enemiga, tipos de encuentro y politica de combate backend
 Estado: versión validada por Lucas mediante revisión guiada  
 Fuente de migración: Enciclopedia V2 Isekai Lucas + decisiones confirmadas por Lucas durante Fase 1 + validación guiada Fase 2  
 Propósito: este archivo define **cómo se resuelve el juego**. No contiene el save vivo completo ni el lore mundial extenso; eso vive en MongoDB y `world_bible.md`.
@@ -9,6 +9,7 @@ Actualización v0.3: agrega sistema social ampliado, formato obligatorio de diá
 Actualización C9: el contexto compacto normal usa perfiles de proyección, oculta fixtures `testSuite` del canon, expone auditoría read-only `auditState` para modo técnico y formaliza que los archivos de conocimiento del GPT son guía estable, no save vivo.
 Actualización C10: agrega auditoria mutante controlada `audit:combat-playtest` sobre `GameState` temporal para verificar sparring, amenaza menor, bloqueo/esquiva, moral enemiga, retirada de Lucas, herida leve/tratamiento y evidencia post-combate sin loot inventado.
 Actualización C11: agrega `audit:combat-balance`, suaviza el escalado de críticos, aplica modificadores de arma/equipo defensivo y formaliza chaleco de cuero ligero/escudo simple como equipo común limitado.
+Actualización C12: agrega tipos formales de encuentro (`encounterType`), `encounterPolicy`, decision NPC persistida y `audit:combat-behavior` para validar que bandidos, depredadores, criaturas territoriales y sparring actuen por backend.
 
 ---
 
@@ -1215,11 +1216,53 @@ Antes de introducir enemigos nuevos, equipo nuevo o cambios de fórmula, ejecuta
 
 La retirada no es éxito narrativo automático. Aunque exista ruta buena, el backend compara distancia, ruta, velocidad, fatiga, terreno y rolls. El GPT debe narrar el resultado devuelto: escape, intento fallido, exposición o continuación del combate.
 
-### 16.6 Muerte
+### 16.6 Conducta enemiga C12
+
+Todo combate avanzado debe tener una politica de encuentro persistida en `CombatEncounter.flags.encounterPolicy`. El campo `encounterType` puede ser:
+
+- `sparring`;
+- `training`;
+- `minor_threat`;
+- `ambush`;
+- `pursuit`;
+- `defense`;
+- `territorial_creature`;
+- `predatory_hunt`;
+- `bandit_robbery`;
+- `mission_combat`;
+- `hazard_interruption`;
+- `unknown`.
+
+El backend usa esa politica junto con `EnemyTemplate.behaviorProfile`, `moraleProfile`, HP, moral, fatiga, distancia, terreno y estado visible de Lucas para elegir el turno NPC. El GPT no decide si el enemigo ataca, intimida, se mueve, se prepara o huye. Debe leer `resolution.modifiers.npcDecision` y narrar esa decision.
+
+Reglas de conducta:
+
+- Bandido/oportunista: prefiere intimidar y escapar con ventaja; no pelea hasta morir por botin menor.
+- Depredador: prueba debilidad; si el coste sube, puede retirarse.
+- Territorial/protector: intenta expulsar o abrir espacio; no siempre persigue.
+- Amenaza menor: hostiga y sobrevive; no debe volverse duelo epico por defecto.
+- Sparring/training: dano controlado y tono de practica; no convertirlo en combate letal si el backend no lo marca.
+- Moral rota o HP critico pueden forzar retirada backend aunque el narrador prefiera drama.
+
+Antes de cambiar `EnemyTemplate`, pesos de decision NPC, tipos de encuentro o reglas de conducta, ejecutar:
+
+```bash
+npm run audit:combat-behavior
+```
+
+Este audit clona el `GameState` vivo a un `gameId` temporal y verifica:
+
+- bandido que intimida antes de atacar;
+- criatura territorial que se reposiciona desde mala distancia;
+- depredador herido que intenta retirarse;
+- sparring con politica controlada;
+- limpieza total de documentos temporales.
+
+### 16.7 Muerte
 
 Muerte posible y permanente si la situación lo justifica. No matar NPCs importantes de forma barata, pero no usar plot armor si la situación fue letal.
 
-### 16.7 Recompensas
+### 16.8 Recompensas
 
 Matar enemigo no da loot automático. Sin contrato/prueba, no hay recompensa de gremio automática.
 

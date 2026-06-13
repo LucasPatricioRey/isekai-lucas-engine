@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Combat Advanced",
-    "version": "0.5.0",
-    "description": "Tercer bloque de Actions para combate avanzado. Cubre preview/apply con previewId, backend rolls, ataque, defensa, bloqueo, esquiva, retirada, moral enemiga, fatiga, heridas, uso controlado de objetos de tratamiento, evidencia/loot logico sin inventario automatico y tratamiento basico."
+    "version": "0.6.0",
+    "description": "Tercer bloque de Actions para combate avanzado. Cubre preview/apply con previewId, backend rolls, ataque, defensa, bloqueo, esquiva, retirada, moral enemiga, fatiga, heridas, conducta enemiga C12 por tipo de encuentro, uso controlado de objetos de tratamiento, evidencia/loot logico sin inventario automatico y tratamiento basico."
   },
   "servers": [
     {
@@ -37,6 +37,12 @@
         "enum": ["real", "sparring", "training"],
         "default": "real"
       },
+      "EncounterType": {
+        "type": "string",
+        "enum": ["sparring", "training", "minor_threat", "ambush", "pursuit", "defense", "territorial_creature", "predatory_hunt", "bandit_robbery", "mission_combat", "hazard_interruption", "unknown"],
+        "default": "unknown",
+        "description": "Tipo formal C12 del encuentro. El backend lo usa para politica de escena y conducta enemiga; el GPT no decide resultados mecanicos."
+      },
       "PreviewStartEncounterRequest": {
         "type": "object",
         "required": ["enemyId"],
@@ -61,6 +67,9 @@
           },
           "combatMode": {
             "$ref": "#/components/schemas/CombatMode"
+          },
+          "encounterType": {
+            "$ref": "#/components/schemas/EncounterType"
           }
         },
         "additionalProperties": false
@@ -89,6 +98,9 @@
           },
           "combatMode": {
             "$ref": "#/components/schemas/CombatMode"
+          },
+          "encounterType": {
+            "$ref": "#/components/schemas/EncounterType"
           },
           "terrainTags": {
             "type": "array",

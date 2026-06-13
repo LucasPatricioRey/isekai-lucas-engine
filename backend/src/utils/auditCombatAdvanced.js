@@ -190,6 +190,7 @@ async function main() {
   assertEqual(issues, "preview start canStart", previewStart.data?.preview?.canStart, true);
   assertEqual(issues, "preview start does not mutate GameState", previewStart.data?.preview?.mutation?.willMutateGameState, false);
   assertEqual(issues, "preview start would create encounter only on apply", previewStart.data?.preview?.mutation?.willCreateEncounter, true);
+  assertTrue(issues, "preview start exposes C12 encounter policy", Boolean(previewStart.data?.preview?.encounterDraft?.encounterPolicy?.gptBoundary));
 
   section("OpenAPI Combat Schema");
   const combatSchema = schemaResponse.data || {};
@@ -200,6 +201,7 @@ async function main() {
   assertTrue(issues, "schema includes applyAction", Boolean(combatSchema.paths?.["/api/combat/advanced/actions/apply"]?.post));
   assertTrue(issues, "schema includes block enum", combatSchema.components?.schemas?.PreviewActionRequest?.properties?.actionType?.enum?.includes("block"));
   assertTrue(issues, "schema includes combatMode", Boolean(combatSchema.components?.schemas?.CombatMode));
+  assertTrue(issues, "schema includes encounterType", Boolean(combatSchema.components?.schemas?.EncounterType));
 
   await assertMongoAvailable();
 

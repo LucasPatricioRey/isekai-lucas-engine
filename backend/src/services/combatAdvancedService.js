@@ -127,6 +127,20 @@ const ADVANCED_ACTIONS = [
 const ACTIONS_BY_TYPE = new Map(ADVANCED_ACTIONS.map((action) => [action.actionType, action]));
 const MANUAL_END_STATUSES = ["escaped", "deescalated", "interrupted", "cancelled"];
 const COMBAT_MODES = new Set(["real", "sparring", "training"]);
+const ENCOUNTER_TYPES = new Set([
+  "sparring",
+  "training",
+  "minor_threat",
+  "ambush",
+  "pursuit",
+  "defense",
+  "territorial_creature",
+  "predatory_hunt",
+  "bandit_robbery",
+  "mission_combat",
+  "hazard_interruption",
+  "unknown",
+]);
 const DEFENSIVE_CONDITIONS = ["defending", "blocking", "dodging"];
 const ACTIONS_WITH_RESOLVED_TARGET = new Set(["attack", "observe", "move", "flee", "intimidate", "protect"]);
 
@@ -162,8 +176,181 @@ function normalizeCombatMode(value = "real") {
   return COMBAT_MODES.has(value) ? value : "real";
 }
 
+function normalizeEncounterType(value = "", { combatMode = "real", enemy = null, sourceMissionId = "", sourceEventId = "" } = {}) {
+  const normalizedMode = normalizeCombatMode(combatMode);
+  if (normalizedMode === "sparring") return "sparring";
+  if (normalizedMode === "training") return "training";
+  if (ENCOUNTER_TYPES.has(value)) return value;
+  if (sourceMissionId) return "mission_combat";
+  if (sourceEventId && enemy?.type === "human_hostile") return "ambush";
+
+  const archetype = enemy?.behaviorProfile?.archetype || "";
+  if (["territorial", "protective"].includes(archetype)) return "territorial_creature";
+  if (["predatory", "hungry"].includes(archetype)) return "predatory_hunt";
+  if (enemy?.type === "human_hostile" || ["opportunist", "ambusher"].includes(archetype)) return "bandit_robbery";
+  if (enemy?.dangerLevel === "low" || enemy?.dangerRank === "low") return "minor_threat";
+  return "unknown";
+}
+
 function isControlledCombat(encounter) {
   return ["sparring", "training"].includes(normalizeCombatMode(encounter?.flags?.combatMode || "real"));
+}
+
+function buildEncounterStartLegitimacy({ sourceEventId = "", sourceMissionId = "", sourceCommitmentId = "", reason = "" } = {}) {
+  const linkedSources = [
+    sourceEventId ? "world_event" : "",
+    sourceMissionId ? "mission" : "",
+    sourceCommitmentId ? "commitment" : "",
+  ].filter(Boolean);
+  const hasNarrativeReason = String(reason || "").trim().length >= 8;
+  const warnings = [];
+
+  if (linkedSources.length === 0 && !hasNarrativeReason) {
+    warnings.push("El combate no tiene fuente formal ni motivo narrativo suficiente.");
+  } else if (linkedSources.length === 0) {
+    warnings.push("El combate depende solo de reason; no esta enlazado a evento, mision o compromiso.");
+  }
+
+  return {
+    hasFormalSource: linkedSources.length > 0,
+    linkedSources,
+    hasNarrativeReason,
+    warnings,
+  };
+}
+
+function buildEncounterPolicy({
+  enemy,
+  encounterType = "",
+  combatMode = "real",
+  sourceEventId = "",
+  sourceMissionId = "",
+  sourceCommitmentId = "",
+  reason = "",
+} = {}) {
+  const normalizedMode = normalizeCombatMode(combatMode);
+  const normalizedType = normalizeEncounterType(encounterType, {
+    combatMode: normalizedMode,
+    enemy,
+    sourceEventId,
+    sourceMissionId,
+  });
+  const behavior = enemy?.behaviorProfile || {};
+  const morale = enemy?.moraleProfile || {};
+  const preferredActions = unique(behavior.preferredActions || []);
+  const avoidsActions = unique(behavior.avoidsActions || []);
+  const startLegitimacy = buildEncounterStartLegitimacy({
+    sourceEventId,
+    sourceMissionId,
+    sourceCommitmentId,
+    reason,
+  });
+
+  const profiles = {
+    sparring: {
+      enemyGoal: "test_skill_without_serious_harm",
+      stakes: "controlled",
+      preferredEndStates: ["deescalated", "interrupted"],
+      escalation: "controlled",
+      narrativeGuidance: "Narrar como practica controlada; no convertir golpes en dano letal.",
+    },
+    training: {
+      enemyGoal: "teach_or_pressure_without_lethal_intent",
+      stakes: "controlled",
+      preferredEndStates: ["deescalated", "interrupted"],
+      escalation: "controlled",
+      narrativeGuidance: "Narrar como entrenamiento; consecuencias serias solo si el backend las crea.",
+    },
+    minor_threat: {
+      enemyGoal: "survive_and_harass",
+      stakes: "low",
+      preferredEndStates: ["enemy_fled", "escaped", "won"],
+      escalation: "low",
+      narrativeGuidance: "Amenaza concreta pero menor; no inflar la escena a duelo epico.",
+    },
+    ambush: {
+      enemyGoal: "gain_quick_advantage",
+      stakes: "serious",
+      preferredEndStates: ["won", "enemy_fled", "escaped"],
+      escalation: "fast",
+      narrativeGuidance: "La emboscada busca ventaja inicial; el backend decide si esa ventaja se sostiene.",
+    },
+    pursuit: {
+      enemyGoal: "catch_or_drive_away",
+      stakes: "moderate",
+      preferredEndStates: ["escaped", "enemy_fled", "interrupted"],
+      escalation: "mobile",
+      narrativeGuidance: "La distancia y la retirada importan; no declarar escape sin resolucion backend.",
+    },
+    defense: {
+      enemyGoal: "hold_ground_or_protect_area",
+      stakes: "moderate",
+      preferredEndStates: ["deescalated", "enemy_fled", "won"],
+      escalation: "reactive",
+      narrativeGuidance: "El enemigo reacciona a intrusion o amenaza; no asume maldad absoluta.",
+    },
+    territorial_creature: {
+      enemyGoal: "drive_intruder_away",
+      stakes: "moderate",
+      preferredEndStates: ["enemy_fled", "escaped", "deescalated", "won"],
+      escalation: "territorial",
+      narrativeGuidance: "La criatura quiere espacio; si pierde ventaja puede abrir distancia o huir.",
+    },
+    predatory_hunt: {
+      enemyGoal: "test_prey_and_retreat_if_costly",
+      stakes: "serious",
+      preferredEndStates: ["won", "enemy_fled", "escaped"],
+      escalation: "predatory",
+      narrativeGuidance: "El depredador prueba debilidad; no pelea hasta morir si la presa es demasiado costosa.",
+    },
+    bandit_robbery: {
+      enemyGoal: "intimidate_take_value_and_escape",
+      stakes: "serious_social",
+      preferredEndStates: ["enemy_fled", "surrendered", "escaped", "won"],
+      escalation: "coercive",
+      narrativeGuidance: "El humano hostil prefiere ventaja, intimidacion o retirada antes que morir por botin.",
+    },
+    mission_combat: {
+      enemyGoal: "resolve_mission_threat",
+      stakes: "mission",
+      preferredEndStates: ["won", "enemy_fled", "escaped"],
+      escalation: "mission_bound",
+      narrativeGuidance: "Conectar consecuencias solo con mision/evento formal; no inventar recompensas.",
+    },
+    hazard_interruption: {
+      enemyGoal: "interrupt_and_create_risk",
+      stakes: "situational",
+      preferredEndStates: ["interrupted", "escaped", "enemy_fled"],
+      escalation: "situational",
+      narrativeGuidance: "La escena existe por peligro ambiental o interrupcion; no prolongarla sin causa.",
+    },
+    unknown: {
+      enemyGoal: "survive_and_act_by_profile",
+      stakes: "unknown",
+      preferredEndStates: ["won", "enemy_fled", "escaped", "interrupted"],
+      escalation: "profile_driven",
+      narrativeGuidance: "Usar solo senales del backend y perfil enemigo.",
+    },
+  };
+
+  return {
+    version: "C12",
+    encounterType: normalizedType,
+    combatMode: normalizedMode,
+    enemyArchetype: behavior.archetype || "unknown",
+    enemyGoal: profiles[normalizedType]?.enemyGoal || profiles.unknown.enemyGoal,
+    stakes: profiles[normalizedType]?.stakes || profiles.unknown.stakes,
+    escalation: profiles[normalizedType]?.escalation || profiles.unknown.escalation,
+    preferredEndStates: profiles[normalizedType]?.preferredEndStates || profiles.unknown.preferredEndStates,
+    preferredNpcActions: preferredActions,
+    avoidsNpcActions: avoidsActions,
+    surrenderPossible: Boolean(morale.surrenderPossible),
+    moraleBreaksAt: numberOr(morale.breaksAt, 0),
+    moraleFleesAt: numberOr(morale.fleesAt, 0),
+    startLegitimacy,
+    narrativeGuidance: profiles[normalizedType]?.narrativeGuidance || profiles.unknown.narrativeGuidance,
+    gptBoundary: "El GPT narra los resultados devueltos por backend; no decide dano, escape, moral, heridas, loot ni victoria.",
+  };
 }
 
 function createDeterministicRng(seed) {
@@ -983,6 +1170,9 @@ function summarizeEncounter(encounter, extra = {}) {
     sourceCommitmentId: encounter.sourceCommitmentId || "",
     enemyId: encounter.enemyId,
     enemyName: encounter.enemyName,
+    encounterType: encounter.flags?.encounterType || "unknown",
+    encounterPolicy: encounter.flags?.encounterPolicy || null,
+    latestNpcDecision: encounter.flags?.latestNpcDecision || null,
     enemyStatus: encounter.enemyStatus || {},
     currentRound: encounter.currentRound || encounter.round || 1,
     round: encounter.round || encounter.currentRound || 1,
@@ -1250,11 +1440,21 @@ async function previewStartEncounter({
   sourceMissionId = "",
   sourceCommitmentId = "",
   combatMode = "real",
+  encounterType = "",
 } = {}) {
   const gameState = await getGameStateOrThrow(gameId);
   const enemy = await getEnemyOrThrow(enemyId);
   const activeEncounter = await CombatEncounter.findOne({ gameId, status: "active" }).lean();
   const canStart = !activeEncounter;
+  const encounterPolicy = buildEncounterPolicy({
+    enemy,
+    encounterType,
+    combatMode,
+    sourceEventId,
+    sourceMissionId,
+    sourceCommitmentId,
+    reason,
+  });
   const previewEncounterId = `preview_combat_${enemy.enemyId}`;
   const participants = buildInitialParticipants({
     encounterId: previewEncounterId,
@@ -1282,7 +1482,9 @@ async function previewStartEncounter({
       turnOrder: participants.map((entry) => entry.combatantId),
       currentActorId: participants[0]?.combatantId || "",
       reason,
-      combatMode,
+      combatMode: encounterPolicy.combatMode,
+      encounterType: encounterPolicy.encounterType,
+      encounterPolicy,
     },
     mutation: {
       willMutateGameState: false,
@@ -1304,10 +1506,20 @@ async function startEncounterAdvanced({
   noiseLevel = "unknown",
   surpriseState = "unknown",
   combatMode = "real",
+  encounterType = "",
 } = {}) {
   const gameState = await getGameStateOrThrow(gameId);
   await ensureNoActiveEncounter(gameId);
   const enemy = await getEnemyOrThrow(enemyId);
+  const encounterPolicy = buildEncounterPolicy({
+    enemy,
+    encounterType,
+    combatMode,
+    sourceEventId,
+    sourceMissionId,
+    sourceCommitmentId,
+    reason,
+  });
   const encounterId = createId("combat_adv");
   const participants = buildInitialParticipants({ encounterId, gameState, enemy });
   const [lucasParticipant, enemyParticipant] = participants;
@@ -1321,6 +1533,7 @@ async function startEncounterAdvanced({
       source: "startEncounterAdvanced",
       enemyId: enemy.enemyId,
       dangerRank: enemy.dangerRank || enemy.dangerLevel,
+      encounterType: encounterPolicy.encounterType,
       sourceEventId,
       sourceMissionId,
     },
@@ -1382,7 +1595,10 @@ async function startEncounterAdvanced({
       enemyType: enemy.type,
       rewardPolicy: enemy.rewardPolicy,
       c4Resolution: "backend_basic",
-      combatMode: normalizeCombatMode(combatMode),
+      c12EncounterPolicy: true,
+      combatMode: encounterPolicy.combatMode,
+      encounterType: encounterPolicy.encounterType,
+      encounterPolicy,
     },
   });
 
@@ -1403,6 +1619,8 @@ async function startEncounterAdvanced({
       enemyId: enemy.enemyId,
       enemyName: enemy.name,
       participantIds: participants.map((entry) => entry.combatantId),
+      encounterType: encounterPolicy.encounterType,
+      encounterPolicy,
     },
     visibility: "private",
     source: "system",
@@ -2556,6 +2774,232 @@ function resolveEnemyMoraleBreak({ actor }) {
   };
 }
 
+function getPoolRatio(pool = {}) {
+  return clamp(numberOr(pool.current, 0) / Math.max(1, numberOr(pool.max, 1)), 0, 1);
+}
+
+function hasCondition(combatant, condition) {
+  return (combatant?.conditions || []).includes(condition);
+}
+
+function getDistancePressure(distanceBand = "near") {
+  if (["grappled", "engaged"].includes(distanceBand)) return 2;
+  if (distanceBand === "near") return 1;
+  if (["short", "medium"].includes(distanceBand)) return -1;
+  if (["far", "out_of_sight"].includes(distanceBand)) return -2;
+  return 0;
+}
+
+function scorePreferredNpcActions(scores, preferredActions = [], avoidsActions = []) {
+  for (const actionType of preferredActions || []) {
+    if (Object.prototype.hasOwnProperty.call(scores, actionType)) scores[actionType] += 8;
+  }
+  for (const actionType of avoidsActions || []) {
+    if (Object.prototype.hasOwnProperty.call(scores, actionType)) scores[actionType] -= 18;
+  }
+}
+
+function chooseNpcCombatDecision({ rng, encounter, actor, target, gameState, enemy }) {
+  const policy = encounter.flags?.encounterPolicy || buildEncounterPolicy({
+    enemy,
+    encounterType: encounter.flags?.encounterType || "",
+    combatMode: encounter.flags?.combatMode || "real",
+    sourceEventId: encounter.sourceEventId || "",
+    sourceMissionId: encounter.sourceMissionId || "",
+    sourceCommitmentId: encounter.sourceCommitmentId || "",
+    reason: encounter.reason || "",
+  });
+  const behavior = enemy?.behaviorProfile || {};
+  const archetype = behavior.archetype || policy.enemyArchetype || "unknown";
+  const distanceBand = target ? getDistance(encounter, actor.combatantId, target.combatantId) : "near";
+  const hpRatio = getPoolRatio(actor.hp);
+  const moraleRatio = getPoolRatio(actor.morale);
+  const targetHpRatio = getPoolRatio(target?.hp || {});
+  const moraleCurrent = numberOr(actor.morale?.current, 0);
+  const fleesAt = Math.max(numberOr(policy.moraleFleesAt, 0), numberOr(enemy?.moraleProfile?.fleesAt, 0));
+  const breaksAt = Math.max(numberOr(policy.moraleBreaksAt, 0), numberOr(enemy?.moraleProfile?.breaksAt, 0));
+  const round = numberOr(encounter.round || encounter.currentRound, 1);
+  const fatigue = numberOr(actor.combatFatigue, 0);
+  const targetExposed = hasCondition(target, "exposed") || hasCondition(target, "off_balance");
+  const targetDefensive = DEFENSIVE_CONDITIONS.some((condition) => hasCondition(target, condition));
+  const controlledCombat = isControlledCombat(encounter);
+  const distancePressure = getDistancePressure(distanceBand);
+  const reasons = [];
+  const scores = {
+    attack: 42,
+    flee: 4,
+    intimidate: 0,
+    move: 0,
+    prepare: 0,
+    defend: 0,
+  };
+
+  if (controlledCombat) {
+    scores.attack -= 8;
+    scores.prepare += 18;
+    scores.defend += 12;
+    reasons.push("modo controlado");
+  }
+
+  if (distancePressure < 0) {
+    scores.move += 25 + Math.abs(distancePressure) * 4;
+    scores.attack -= 10;
+    reasons.push(`distancia ${distanceBand}`);
+  } else if (distancePressure > 0) {
+    scores.attack += 6;
+  }
+
+  if (hpRatio <= 0.25) {
+    scores.flee += 58;
+    scores.attack -= 18;
+    reasons.push("hp critico");
+  } else if (hpRatio <= 0.45) {
+    scores.flee += 30;
+    scores.defend += 10;
+    reasons.push("hp bajo");
+  }
+
+  if (moraleCurrent <= breaksAt || moraleRatio <= 0.18) {
+    scores.flee += 70;
+    scores.attack -= 20;
+    reasons.push("moral rota o casi rota");
+  } else if (moraleCurrent <= fleesAt || moraleRatio <= 0.35) {
+    scores.flee += 36;
+    scores.intimidate -= 8;
+    reasons.push("moral baja");
+  }
+
+  if (fatigue >= 28) {
+    scores.flee += 20;
+    scores.defend += 10;
+    scores.attack -= 10;
+    reasons.push("fatiga alta");
+  } else if (fatigue >= 16) {
+    scores.defend += 8;
+    scores.prepare += 5;
+    reasons.push("fatiga moderada");
+  }
+
+  if (targetExposed) {
+    scores.attack += 18;
+    reasons.push("objetivo expuesto");
+  }
+  if (targetDefensive) {
+    scores.intimidate += 8;
+    scores.prepare += 8;
+    scores.attack -= 6;
+    reasons.push("objetivo en guardia");
+  }
+  if (targetHpRatio > 0 && targetHpRatio <= 0.35) {
+    scores.attack += 12;
+    scores.intimidate += 8;
+    reasons.push("objetivo debilitado");
+  }
+
+  if (policy.encounterType === "bandit_robbery" || archetype === "opportunist") {
+    scores.intimidate += round <= 1 ? 56 : 14;
+    scores.flee += hpRatio <= 0.55 || moraleRatio <= 0.45 ? 24 : 4;
+    scores.attack += targetExposed ? 8 : -2;
+    reasons.push("perfil oportunista/coercitivo");
+  }
+
+  if (policy.encounterType === "territorial_creature" || ["territorial", "protective"].includes(archetype)) {
+    scores.attack += distancePressure >= 0 ? 14 : 0;
+    scores.move += distancePressure < 0 ? 18 : 0;
+    scores.flee += hpRatio <= 0.4 ? 24 : 0;
+    scores.intimidate -= 12;
+    reasons.push("perfil territorial");
+  }
+
+  if (policy.encounterType === "predatory_hunt" || ["predatory", "hungry"].includes(archetype)) {
+    scores.attack += targetHpRatio <= 0.5 ? 20 : 10;
+    scores.flee += hpRatio <= 0.45 || moraleRatio <= 0.45 ? 26 : 0;
+    scores.prepare += distancePressure < 0 ? 8 : 0;
+    reasons.push("perfil depredador");
+  }
+
+  if (archetype === "cowardly") {
+    scores.flee += hpRatio < 0.8 || moraleRatio < 0.8 ? 30 : 8;
+    scores.attack -= 8;
+    reasons.push("perfil cobarde");
+  }
+
+  if (archetype === "mindless") {
+    scores.attack += 36;
+    scores.flee -= 40;
+    scores.intimidate -= 30;
+    reasons.push("perfil sin criterio social");
+  }
+
+  if (["ambush", "mission_combat"].includes(policy.encounterType)) {
+    scores.attack += round <= 1 ? 12 : 4;
+    reasons.push(`encuentro ${policy.encounterType}`);
+  }
+
+  scorePreferredNpcActions(scores, policy.preferredNpcActions, policy.avoidsNpcActions);
+
+  if (!target) {
+    scores.attack = -1000;
+    scores.intimidate = -1000;
+    scores.move += 12;
+  }
+  if (distanceBand === "out_of_sight") {
+    scores.attack = -1000;
+    scores.intimidate = -1000;
+    scores.flee += 12;
+  }
+  if (!policy.surrenderPossible) {
+    // Surrender remains a manual/end-state concern for now; keep C12 choices to supported NPC actions.
+  }
+
+  const tieBreaker = rollDie(rng, 6) / 100;
+  const ranked = Object.entries(scores)
+    .map(([actionType, score]) => ({
+      actionType,
+      score: Number((score + tieBreaker).toFixed(2)),
+    }))
+    .sort((left, right) => right.score - left.score);
+  const selected = ranked[0]?.actionType || "attack";
+  const moveDirection = selected === "move" && hpRatio <= 0.45 ? "farther" : "closer";
+
+  return {
+    version: "C12",
+    selectedAction: selected,
+    reason: reasons.join("; ") || "perfil enemigo y estado actual",
+    scores,
+    ranked: ranked.slice(0, 4),
+    policy: {
+      encounterType: policy.encounterType,
+      enemyGoal: policy.enemyGoal,
+      stakes: policy.stakes,
+      enemyArchetype: policy.enemyArchetype,
+    },
+    state: {
+      hpRatio: Number(hpRatio.toFixed(2)),
+      moraleRatio: Number(moraleRatio.toFixed(2)),
+      moraleCurrent,
+      fleesAt,
+      breaksAt,
+      fatigue,
+      distanceBand,
+      targetHpRatio: Number(targetHpRatio.toFixed(2)),
+    },
+    params: selected === "move" ? { direction: moveDirection } : {},
+    gptBoundary: "Narrar esta decision; no cambiar actionType ni resultado mecanico.",
+  };
+}
+
+function attachNpcDecision(resolution, decision) {
+  return {
+    ...resolution,
+    modifiers: {
+      ...(resolution.modifiers || {}),
+      npcDecision: decision,
+    },
+    narrativeSummary: `${resolution.narrativeSummary} Decision NPC C12: ${decision.selectedAction} (${decision.reason}).`,
+  };
+}
+
 async function finalizeEncounterFatigueIfNeeded({ gameState, encounter }) {
   if (encounter.status === "active") return null;
   if (encounter.flags?.combatFatigueConverted) return null;
@@ -2984,16 +3428,26 @@ async function resolveNextNpcTurn({ gameId = "isekai_lucas_main", encounterId } 
     })
   );
 
-  let resolution;
-  const enemyHpRatio = numberOr(actor.hp?.current, 0) / Math.max(1, numberOr(actor.hp?.max, 1));
-  const moraleCurrent = numberOr(actor.morale?.current, 0);
   const moraleBroken = isEnemyMoraleBroken(actor, enemy);
-  const shouldFlee = moraleBroken || moraleCurrent <= 0 || (enemyHpRatio < 0.25 && rollDie(rng, 20) >= 12);
+  const decision = chooseNpcCombatDecision({ rng, encounter, actor, target, gameState, enemy });
+  let resolution;
 
   if (moraleBroken) {
-    resolution = resolveEnemyMoraleBreak({ actor });
-  } else if (shouldFlee) {
+    resolution = attachNpcDecision(resolveEnemyMoraleBreak({ actor }), {
+      ...decision,
+      selectedAction: "flee",
+      reason: "moral rota por umbral de perfil enemigo",
+    });
+  } else if (decision.selectedAction === "flee") {
     resolution = resolveFlee({ rng, encounter, actor, target, gameState, enemy });
+  } else if (decision.selectedAction === "intimidate") {
+    resolution = resolveIntimidate({ rng, actor, target, gameState, enemy });
+  } else if (decision.selectedAction === "move") {
+    resolution = resolveMove({ encounter, actor, target, params: decision.params || {} });
+  } else if (decision.selectedAction === "prepare") {
+    resolution = resolvePrepare({ actor });
+  } else if (decision.selectedAction === "defend") {
+    resolution = resolveDefend({ actor });
   } else {
     resolution = resolveAttack({
       rng,
@@ -3006,6 +3460,7 @@ async function resolveNextNpcTurn({ gameId = "isekai_lucas_main", encounterId } 
       actionId: `npc_${encounterId}_${encounter.round || encounter.currentRound || 1}`,
     });
   }
+  if (!resolution.modifiers?.npcDecision) resolution = attachNpcDecision(resolution, decision);
 
   const changedCombatants = [actor];
   if (target && target.combatantId !== actor.combatantId) changedCombatants.push(target);
@@ -3030,8 +3485,14 @@ async function resolveNextNpcTurn({ gameId = "isekai_lucas_main", encounterId } 
       encounterId,
       actorId,
       actionType: resolution.actionType,
+      npcDecision: decision,
     },
   });
+
+  encounter.flags = {
+    ...(encounter.flags || {}),
+    latestNpcDecision: decision,
+  };
 
   return persistResolution({
     gameState,
