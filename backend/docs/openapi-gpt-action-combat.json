@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Combat Advanced",
-    "version": "0.4.0",
-    "description": "Tercer bloque de Actions para combate avanzado. Cubre preview/apply con previewId, backend rolls, ataque, defensa, bloqueo, esquiva, retirada, moral enemiga, fatiga, heridas, evidencia/loot logico sin inventario automatico y tratamiento basico."
+    "version": "0.5.0",
+    "description": "Tercer bloque de Actions para combate avanzado. Cubre preview/apply con previewId, backend rolls, ataque, defensa, bloqueo, esquiva, retirada, moral enemiga, fatiga, heridas, uso controlado de objetos de tratamiento, evidencia/loot logico sin inventario automatico y tratamiento basico."
   },
   "servers": [
     {
@@ -136,6 +136,7 @@
           },
           "params": {
             "type": "object",
+            "description": "Parametros por accion. Para use_item C8.1: enviar itemId real en inventario e injuryId real; el backend decide consumo, calidad de tratamiento y consecuencias.",
             "additionalProperties": true
           }
         },
@@ -409,7 +410,7 @@
       "post": {
         "operationId": "combatAdvancedApplyAction",
         "summary": "Aplica una accion previsualizada.",
-        "description": "Valida previewId, actor actual y hash de estado antes de resolver. Algunas acciones, como use_item/use_magic/protect, pueden devolver 501 hasta fases posteriores.",
+        "description": "Valida previewId, actor actual y hash de estado antes de resolver. use_item consume inventario real solo para tratamientos soportados; use_magic/protect pueden devolver 501 hasta fases posteriores.",
         "requestBody": {
           "required": true,
           "content": {
@@ -718,5 +719,5 @@
   },
   "x-action-role": "combat-advanced",
   "x-no-overlap-with": "openapi-gpt-action-compact.json",
-  "x-phase": "C7-hardening"
+  "x-phase": "C8.1-combat-equipment-items"
 }

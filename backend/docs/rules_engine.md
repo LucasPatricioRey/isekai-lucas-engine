@@ -1174,6 +1174,8 @@ Fatiga, miedo y retirada importan.
 
 Defender, bloquear, esquivar y retirarse son acciones mecanicas distintas. Bloqueo depende de guardia/equipo y `skill_bloqueo`; esquiva depende de espacio, terreno y `skill_esquiva`; retirada depende de distancia, ruta de escape, terreno, fatiga y `skill_retirada`. El GPT no decide si funcionan: debe usar preview/apply de combate.
 
+Usar objetos durante combate tambien requiere preview/apply de combate. `use_item` solo puede consumir items reales del inventario y, en C8.1, se limita a tratamiento de campo con `itemId` e `injuryId` reales. El backend decide consumo, calidad, estabilizacion y logs; el narrador no puede inventar curacion, vendajes disponibles ni restauracion de vida.
+
 ### 16.4 Muerte
 
 Muerte posible y permanente si la situación lo justifica. No matar NPCs importantes de forma barata, pero no usar plot armor si la situación fue letal.

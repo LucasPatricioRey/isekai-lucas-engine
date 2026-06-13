@@ -145,6 +145,7 @@ describe("combat advanced API", () => {
     assert.ok(actions.data.actions.some((action) => action.actionType === "attack"));
     assert.ok(actions.data.actions.some((action) => action.actionType === "block" && action.c4ApplySupported));
     assert.ok(actions.data.actions.some((action) => action.actionType === "dodge" && action.c4ApplySupported));
+    assert.ok(actions.data.actions.some((action) => action.actionType === "use_item" && action.c4ApplySupported));
     assert.ok(actions.data.actions.some((action) => action.actionType === "flee"));
 
     const schema = await get("/docs/openapi-gpt-action-combat.json");
@@ -344,6 +345,9 @@ describe("combat advanced API", () => {
 
     assert.equal(started.status, 200, JSON.stringify(started.data));
     const encounterId = started.data.encounter.encounterId;
+    const skillBefore = (await GameState.findOne({ gameId: tempGameId }).lean()).skills.find(
+      (skill) => skill.skillId === "skill_bloqueo"
+    );
 
     const blockPreview = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/actions/preview`, {
       gameId: tempGameId,
@@ -361,7 +365,17 @@ describe("combat advanced API", () => {
     assert.equal(blockApplied.status, 200, JSON.stringify(blockApplied.data));
     assert.equal(blockApplied.data.resolution.actionType, "block");
     assert.ok(blockApplied.data.resolution.modifiers.expectedDefenseBonus >= 4);
+    assert.ok(
+      blockApplied.data.resolution.skillProgression.some(
+        (entry) => entry.skillId === "skill_bloqueo" && entry.validation.effectiveExpDelta > 0
+      )
+    );
     assert.equal(blockApplied.data.encounter.phase, "npc_turn");
+
+    const skillAfter = (await GameState.findOne({ gameId: tempGameId }).lean()).skills.find(
+      (skill) => skill.skillId === "skill_bloqueo"
+    );
+    assert.ok(skillAfter.exp > skillBefore.exp || skillAfter.level > skillBefore.level);
 
     const npcTurn = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/npc-turn/resolve`, {
       gameId: tempGameId,
@@ -667,6 +681,116 @@ describe("combat advanced API", () => {
       gameId: tempGameId,
     });
     assert.equal(secondClaim.status, 400);
+  });
+
+  it("uses a real inventory item in combat to treat a wound without restoring life", async () => {
+    const injuryId = `injury_combat_c8_use_item_${Date.now()}`;
+    const gameState = await GameState.findOne({ gameId: tempGameId });
+    const lifeBefore = gameState.lucasStatus.life.current;
+
+    gameState.inventory = [
+      ...(gameState.inventory || []).filter((entry) => entry.itemId !== "item_vendaje_limpio"),
+      {
+        itemId: "item_vendaje_limpio",
+        quantity: 2,
+        condition: "normal",
+        equipped: false,
+        notes: "Fixture C8 use_item.",
+      },
+    ];
+    gameState.lucasStatus.injuries.push({
+      injuryId,
+      location: "right_arm",
+      severity: "leve",
+      description: "Fixture C8 combat use_item wound.",
+      effects: ["sangrado 1"],
+      createdDay: gameState.currentDay,
+      createdTime: gameState.time,
+    });
+    await gameState.save();
+
+    await InjuryRecord.create({
+      injuryId,
+      gameId: tempGameId,
+      encounterId: "",
+      targetType: "character",
+      targetId: "char_lucas",
+      bodyPart: "right_arm",
+      injuryType: "cut",
+      severity: "minor",
+      bleeding: 1,
+      pain: 2,
+      mobilityPenalty: 0,
+      actionPenalty: -1,
+      untreatedRisk: "low",
+      requiresTreatment: true,
+      createdDay: gameState.currentDay,
+      createdTime: gameState.time,
+      notes: "Fixture C8 combat use_item wound.",
+    });
+
+    const enemyId = await createTempEnemyTemplate({
+      baseStats: {
+        life: 12,
+        hp: 12,
+        attack: 1,
+        defense: 0,
+        agility: 0,
+        perception: 1,
+        endurance: 1,
+        morale: 8,
+        speed: 0,
+      },
+    });
+    const started = await post("/api/combat/advanced/encounters/start", {
+      gameId: tempGameId,
+      enemyId,
+      reason: "Fixture: use_item en combate.",
+      terrainTags: ["road"],
+    });
+
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    const encounterId = started.data.encounter.encounterId;
+
+    const preview = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/actions/preview`, {
+      gameId: tempGameId,
+      actionType: "use_item",
+      params: {
+        itemId: "item_vendaje_limpio",
+        injuryId,
+      },
+    });
+
+    assert.equal(preview.status, 200, JSON.stringify(preview.data));
+    assert.equal(preview.data.preview.canAct, true);
+    assert.equal(preview.data.preview.mutation.willMutateGameState, true);
+
+    const applied = await post("/api/combat/advanced/actions/apply", {
+      gameId: tempGameId,
+      previewId: preview.data.preview.preview.previewId,
+    });
+
+    assert.equal(applied.status, 200, JSON.stringify(applied.data));
+    assert.equal(applied.data.resolution.actionType, "use_item");
+    assert.equal(applied.data.resolution.modifiers.willRestoreLife, false);
+    assert.equal(applied.data.resolution.inventoryChanges[0].itemId, "item_vendaje_limpio");
+    assert.equal(applied.data.resolution.inventoryChanges[0].before, 2);
+    assert.equal(applied.data.resolution.inventoryChanges[0].after, 1);
+    assert.equal(applied.data.resolution.injuriesTreated[0].injuryId, injuryId);
+    assert.equal(applied.data.logEntry.inventoryChanges[0].itemId, "item_vendaje_limpio");
+
+    const afterState = await GameState.findOne({ gameId: tempGameId }).lean();
+    assert.equal(afterState.lucasStatus.life.current, lifeBefore);
+    assert.equal(afterState.inventory.find((entry) => entry.itemId === "item_vendaje_limpio").quantity, 1);
+    const afterInjury = await InjuryRecord.findOne({ gameId: tempGameId, injuryId }).lean();
+    assert.equal(afterInjury.bleeding, 0);
+    assert.equal(afterInjury.status, "healing");
+
+    await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/end`, {
+      gameId: tempGameId,
+      endStatus: "cancelled",
+      reason: "Fixture cleanup.",
+    });
   });
 
   it("previews and applies C5 injury treatment without restoring life", async () => {

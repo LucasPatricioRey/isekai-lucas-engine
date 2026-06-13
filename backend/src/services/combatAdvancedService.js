@@ -15,6 +15,7 @@ const Mission = require("../models/Mission");
 const WeaponProfile = require("../models/WeaponProfile");
 const WorldEvent = require("../models/WorldEvent");
 const { createAutomaticCheckpoint } = require("./checkpointService");
+const { previewSkillProgression } = require("./skillProgressionService");
 
 const ADVANCED_ACTIONS = [
   {
@@ -86,8 +87,8 @@ const ADVANCED_ACTIONS = [
     label: "Usar objeto",
     economySlot: "mainAction",
     targetRequired: false,
-    c4ApplySupported: false,
-    notes: "Consumo real de objetos queda para fase posterior.",
+    c4ApplySupported: true,
+    notes: "Consume objeto real de inventario para usos inmediatos soportados; en C8 solo tratamiento de campo sin restaurar vida.",
   },
   {
     actionType: "use_magic",
@@ -324,6 +325,206 @@ function getBlockingEquipmentModifier(combatant) {
   if (equippedIds.some((itemId) => itemId.includes("escudo") || itemId.includes("shield"))) return 3;
   if (equippedIds.some((itemId) => itemId.includes("daga") || itemId.includes("sword") || itemId.includes("espada"))) return 1;
   return 0;
+}
+
+function getInventoryEntry(gameState, itemId) {
+  return (gameState?.inventory || []).find(
+    (entry) => entry.itemId === itemId && numberOr(entry.quantity, 0) > 0
+  );
+}
+
+function consumeInventoryItem(gameState, itemId, quantity = 1) {
+  const entry = getInventoryEntry(gameState, itemId);
+  if (!entry) return null;
+
+  const before = numberOr(entry.quantity, 0);
+  const consumed = clamp(quantity, 1, before);
+  const after = before - consumed;
+
+  if (after > 0) {
+    entry.quantity = after;
+  } else {
+    gameState.inventory = (gameState.inventory || []).filter((candidate) => candidate.itemId !== itemId);
+  }
+
+  gameState.markModified("inventory");
+  return {
+    itemId,
+    before,
+    after,
+    delta: after - before,
+    consumed,
+  };
+}
+
+function getCombatItemUseDefinition(item) {
+  const tags = new Set(item?.tags || []);
+  const subtype = item?.subtype || "";
+  if (!item) {
+    return { supported: false, reason: "El itemId no existe en el catalogo." };
+  }
+  if (item.type !== "medicine") {
+    return { supported: false, reason: `El objeto ${item.itemId} no es medicina usable en combate.` };
+  }
+  if (subtype === "bandage" || tags.has("bandage")) {
+    return {
+      supported: true,
+      itemUseType: "field_dressing",
+      treatmentType: "field_dressing",
+      quality: subtype === "bandage_kit" || tags.has("kit") ? "good" : "basic",
+      requiresInjuryId: true,
+    };
+  }
+  if (subtype === "ointment" || tags.has("ointment")) {
+    return {
+      supported: true,
+      itemUseType: "ointment",
+      treatmentType: "ointment",
+      quality: "basic",
+      requiresInjuryId: true,
+    };
+  }
+
+  return {
+    supported: false,
+    reason: `El objeto ${item.itemId} no tiene uso inmediato de combate soportado.`,
+  };
+}
+
+function getCombatSkillActionCounts(encounter) {
+  return encounter?.flags?.combatSkillActionCounts || {};
+}
+
+function incrementCombatSkillActionCount(encounter, key) {
+  encounter.flags = {
+    ...(encounter.flags || {}),
+    combatSkillActionCounts: {
+      ...getCombatSkillActionCounts(encounter),
+      [key]: numberOr(getCombatSkillActionCounts(encounter)[key], 0) + 1,
+    },
+  };
+  encounter.markModified("flags");
+}
+
+function getGameStateSkill(gameState, skillId) {
+  return (gameState?.skills || []).find((skill) => skill.skillId === skillId) || null;
+}
+
+function applySkillProgressionToGameState(skill, progression) {
+  if (!skill || !progression?.after) return;
+  skill.phase = progression.after.phase;
+  skill.level = progression.after.level;
+  skill.exp = progression.after.exp;
+  skill.expToNext = progression.after.expToNext;
+}
+
+function buildCombatSkillCandidate({ encounter, resolution, weaponProfile = null }) {
+  const actionType = resolution?.actionType || "";
+  if (actionType === "attack") {
+    const requiredSkillId = weaponProfile?.requiredSkillId || "";
+    const skillId = ["skill_daga", "skill_pelea_sin_armas"].includes(requiredSkillId)
+      ? requiredSkillId
+      : "skill_tactica_basica";
+    return {
+      skillId,
+      category: "combate",
+      expDelta: resolution.result?.hit ? 5 : 3,
+      reason: `Combate avanzado: ataque ${weaponProfile?.name || "sin perfil"}.`,
+    };
+  }
+  if (actionType === "block") {
+    return {
+      skillId: "skill_bloqueo",
+      category: "combate_bloqueos",
+      expDelta: 4,
+      reason: "Combate avanzado: bloqueo activo.",
+    };
+  }
+  if (actionType === "dodge") {
+    return {
+      skillId: "skill_esquiva",
+      category: "combate_esquivas",
+      expDelta: 5,
+      reason: "Combate avanzado: esquiva activa.",
+    };
+  }
+  if (actionType === "flee") {
+    return {
+      skillId: "skill_retirada",
+      category: "huida_controlada",
+      expDelta: resolution.result?.escaped ? 6 : 4,
+      reason: "Combate avanzado: retirada bajo presion.",
+    };
+  }
+  if (["defend", "observe", "move", "intimidate", "prepare"].includes(actionType)) {
+    const expByAction = {
+      defend: 2,
+      observe: 3,
+      move: 2,
+      intimidate: 4,
+      prepare: 2,
+    };
+    return {
+      skillId: "skill_tactica_basica",
+      category: "combate",
+      expDelta: expByAction[actionType] || 2,
+      reason: `Combate avanzado: ${actionType}.`,
+    };
+  }
+
+  return null;
+}
+
+function applyCombatSkillAward({ gameState, encounter, actor, resolution, weaponProfile = null }) {
+  if (!actor || actor.side !== "lucas") return [];
+  const candidate = buildCombatSkillCandidate({ encounter, resolution, weaponProfile });
+  if (!candidate) return [];
+
+  const skill = getGameStateSkill(gameState, candidate.skillId);
+  if (!skill) {
+    return [
+      {
+        skillId: candidate.skillId,
+        skipped: true,
+        reason: "La habilidad tecnica no existe en GameState.",
+      },
+    ];
+  }
+
+  const key = `${candidate.skillId}:${candidate.category}`;
+  const previousSimilarCount = numberOr(getCombatSkillActionCounts(encounter)[key], 0);
+  const modifiers = {
+    realRisk: previousSimilarCount === 0 && !isControlledCombat(encounter),
+    newContext: previousSimilarCount === 0,
+  };
+  const preview = previewSkillProgression({
+    skill,
+    expDelta: candidate.expDelta,
+    reason: candidate.reason,
+    category: candidate.category,
+    modifiers,
+    currentEnergy: gameState.lucasStatus?.energy?.current,
+    durationMinutes: 1,
+    antiFarmingContext: {
+      previousSimilarCount,
+    },
+  });
+
+  applySkillProgressionToGameState(skill, preview.progression);
+  gameState.markModified("skills");
+  incrementCombatSkillActionCount(encounter, key);
+
+  return [
+    {
+      skillId: candidate.skillId,
+      category: candidate.category,
+      reason: candidate.reason,
+      previousSimilarCount,
+      modifiers,
+      validation: preview.validation,
+      progression: preview.progression,
+    },
+  ];
 }
 
 function getCombatantStats({ combatant, enemy, gameState, weaponProfile = null }) {
@@ -1192,6 +1393,56 @@ function validateResolvedActionIntent({ encounter, action, actorId, targetIds = 
   return blockingReasons;
 }
 
+async function validateUseItemIntent({ gameId, params = {} }) {
+  const blockingReasons = [];
+  const itemId = params.itemId || "";
+  const injuryId = params.injuryId || "";
+
+  if (!itemId) blockingReasons.push("use_item requiere params.itemId.");
+  if (!injuryId) blockingReasons.push("use_item de tratamiento requiere params.injuryId.");
+  if (!itemId && !injuryId) return blockingReasons;
+
+  const [gameState, item, injury] = await Promise.all([
+    GameState.findOne({ gameId }).lean(),
+    itemId ? Item.findOne({ itemId }).lean() : Promise.resolve(null),
+    injuryId ? InjuryRecord.findOne({ gameId, injuryId }).lean() : Promise.resolve(null),
+  ]);
+
+  if (!gameState) {
+    blockingReasons.push(`No existe GameState para gameId: ${gameId}.`);
+    return blockingReasons;
+  }
+
+  if (itemId && !getInventoryEntry(gameState, itemId)) {
+    blockingReasons.push(`Lucas no tiene ${itemId} en inventario disponible.`);
+  }
+
+  const itemUse = getCombatItemUseDefinition(item);
+  if (itemId && !itemUse.supported) blockingReasons.push(itemUse.reason);
+
+  if (injuryId && !injury) {
+    blockingReasons.push(`No existe InjuryRecord para tratar: ${injuryId}.`);
+  }
+
+  if (injury) {
+    if (injury.targetType !== "character" || injury.targetId !== "char_lucas") {
+      blockingReasons.push("C8 solo permite usar objetos de tratamiento sobre heridas de Lucas.");
+    }
+    const plan = buildTreatmentPlan(injury, {
+      treatmentType: itemUse.treatmentType || "field_dressing",
+      quality: itemUse.quality || "basic",
+    });
+    if (!plan.canTreat) {
+      blockingReasons.push(`La herida no admite tratamiento en estado ${injury.status}.`);
+    }
+    if (itemUse.itemUseType === "ointment" && numberOr(injury.pain, 0) <= 0) {
+      blockingReasons.push("El unguento no tiene efecto inmediato: la herida no registra dolor tratable.");
+    }
+  }
+
+  return blockingReasons;
+}
+
 async function listAvailableAdvancedActions({ encounterId } = {}) {
   const encounter = await getEncounterOrThrow(encounterId);
   return {
@@ -1235,8 +1486,12 @@ async function previewAdvancedAction({
       targetIds: resolvedTargetIds,
     })
   );
+  if (actionType === "use_item") {
+    availability.blockingReasons.push(...(await validateUseItemIntent({ gameId, params })));
+  }
 
   const canAct = availability.blockingReasons.length === 0;
+  const willMutateGameStateOnApply = Boolean(action.c4ApplySupported);
   const stateHash = getEncounterStateHash(encounter);
   const previewId = createId("combat_preview");
   const deterministicSeed = hashObject({
@@ -1278,8 +1533,8 @@ async function previewAdvancedAction({
     targetIds: resolvedTargetIds,
     params,
     expectedCosts: {
-      willMutateGameState: false,
-      willMutateGameStateOnApply: ["flee", "surrender"].includes(actionType) ? false : "possible",
+      willMutateGameState: willMutateGameStateOnApply,
+      willMutateGameStateOnApply,
       willMutateEncounterOnApply: Boolean(action.c4ApplySupported),
       c4ApplySupported: Boolean(action.c4ApplySupported),
     },
@@ -1315,7 +1570,7 @@ async function previewAdvancedAction({
     encounter: summarizeEncounter(encounter),
     action: availability,
     mutation: {
-      willMutateGameState: false,
+      willMutateGameState: willMutateGameStateOnApply,
       willMutateEncounter: false,
       willCreatePreviewToken: true,
       willResolveCombat: Boolean(action.c4ApplySupported),
@@ -1998,6 +2253,128 @@ function resolveSurrender({ actor }) {
   };
 }
 
+async function resolveUseItem({ actor, gameState, params = {} }) {
+  const itemId = params.itemId || "";
+  const injuryId = params.injuryId || "";
+  if (!itemId) throw makeError("use_item requiere params.itemId.", 400);
+  if (!injuryId) throw makeError("use_item de tratamiento requiere params.injuryId.", 400);
+
+  const inventoryEntry = getInventoryEntry(gameState, itemId);
+  if (!inventoryEntry) throw makeError(`Lucas no tiene ${itemId} en inventario disponible.`, 400);
+
+  const [item, injury] = await Promise.all([
+    Item.findOne({ itemId }).lean(),
+    InjuryRecord.findOne({ gameId: gameState.gameId, injuryId }),
+  ]);
+  const itemUse = getCombatItemUseDefinition(item);
+  if (!itemUse.supported) throw makeError(itemUse.reason, 400, { itemId });
+  if (!injury) throw makeError(`No existe InjuryRecord para tratar: ${injuryId}.`, 404);
+  if (injury.targetType !== "character" || injury.targetId !== "char_lucas") {
+    throw makeError("C8 solo permite usar objetos de tratamiento sobre heridas de Lucas.", 400, {
+      injuryId,
+      targetType: injury.targetType,
+      targetId: injury.targetId,
+    });
+  }
+
+  const treatmentType = itemUse.treatmentType || "field_dressing";
+  const plan = buildTreatmentPlan(injury, {
+    treatmentType,
+    quality: itemUse.quality || "basic",
+  });
+  if (!plan.canTreat) {
+    throw makeError(`La herida no admite tratamiento en estado ${injury.status}.`, 400, {
+      injuryId,
+      status: injury.status,
+    });
+  }
+  if (itemUse.itemUseType === "ointment" && numberOr(injury.pain, 0) <= 0) {
+    throw makeError("El unguento no tiene efecto inmediato: la herida no registra dolor tratable.", 400, {
+      injuryId,
+    });
+  }
+
+  injury.bleeding = plan.bleeding.after;
+  injury.pain = plan.pain.after;
+  injury.requiresTreatment = plan.requiresTreatment.after;
+  injury.untreatedRisk = plan.untreatedRisk.after;
+  injury.treated = true;
+  injury.treatmentQuality = plan.quality;
+  injury.status = plan.status.after;
+  injury.flags = {
+    ...(injury.flags || {}),
+    treatments: [
+      ...(injury.flags?.treatments || []),
+      {
+        day: gameState.currentDay,
+        time: gameState.time,
+        treatmentType,
+        quality: plan.quality,
+        source: "combat_use_item",
+        itemId,
+      },
+    ],
+  };
+  injury.markModified("flags");
+
+  const legacyInjury = syncLegacyLucasInjuryTreatment(gameState, injuryId, plan);
+  if (legacyInjury) gameState.markModified("lucasStatus.injuries");
+  const inventoryChange = consumeInventoryItem(gameState, itemId, 1);
+
+  addCondition(actor, "treating");
+  applyFatigue(actor, 2);
+
+  return {
+    actionType: "use_item",
+    actorId: actor.combatantId,
+    targetIds: [],
+    rolls: {},
+    modifiers: {
+      itemId,
+      itemName: item.name,
+      itemUseType: itemUse.itemUseType,
+      treatmentType,
+      treatmentQuality: plan.quality,
+      willRestoreLife: false,
+    },
+    result: {
+      resultBand: "item_used",
+      itemId,
+      injuryId,
+      treatment: plan,
+      visibleStates: [buildVisibleState(actor)],
+    },
+    damage: {},
+    moraleChanges: [],
+    fatigueChanges: [{ targetId: actor.combatantId, combatFatigue: actor.combatFatigue }],
+    resourceChanges: [
+      {
+        type: "inventory",
+        itemId,
+        before: inventoryChange.before,
+        after: inventoryChange.after,
+        delta: inventoryChange.delta,
+      },
+    ],
+    inventoryChanges: [
+      {
+        ...inventoryChange,
+        itemName: item.name,
+        reason: "combat_use_item",
+      },
+    ],
+    injuriesCreated: [],
+    injuriesTreated: [
+      {
+        injuryId,
+        treatment: plan,
+      },
+    ],
+    injuryRecordsToSave: [injury],
+    narrativeSummary: `${actor.name} usa ${item.name} para aplicar ${treatmentType} a la herida ${injuryId}.`,
+  };
+}
+
 function getEnemyMoraleBreakThreshold(enemy) {
   const profile = enemy?.moraleProfile || {};
   return Math.max(numberOr(profile.breaksAt, 0), numberOr(profile.fleesAt, 0));
@@ -2134,6 +2511,7 @@ async function persistResolution({
 }) {
   const gameTime = getCombatantGameTime(gameState, encounter);
   const injuries = resolution.injuriesCreated || [];
+  const injuryRecordsToSave = resolution.injuryRecordsToSave || [];
   if (injuries.length > 0) {
     await InjuryRecord.insertMany(injuries, { ordered: true });
     for (const injury of injuries) {
@@ -2186,6 +2564,7 @@ async function persistResolution({
     moraleChanges: resolution.moraleChanges || [],
     fatigueChanges: resolution.fatigueChanges || [],
     resourceChanges: resolution.resourceChanges || [],
+    inventoryChanges: resolution.inventoryChanges || [],
     lootChanges: [],
     evidenceChanges: [],
     missionChanges: [],
@@ -2213,6 +2592,7 @@ async function persistResolution({
 
   await Promise.all([
     persistCombatants(changedCombatants),
+    ...injuryRecordsToSave.map((injury) => injury.save()),
     preview
       ? CombatActionPreview.updateOne(
           { previewId: preview.previewId },
@@ -2276,6 +2656,9 @@ async function persistResolution({
       result: resolution.result,
       damage: resolution.damage,
       injuriesCreated: injuries.map((injury) => injury.injuryId),
+      injuriesTreated: resolution.injuriesTreated || [],
+      inventoryChanges: resolution.inventoryChanges || [],
+      skillProgression: resolution.skillProgression || [],
     },
     visibility: "private",
     source: "system",
@@ -2286,7 +2669,9 @@ async function persistResolution({
     encounter: summarizeEncounter(encounter.toObject()),
     logEntry: logEntry.toObject(),
     resolution: {
-      ...resolution,
+      ...Object.fromEntries(
+        Object.entries(resolution).filter(([key]) => key !== "injuryRecordsToSave")
+      ),
       injuriesCreated: injuries,
     },
     autoCheckpoint,
@@ -2331,10 +2716,12 @@ async function applyAdvancedAction({ gameId = "isekai_lucas_main", previewId } =
     : null;
   const rng = createDeterministicRng(preview.deterministicSeed || preview.previewId);
   let resolution;
+  let usedWeaponProfile = null;
 
   if (preview.actionType === "attack") {
     if (!target) throw makeError("attack requiere objetivo valido.", 400);
     const weaponProfile = await getWeaponProfileForCombatant(actor);
+    usedWeaponProfile = weaponProfile;
     resolution = resolveAttack({
       rng,
       encounter,
@@ -2359,6 +2746,8 @@ async function applyAdvancedAction({ gameId = "isekai_lucas_main", previewId } =
     resolution = resolveFlee({ rng, encounter, actor, target, gameState, enemy });
   } else if (preview.actionType === "surrender") {
     resolution = resolveSurrender({ actor });
+  } else if (preview.actionType === "use_item") {
+    resolution = await resolveUseItem({ actor, gameState, params: preview.params || {} });
   } else if (preview.actionType === "intimidate") {
     if (!target) throw makeError("intimidate requiere objetivo valido.", 400);
     resolution = resolveIntimidate({ rng, actor, target, gameState, enemy });
@@ -2370,6 +2759,29 @@ async function applyAdvancedAction({ gameId = "isekai_lucas_main", previewId } =
 
   const changedCombatants = [actor];
   if (target && target.combatantId !== actor.combatantId) changedCombatants.push(target);
+  const skillProgression = applyCombatSkillAward({
+    gameState,
+    encounter,
+    actor,
+    resolution,
+    weaponProfile: usedWeaponProfile,
+  });
+  if (skillProgression.length > 0) {
+    resolution.skillProgression = skillProgression;
+    resolution.resourceChanges = [
+      ...(resolution.resourceChanges || []),
+      ...skillProgression
+        .filter((entry) => !entry.skipped)
+        .map((entry) => ({
+          type: "skill_progression",
+          skillId: entry.skillId,
+          category: entry.category,
+          effectiveExpDelta: entry.validation?.effectiveExpDelta || 0,
+          before: entry.progression?.before || null,
+          after: entry.progression?.after || null,
+        })),
+    ];
+  }
 
   applyEndStateFromCombatants({
     encounter,
@@ -2912,10 +3324,13 @@ function buildTreatmentPlan(injury, { treatmentType = "field_dressing", quality 
     good: 2,
     excellent: 3,
   }[normalizedQuality];
+  const isOintment = treatmentType === "ointment" || treatmentType === "pain_relief";
   const bleedingBefore = numberOr(injury.bleeding, 0);
   const painBefore = numberOr(injury.pain, 0);
-  const bleedingAfter = Math.max(0, bleedingBefore - Math.max(0, qualityPower));
-  const painAfter = Math.max(0, painBefore - (qualityPower >= 2 ? 1 : 0));
+  const bleedingAfter = isOintment ? bleedingBefore : Math.max(0, bleedingBefore - Math.max(0, qualityPower));
+  const painAfter = isOintment
+    ? Math.max(0, painBefore - Math.max(1, qualityPower))
+    : Math.max(0, painBefore - (qualityPower >= 2 ? 1 : 0));
   const statusAfter = bleedingAfter > 0 ? "treated" : "healing";
 
   return {

@@ -106,6 +106,11 @@ const combatLogEntrySchema = new mongoose.Schema(
       default: [],
     },
 
+    inventoryChanges: {
+      type: [mongoose.Schema.Types.Mixed],
+      default: [],
+    },
+
     lootChanges: {
       type: [mongoose.Schema.Types.Mixed],
       default: [],
