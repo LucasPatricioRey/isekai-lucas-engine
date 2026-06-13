@@ -156,6 +156,7 @@ describe("combat advanced API", () => {
     assert.ok(actions.data.actions.some((action) => action.actionType === "block" && action.c4ApplySupported));
     assert.ok(actions.data.actions.some((action) => action.actionType === "dodge" && action.c4ApplySupported));
     assert.ok(actions.data.actions.some((action) => action.actionType === "use_item" && action.c4ApplySupported));
+    assert.ok(actions.data.actions.some((action) => action.actionType === "use_magic" && action.c4ApplySupported));
     assert.ok(actions.data.actions.some((action) => action.actionType === "flee"));
 
     const schema = await get("/docs/openapi-gpt-action-combat.json");
@@ -325,6 +326,120 @@ describe("combat advanced API", () => {
     });
 
     assert.equal(blockedApply.status, 400);
+
+    await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/end`, {
+      gameId: tempGameId,
+      endStatus: "cancelled",
+      reason: "Fixture cleanup.",
+    });
+  });
+
+  it("blocks unknown combat magic and resolves formally known use_magic through backend rolls", async () => {
+    const gameState = await GameState.findOne({ gameId: tempGameId });
+    gameState.flags = {
+      ...(gameState.flags || {}),
+      knownSpells: [],
+    };
+    gameState.lucasStatus.mp.current = 200;
+    gameState.lucasStatus.life.current = gameState.lucasStatus.life.max;
+
+    const ensureSkill = (skillId, name) => {
+      let skill = gameState.skills.find((entry) => entry.skillId === skillId);
+      if (!skill) {
+        skill = { skillId, name, phase: "Principiante", level: 3, exp: 0, expToNext: 100 };
+        gameState.skills.push(skill);
+      }
+      skill.phase = "Principiante";
+      skill.level = 3;
+      skill.exp = 0;
+      skill.expToNext = 100;
+    };
+
+    ensureSkill("skill_mana", "Mana");
+    ensureSkill("skill_magia", "Magia");
+    ensureSkill("skill_magia_ofensiva", "Magia ofensiva");
+    gameState.markModified("flags");
+    gameState.markModified("skills");
+    await gameState.save();
+
+    const enemyId = await createTempEnemyTemplate({
+      baseStats: {
+        life: 16,
+        hp: 16,
+        attack: 1,
+        defense: 0,
+        agility: 0,
+        perception: 1,
+        endurance: 1,
+        morale: 10,
+        speed: 0,
+      },
+    });
+    const started = await post("/api/combat/advanced/encounters/start", {
+      gameId: tempGameId,
+      enemyId,
+      reason: "Fixture: magia ofensiva conocida en combate.",
+      terrainTags: ["road"],
+    });
+
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    const encounterId = started.data.encounter.encounterId;
+    const targetId = started.data.encounter.participants.find((entry) => entry.side === "enemy").combatantId;
+
+    const unknownPreview = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/actions/preview`, {
+      gameId: tempGameId,
+      actionType: "use_magic",
+      targetIds: [targetId],
+      params: {
+        techniqueId: "technique_locked_offensive_spark",
+      },
+    });
+
+    assert.equal(unknownPreview.status, 200, JSON.stringify(unknownPreview.data));
+    assert.equal(unknownPreview.data.preview.canAct, false);
+    assert.match(unknownPreview.data.preview.blockedReason, /no conoce formalmente/);
+
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          "flags.knownSpells": ["technique_locked_offensive_spark"],
+          "lucasStatus.mp.current": 200,
+        },
+      }
+    );
+
+    const knownPreview = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/actions/preview`, {
+      gameId: tempGameId,
+      actionType: "use_magic",
+      targetIds: [targetId],
+      params: {
+        techniqueId: "technique_locked_offensive_spark",
+      },
+    });
+
+    assert.equal(knownPreview.status, 200, JSON.stringify(knownPreview.data));
+    assert.equal(knownPreview.data.preview.canAct, true);
+    assert.equal(knownPreview.data.preview.preview.actionType, "use_magic");
+
+    const applied = await post("/api/combat/advanced/actions/apply", {
+      gameId: tempGameId,
+      previewId: knownPreview.data.preview.preview.previewId,
+    });
+
+    assert.equal(applied.status, 200, JSON.stringify(applied.data));
+    assert.equal(applied.data.resolution.actionType, "use_magic");
+    assert.equal(applied.data.resolution.result.spell.techniqueId, "technique_locked_offensive_spark");
+    assert.equal(applied.data.resolution.resourceChanges[0].type, "mp");
+    assert.equal(applied.data.resolution.resourceChanges[0].delta, -15);
+    assert.ok(
+      ["bad_miss", "miss", "glancing_hit", "clean_hit", "strong_hit", "critical_hit"].includes(
+        applied.data.resolution.result.resultBand
+      )
+    );
+
+    const afterState = await GameState.findOne({ gameId: tempGameId }).lean();
+    assert.equal(afterState.lucasStatus.mp.current, 185);
 
     await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/end`, {
       gameId: tempGameId,

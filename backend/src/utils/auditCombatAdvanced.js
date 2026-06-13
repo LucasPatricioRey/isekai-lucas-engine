@@ -36,6 +36,7 @@ const EXPECTED_APPLIED_ACTIONS = [
   "flee",
   "surrender",
   "use_item",
+  "use_magic",
   "intimidate",
   "prepare",
 ];
@@ -186,7 +187,7 @@ async function main() {
     EXPECTED_APPLIED_ACTIONS.every((actionType) => appliedActionTypes.has(actionType)),
     Array.from(appliedActionTypes).sort().join(", ")
   );
-  assertTrue(issues, "catalog includes unsupported future actions safely", actionTypes.has("use_magic") && actionTypes.has("protect"));
+  assertTrue(issues, "catalog keeps protect as future action safely", actionTypes.has("protect"));
   assertEqual(issues, "preview start canStart", previewStart.data?.preview?.canStart, true);
   assertEqual(issues, "preview start does not mutate GameState", previewStart.data?.preview?.mutation?.willMutateGameState, false);
   assertEqual(issues, "preview start would create encounter only on apply", previewStart.data?.preview?.mutation?.willCreateEncounter, true);

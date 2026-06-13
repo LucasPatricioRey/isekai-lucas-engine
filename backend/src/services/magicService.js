@@ -13,6 +13,12 @@ const {
 const DEFAULT_GAME_ID = "isekai_lucas_main";
 const DEFAULT_CHARACTER_ID = "char_lucas";
 
+function toPlain(value) {
+  if (!value) return value;
+  if (typeof value.toObject === "function") return value.toObject();
+  return JSON.parse(JSON.stringify(value));
+}
+
 function phaseRank(phase) {
   const index = PHASE_ORDER.indexOf(phase);
   return index === -1 ? -1 : index;
@@ -80,8 +86,10 @@ async function listMagicTechniques(filters = {}) {
   return MagicTechnique.find(query).sort({ difficulty: 1, name: 1 }).lean();
 }
 
-async function getMagicTechnique(techniqueId) {
-  const technique = await MagicTechnique.findOne({ techniqueId }).lean();
+async function getMagicTechnique(techniqueId, { session = null } = {}) {
+  const query = MagicTechnique.findOne({ techniqueId });
+  if (session) query.session(session);
+  const technique = await query.lean();
 
   if (!technique) {
     const error = new Error(`No existe tecnica magica con id: ${techniqueId}`);
@@ -92,22 +100,29 @@ async function getMagicTechnique(techniqueId) {
   return technique;
 }
 
-async function getCharacterKnownTechniqueIds(characterId) {
-  const knowledge = await CharacterMagicKnowledge.find({
+async function getCharacterMagicKnowledgeMap(characterId, { session = null } = {}) {
+  const query = CharacterMagicKnowledge.find({
     characterId,
     status: { $in: ["practicing", "known", "mastered"] },
   })
-    .select("techniqueId")
-    .lean();
+    .select("techniqueId status");
+  if (session) query.session(session);
+  const knowledge = await query.lean();
 
-  return new Set(knowledge.map((entry) => entry.techniqueId));
+  return new Map(knowledge.map((entry) => [entry.techniqueId, entry.status]));
 }
 
-function getBlockingReasons({ technique, gameState, knownTechniqueIds, minutes }) {
+async function getCharacterKnownTechniqueIds(characterId, options = {}) {
+  return new Set((await getCharacterMagicKnowledgeMap(characterId, options)).keys());
+}
+
+function getBlockingReasons({ technique, gameState, knownTechniqueIds, knownTechniqueStatusMap = new Map(), minutes }) {
   const reasons = [];
   const skillsById = new Map((gameState.skills || []).map((skill) => [skill.skillId, skill]));
+  const knownStatus = knownTechniqueStatusMap.get(technique.techniqueId) || "";
+  const knownLockedTemplate = technique.status === "locked_template" && ["known", "mastered"].includes(knownStatus);
 
-  if (technique.status !== "available") {
+  if (technique.status !== "available" && !knownLockedTemplate) {
     reasons.push(`La tecnica esta marcada como ${technique.status}.`);
   }
 
@@ -142,13 +157,25 @@ function getBlockingReasons({ technique, gameState, knownTechniqueIds, minutes }
   return reasons;
 }
 
-function buildSelfTrainingGuidance({ technique, canPractice, blockingReasons, guide, requestedMinutes, skillPreviews }) {
+function buildSelfTrainingGuidance({
+  technique,
+  canPractice,
+  blockingReasons,
+  guide,
+  requestedMinutes,
+  skillPreviews,
+  knownTechniqueStatusMap = new Map(),
+}) {
   const kind = technique.kind || "practice";
   const isSpell = kind === "spell";
   const hasGuide = Boolean(guide);
+  const knownStatus = knownTechniqueStatusMap.get(technique.techniqueId) || "";
+  const formallyKnownSpell = isSpell && ["known", "mastered"].includes(knownStatus);
   const stage =
     isSpell
-      ? "spell_locked"
+      ? formallyKnownSpell
+        ? "spell_known"
+        : "spell_locked"
       : kind === "theory"
         ? "theory"
         : kind === "trick"
@@ -178,7 +205,7 @@ function buildSelfTrainingGuidance({ technique, canPractice, blockingReasons, gu
     mode: hasGuide ? "guided" : "solo",
     stage,
     canPracticeSoloSafely: safeSolo,
-    canProduceVisibleEffect: canPractice && isSpell && technique.status === "available",
+    canProduceVisibleEffect: canPractice && isSpell && (technique.status === "available" || formallyKnownSpell),
     shouldLearnSpell: false,
     safePracticeLimitMinutes: Math.min(Number(technique.maxMinutes || requestedMinutes || 30), hasGuide ? 60 : 30),
     nextMilestone: nextSkillMilestone
@@ -203,12 +230,22 @@ async function previewMagicPractice({
   techniqueId,
   minutes = null,
   guidedByNpcId = "",
+  modifiers = {},
+  gameStateOverride = null,
+  antiFarmingContextByKey = {},
+  session = null,
 } = {}) {
-  const [gameState, technique, knownTechniqueIds] = await Promise.all([
-    GameState.findOne({ gameId }).lean(),
-    getMagicTechnique(techniqueId),
-    getCharacterKnownTechniqueIds(characterId),
+  const gameStateQuery = GameState.findOne({ gameId });
+  if (session) gameStateQuery.session(session);
+  const [loadedGameState, technique, knownTechniqueStatusMap] = await Promise.all([
+    gameStateOverride
+      ? Promise.resolve(toPlain(gameStateOverride))
+      : gameStateQuery.lean(),
+    getMagicTechnique(techniqueId, { session }),
+    getCharacterMagicKnowledgeMap(characterId, { session }),
   ]);
+  const gameState = loadedGameState;
+  const knownTechniqueIds = new Set(knownTechniqueStatusMap.keys());
 
   if (!gameState) {
     const error = new Error(`No existe GameState para gameId: ${gameId}`);
@@ -231,6 +268,7 @@ async function previewMagicPractice({
     technique,
     gameState,
     knownTechniqueIds,
+    knownTechniqueStatusMap,
     minutes: requestedMinutes,
   });
   const mpCost = getMpCost(technique);
@@ -273,10 +311,12 @@ async function previewMagicPractice({
         reason: expSuggestion.reason || technique.name,
         category: expSuggestion.category,
         modifiers: {
+          ...(modifiers || {}),
           aquaBlessing: true,
           hasMaster: Boolean(guide),
         },
         currentEnergy: gameState.lucasStatus?.energy?.current,
+        antiFarmingContext: antiFarmingContextByKey[`${expSuggestion.skillId}:${expSuggestion.category}`] || undefined,
       });
 
       skillPreviews.push({
@@ -313,6 +353,7 @@ async function previewMagicPractice({
       guide,
       requestedMinutes,
       skillPreviews,
+      knownTechniqueStatusMap,
     }),
     unlocks: {
       willUnlockTechnique: false,
@@ -324,6 +365,7 @@ async function previewMagicPractice({
 }
 
 module.exports = {
+  getCharacterKnownTechniqueIds,
   getMagicTechnique,
   listMagicDisciplines,
   listMagicTechniques,

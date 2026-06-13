@@ -4,6 +4,7 @@ const CombatActionPreview = require("../models/CombatActionPreview");
 const CombatEncounter = require("../models/CombatEncounter");
 const CombatantState = require("../models/CombatantState");
 const CombatLogEntry = require("../models/CombatLogEntry");
+const CharacterMagicKnowledge = require("../models/CharacterMagicKnowledge");
 const EnemyTemplate = require("../models/EnemyTemplate");
 const Evidence = require("../models/Evidence");
 const EventLog = require("../models/EventLog");
@@ -11,6 +12,7 @@ const Faction = require("../models/Faction");
 const GameState = require("../models/GameState");
 const InjuryRecord = require("../models/InjuryRecord");
 const Item = require("../models/Item");
+const MagicTechnique = require("../models/MagicTechnique");
 const Mission = require("../models/Mission");
 const WeaponProfile = require("../models/WeaponProfile");
 const WorldEvent = require("../models/WorldEvent");
@@ -94,9 +96,9 @@ const ADVANCED_ACTIONS = [
     actionType: "use_magic",
     label: "Usar magia",
     economySlot: "mainAction",
-    targetRequired: false,
-    c4ApplySupported: false,
-    notes: "Preview seguro. Lucas aun no domina hechizos ofensivos.",
+    targetRequired: true,
+    c4ApplySupported: true,
+    notes: "Resuelve un hechizo real solo si existe en knownSpells/conocimiento formal; consume MP y backend calcula dano/fallo.",
   },
   {
     actionType: "protect",
@@ -142,7 +144,7 @@ const ENCOUNTER_TYPES = new Set([
   "unknown",
 ]);
 const DEFENSIVE_CONDITIONS = ["defending", "blocking", "dodging"];
-const ACTIONS_WITH_RESOLVED_TARGET = new Set(["attack", "observe", "move", "flee", "intimidate", "protect"]);
+const ACTIONS_WITH_RESOLVED_TARGET = new Set(["attack", "observe", "move", "flee", "intimidate", "use_magic", "protect"]);
 
 function createId(prefix) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -732,6 +734,14 @@ function buildCombatSkillCandidate({ encounter, resolution, weaponProfile = null
       reason: "Combate avanzado: retirada bajo presion.",
     };
   }
+  if (actionType === "use_magic") {
+    return {
+      skillId: "skill_magia_ofensiva",
+      category: "uso_hechizo_ofensivo_conocido",
+      expDelta: resolution.result?.hit ? 4 : 2,
+      reason: "Combate avanzado: uso de hechizo ofensivo conocido.",
+    };
+  }
   if (["defend", "observe", "move", "intimidate", "prepare"].includes(actionType)) {
     const expByAction = {
       defend: 2,
@@ -960,6 +970,8 @@ function mapDamageTypeToInjuryType(damageType) {
   if (damageType === "cut") return "cut";
   if (damageType === "pierce") return "pierce";
   if (damageType === "blunt") return "blunt";
+  if (damageType === "burn") return "burn";
+  if (damageType === "magic") return "magic";
   if (damageType === "mixed") return "other";
   return "other";
 }
@@ -1793,6 +1805,75 @@ async function validateUseItemIntent({ gameId, params = {} }) {
   return blockingReasons;
 }
 
+function getMagicMpCost(technique) {
+  const mpCost = technique?.mpCost || {};
+  if (Number.isFinite(Number(mpCost.fixed))) return Number(mpCost.fixed);
+  if (Number.isFinite(Number(mpCost.min))) return Number(mpCost.min);
+  return 0;
+}
+
+async function getKnownMagicTechniqueForCombat({ gameState, techniqueId }) {
+  const characterId = gameState.characterId || "char_lucas";
+  const [technique, knowledge] = await Promise.all([
+    MagicTechnique.findOne({ techniqueId }).lean(),
+    CharacterMagicKnowledge.findOne({
+      characterId,
+      techniqueId,
+      status: { $in: ["known", "mastered"] },
+    }).lean(),
+  ]);
+
+  const knownByFlag = (gameState.flags?.knownSpells || []).includes(techniqueId);
+  const knownByRecord = Boolean(knowledge);
+
+  return {
+    technique,
+    knowledge,
+    known: Boolean(technique?.isRealSpell && (knownByFlag || knownByRecord)),
+    knownByFlag,
+    knownByRecord,
+  };
+}
+
+async function validateUseMagicIntent({ gameId, params = {} }) {
+  const blockingReasons = [];
+  const techniqueId = params.techniqueId || "";
+
+  if (!techniqueId) {
+    blockingReasons.push("use_magic requiere params.techniqueId.");
+    return blockingReasons;
+  }
+
+  const gameState = await GameState.findOne({ gameId }).lean();
+  if (!gameState) {
+    blockingReasons.push(`No existe GameState para gameId: ${gameId}.`);
+    return blockingReasons;
+  }
+
+  const { technique, known } = await getKnownMagicTechniqueForCombat({ gameState, techniqueId });
+  if (!technique) {
+    blockingReasons.push(`No existe tecnica magica: ${techniqueId}.`);
+    return blockingReasons;
+  }
+  if (!technique.isRealSpell) {
+    blockingReasons.push(`La tecnica ${techniqueId} no es un hechizo real usable en combate.`);
+  }
+  if (!known) {
+    blockingReasons.push(`Lucas no conoce formalmente el hechizo ${techniqueId}.`);
+  }
+  if (!technique.isOffensive) {
+    blockingReasons.push(`C18 solo permite hechizos ofensivos simples en combate: ${techniqueId}.`);
+  }
+
+  const mpCost = getMagicMpCost(technique);
+  const currentMp = gameState.lucasStatus?.mp?.current ?? 0;
+  if (mpCost > currentMp) {
+    blockingReasons.push(`MP insuficiente: requiere ${mpCost}, actual ${currentMp}.`);
+  }
+
+  return blockingReasons;
+}
+
 async function listAvailableAdvancedActions({ encounterId } = {}) {
   const encounter = await getEncounterOrThrow(encounterId);
   return {
@@ -1838,6 +1919,8 @@ async function previewAdvancedAction({
   );
   if (actionType === "use_item") {
     availability.blockingReasons.push(...(await validateUseItemIntent({ gameId, params })));
+  } else if (actionType === "use_magic") {
+    availability.blockingReasons.push(...(await validateUseMagicIntent({ gameId, params })));
   }
 
   const canAct = availability.blockingReasons.length === 0;
@@ -2614,6 +2697,179 @@ function resolveSurrender({ actor }) {
   };
 }
 
+function getMagicDistanceModifier(distanceBand) {
+  if (distanceBand === "grappled") return -6;
+  if (distanceBand === "engaged") return -2;
+  if (distanceBand === "near") return 1;
+  if (distanceBand === "short") return 2;
+  if (distanceBand === "medium") return 0;
+  if (distanceBand === "far") return -4;
+  if (distanceBand === "out_of_sight") return -12;
+  return 0;
+}
+
+async function resolveUseMagic({ rng, encounter, actor, target, gameState, enemy, params = {}, actionId }) {
+  const techniqueId = params.techniqueId || "";
+  if (!techniqueId) throw makeError("use_magic requiere params.techniqueId.", 400);
+  if (!target) throw makeError("use_magic requiere objetivo valido.", 400);
+
+  const { technique, known } = await getKnownMagicTechniqueForCombat({ gameState, techniqueId });
+  if (!technique) throw makeError(`No existe tecnica magica: ${techniqueId}.`, 404);
+  if (!known) throw makeError(`Lucas no conoce formalmente el hechizo ${techniqueId}.`, 400);
+  if (!technique.isRealSpell || !technique.isOffensive) {
+    throw makeError(`C18 solo permite hechizos ofensivos reales simples en combate: ${techniqueId}.`, 400);
+  }
+
+  const mpCost = getMagicMpCost(technique);
+  const mpBefore = numberOr(actor.mp?.current, gameState.lucasStatus?.mp?.current ?? 0);
+  if (mpCost > mpBefore) {
+    throw makeError("MP insuficiente para lanzar el hechizo.", 400, { techniqueId, mpCost, currentMp: mpBefore });
+  }
+
+  const actorStats = getCombatantStats({ combatant: actor, enemy, gameState });
+  const targetStats = getCombatantStats({ combatant: target, enemy, gameState });
+  const magicSkill = getSkillLevel(gameState, ["skill_magia_ofensiva", "skill_magia"]);
+  const manaSkill = getSkillLevel(gameState, ["skill_mana"]);
+  const attackRoll = rollDie(rng, 20);
+  const resistRoll = rollDie(rng, 20);
+  const damageRoll = rollDie(rng, 4);
+  const distanceBand = getDistance(encounter, actor.combatantId, target.combatantId);
+  const distanceModifier = getMagicDistanceModifier(distanceBand);
+  const terrainAttackModifier = getTerrainModifier(encounter, actor);
+  const terrainDefenseModifier = getTerrainModifier(encounter, target);
+  const actorStanceModifier = getStanceModifier(actor, "attack", actorStats, encounter);
+  const targetDefensiveModifier = getStanceModifier(target, "defense", targetStats, encounter);
+  const attackScore =
+    magicSkill * 2 +
+    Math.floor(manaSkill / 2) +
+    Math.floor(actorStats.perception / 3) +
+    attackRoll +
+    distanceModifier +
+    terrainAttackModifier +
+    actorStanceModifier +
+    getFatigueModifier(actor);
+  const defenseScore =
+    targetStats.agility +
+    Math.floor(targetStats.perception / 2) +
+    resistRoll +
+    terrainDefenseModifier +
+    targetDefensiveModifier +
+    getFatigueModifier(target);
+  const hitMargin = attackScore - defenseScore;
+  const resultBand = classifyHit(hitMargin);
+  const hit = !["bad_miss", "miss"].includes(resultBand);
+  const hitBonus = getDamageBonusFromHit(resultBand, hitMargin);
+  const rawDamage = hit ? 1 + Math.floor(magicSkill / 3) + damageRoll + Math.min(hitBonus, 4) : 0;
+  const reduction = hit ? Math.floor(targetStats.endurance / 8) + Math.floor(targetStats.defense / 10) : 0;
+  let finalDamage = hit ? Math.max(0, rawDamage - reduction) : 0;
+  const controlledCombat = isControlledCombat(encounter);
+  if (controlledCombat) {
+    const safeDamageCap = Math.max(0, numberOr(target.hp?.current, 0) - 1);
+    finalDamage = Math.min(finalDamage, safeDamageCap, 1);
+  }
+
+  const hpChange = finalDamage > 0 ? adjustResource(target.hp, -finalDamage) : null;
+  const moraleDamage = finalDamage > 0 ? Math.max(1, Math.floor(finalDamage / 2)) : hit ? 1 : 0;
+  const moraleChange = moraleDamage > 0 ? adjustResource(target.morale, -moraleDamage) : null;
+  const mpChange = adjustResource(actor.mp || { current: mpBefore, max: gameState.lucasStatus?.mp?.max || mpBefore }, -mpCost);
+  const injuryResult = controlledCombat
+    ? { injuryRoll: null, injury: null }
+    : maybeCreateInjury({
+        rng,
+        target,
+        resultBand,
+        finalDamage,
+        damageType: technique.disciplineId === "discipline_fire" ? "burn" : "magic",
+        encounter,
+        actionId,
+      });
+  const gameTime = getCombatantGameTime(gameState, encounter);
+
+  actor.mp = mpChange.pool;
+  if (hpChange) target.hp = hpChange.pool;
+  if (moraleChange) target.morale = moraleChange.pool;
+  applyFatigue(actor, 4);
+  if (hit) applyStress(target, Math.max(1, moraleDamage));
+  removeCondition(actor, "prepared");
+  removeCondition(actor, "focused");
+  for (const condition of DEFENSIVE_CONDITIONS) removeCondition(target, condition);
+
+  if (injuryResult?.injury) {
+    injuryResult.injury.createdDay = gameTime.day;
+    injuryResult.injury.createdTime = gameTime.time;
+    target.injuries = Array.from(new Set([...(target.injuries || []), injuryResult.injury.injuryId]));
+  }
+
+  markDefeatedIfNeeded(target);
+
+  return {
+    actionType: "use_magic",
+    actorId: actor.combatantId,
+    targetIds: [target.combatantId],
+    rolls: {
+      attackRoll,
+      resistRoll,
+      damageRoll,
+      injuryRoll: injuryResult?.injuryRoll || null,
+    },
+    modifiers: {
+      techniqueId,
+      techniqueName: technique.name,
+      mpCost,
+      magicSkill,
+      manaSkill,
+      distanceBand,
+      distanceModifier,
+      terrainAttackModifier,
+      terrainDefenseModifier,
+      attackFatigueModifier: getFatigueModifier(actor),
+      targetFatigueModifier: getFatigueModifier(target),
+      actorStanceModifier,
+      targetDefensiveModifier,
+      controlledCombat,
+    },
+    result: {
+      resultBand,
+      hit,
+      attackScore,
+      defenseScore,
+      hitMargin,
+      visibleStates: [buildVisibleState(actor), buildVisibleState(target)],
+      spell: {
+        techniqueId,
+        techniqueName: technique.name,
+        isRealSpell: true,
+        offensive: true,
+      },
+    },
+    damage: {
+      rawDamage,
+      reduction,
+      finalDamage,
+      damageType: technique.disciplineId === "discipline_fire" ? "burn" : "magic",
+      hpChange,
+    },
+    moraleChanges: moraleChange
+      ? [{ targetId: target.combatantId, before: moraleChange.before, after: moraleChange.after, delta: moraleChange.delta }]
+      : [],
+    fatigueChanges: [{ targetId: actor.combatantId, combatFatigue: actor.combatFatigue }],
+    resourceChanges: [
+      {
+        type: "mp",
+        targetId: actor.combatantId,
+        before: mpChange.before,
+        after: mpChange.after,
+        delta: mpChange.delta,
+        reason: "combat_use_magic",
+      },
+    ],
+    injuriesCreated: injuryResult?.injury ? [injuryResult.injury] : [],
+    narrativeSummary: hit
+      ? `${actor.name} lanza ${technique.name} contra ${target.name}: impacto ${resultBand}, dano ${finalDamage}, MP -${mpCost}.`
+      : `${actor.name} intenta ${technique.name}, pero falla el control contra ${target.name}; MP -${mpCost}.`,
+  };
+}
+
 async function resolveUseItem({ actor, gameState, params = {} }) {
   const itemId = params.itemId || "";
   const injuryId = params.injuryId || "";
@@ -3333,6 +3589,18 @@ async function applyAdvancedAction({ gameId = "isekai_lucas_main", previewId } =
     resolution = resolveFlee({ rng, encounter, actor, target, gameState, enemy });
   } else if (preview.actionType === "surrender") {
     resolution = resolveSurrender({ actor });
+  } else if (preview.actionType === "use_magic") {
+    if (!target) throw makeError("use_magic requiere objetivo valido.", 400);
+    resolution = await resolveUseMagic({
+      rng,
+      encounter,
+      actor,
+      target,
+      gameState,
+      enemy,
+      params: preview.params || {},
+      actionId: preview.previewId,
+    });
   } else if (preview.actionType === "use_item") {
     resolution = await resolveUseItem({ actor, gameState, params: preview.params || {} });
   } else if (preview.actionType === "intimidate") {

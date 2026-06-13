@@ -364,9 +364,9 @@ const techniques = [
       {
         skillId: "skill_magia_ofensiva",
         skillName: "Magia ofensiva",
-        category: "hechizo_imposible",
-        baseExp: 0,
-        reason: "Intento bloqueado; sin progreso.",
+        category: "uso_hechizo_ofensivo_conocido",
+        baseExp: 3,
+        reason: "Uso o practica de chispa ofensiva ya conocida.",
         allowVirtualSkillPreview: true,
       },
     ],

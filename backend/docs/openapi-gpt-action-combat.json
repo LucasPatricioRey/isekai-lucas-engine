@@ -148,7 +148,7 @@
           },
           "params": {
             "type": "object",
-            "description": "Parametros por accion. Para use_item C8.1: enviar itemId real en inventario e injuryId real; el backend decide consumo, calidad de tratamiento y consecuencias.",
+            "description": "Parametros por accion. use_item: itemId real e injuryId real. use_magic: techniqueId real conocido formalmente; el backend consume MP y resuelve dano/fallo.",
             "additionalProperties": true
           }
         },
@@ -255,7 +255,7 @@
       "get": {
         "operationId": "combatAdvancedListActions",
         "summary": "Lista acciones de combate avanzado disponibles.",
-        "description": "Lectura. Devuelve actionTypes, economia de accion y notas. attack/defend/block/dodge/observe/move/flee/surrender/use_item/intimidate/prepare tienen aplicacion backend basica.",
+        "description": "Lectura. Devuelve actionTypes, economia de accion y notas. attack/defend/block/dodge/observe/move/flee/surrender/use_item/use_magic/intimidate/prepare tienen aplicacion backend basica.",
         "responses": {
           "200": {
             "description": "Acciones.",
@@ -453,7 +453,7 @@
       "post": {
         "operationId": "combatAdvancedApplyAction",
         "summary": "Aplica una accion previsualizada.",
-        "description": "Valida previewId, actor actual y hash de estado antes de resolver. use_item consume inventario real solo para tratamientos soportados; use_magic/protect pueden devolver 501 hasta fases posteriores.",
+        "description": "Valida previewId, actor actual y hash de estado antes de resolver. use_item consume inventario real solo para tratamientos soportados. use_magic consume MP y resuelve hechizo conocido. protect puede devolver 501 hasta fases posteriores.",
         "requestBody": {
           "required": true,
           "content": {

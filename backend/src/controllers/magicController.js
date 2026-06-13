@@ -69,6 +69,7 @@ async function previewMagicPracticeController(req, res) {
       techniqueId: body.techniqueId,
       minutes: body.minutes,
       guidedByNpcId: body.guidedByNpcId || "",
+      modifiers: body.modifiers || {},
     });
 
     return res.json({

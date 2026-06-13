@@ -174,6 +174,7 @@ function main() {
     "evidencePatches",
     "knowledgePatches",
     "skillPatch",
+    "magicPractice",
     "magicPatches",
     "shopStockPatches",
     "npcMemoryPatches",
@@ -316,6 +317,23 @@ function main() {
       issues,
       `compact PreviewMagicPracticeRequest requires ${propertyName}`,
       compact.components?.schemas?.PreviewMagicPracticeRequest?.required?.includes(propertyName)
+    );
+  }
+  assertCondition(
+    issues,
+    "compact PreviewMagicPracticeRequest has modifiers",
+    Boolean(compact.components?.schemas?.PreviewMagicPracticeRequest?.properties?.modifiers)
+  );
+  assertCondition(
+    issues,
+    "compact has MagicPracticeApplyItem",
+    Boolean(compact.components?.schemas?.MagicPracticeApplyItem)
+  );
+  for (const propertyName of ["techniqueId", "minutes", "reason"]) {
+    assertCondition(
+      issues,
+      `compact MagicPracticeApplyItem requires ${propertyName}`,
+      compact.components?.schemas?.MagicPracticeApplyItem?.required?.includes(propertyName)
     );
   }
   assertCondition(

@@ -27,6 +27,7 @@ const {
   normalizeCategory: normalizeSkillCategory,
   previewSkillProgression,
 } = require("../services/skillProgressionService");
+const { previewMagicPractice } = require("../services/magicService");
 const { ensureCurrentWeatherForGameState } = require("../services/weatherService");
 const { createAutomaticCheckpoint } = require("../services/checkpointService");
 const {
@@ -497,6 +498,11 @@ function summarizeMagicKnowledge(entry = null) {
 }
 
 function normalizeMagicPatches(patches) {
+  if (patches === undefined || patches === null) return [];
+  return Array.isArray(patches) ? patches : [patches];
+}
+
+function normalizeMagicPracticePatches(patches) {
   if (patches === undefined || patches === null) return [];
   return Array.isArray(patches) ? patches : [patches];
 }
@@ -2869,6 +2875,181 @@ async function applyMissionPatches(gameState, missionPatch, session = null) {
   return results;
 }
 
+async function applyMagicPracticePatches({
+  gameState,
+  magicPractice,
+  body = {},
+  timeChange = null,
+  session = null,
+}) {
+  const patches = normalizeMagicPracticePatches(magicPractice);
+  if (patches.length === 0) return { practices: [], skills: [] };
+
+  if (!timeChange || !Number.isInteger(timeChange.elapsedMinutes) || timeChange.elapsedMinutes <= 0) {
+    throw validationError("magicPractice requiere timeAdvance positivo para evitar practica instantanea.");
+  }
+
+  if (!body.activityCost) {
+    throw validationError("magicPractice requiere activityCost formal para registrar coste biologico.");
+  }
+
+  const totalMinutes = patches.reduce((total, patch) => total + Number(patch?.minutes || 0), 0);
+  if (totalMinutes !== timeChange.elapsedMinutes) {
+    throw validationError("magicPractice.minutes debe coincidir con el tiempo avanzado en esta llamada.", {
+      expectedMinutes: timeChange.elapsedMinutes,
+      receivedMinutes: totalMinutes,
+    });
+  }
+
+  const practiceChanges = [];
+  const skillChanges = [];
+
+  for (const patch of patches) {
+    const techniqueId = String(patch?.techniqueId || "").trim();
+    const reason = String(patch?.reason || body.actionSummary || "").trim();
+    const minutes = Number(patch?.minutes || 0);
+
+    if (!techniqueId) throw validationError("magicPractice.techniqueId es obligatorio.");
+    if (!Number.isInteger(minutes) || minutes <= 0) {
+      throw validationError("magicPractice.minutes debe ser un entero positivo.", { techniqueId, minutes });
+    }
+    if (reason.length < 12) {
+      throw validationError("magicPractice.reason debe explicar la practica magica.");
+    }
+
+    const preview = await previewMagicPractice({
+      gameId: gameState.gameId,
+      characterId: patch.characterId || gameState.characterId || "char_lucas",
+      techniqueId,
+      minutes,
+      guidedByNpcId: patch.guidedByNpcId || "",
+      modifiers: patch.modifiers || {},
+      gameStateOverride: gameState,
+      session,
+    });
+
+    if (!preview.canPractice) {
+      throw validationError("magicPractice no puede aplicarse: requisitos o seguridad insuficientes.", {
+        techniqueId,
+        blockingReasons: preview.blockingReasons,
+      });
+    }
+
+    const expectedCategory = normalizeCategory(preview.technique.activityCategory || "");
+    const receivedCategory = normalizeCategory(body.activityCost.category || "");
+    if (expectedCategory !== receivedCategory) {
+      throw validationError("activityCost.category debe coincidir con la categoria de la tecnica magica.", {
+        techniqueId,
+        expectedCategory,
+        receivedCategory,
+      });
+    }
+
+    const mpBefore = gameState.lucasStatus?.mp?.current ?? 0;
+    const mpCost = Number(preview.mpCost || 0);
+    if (mpCost > mpBefore) {
+      throw validationError("MP insuficiente para aplicar practica magica.", {
+        techniqueId,
+        mpCost,
+        currentMp: mpBefore,
+      });
+    }
+    const mpChange = mpCost > 0
+      ? applyStatDelta(gameState.lucasStatus.mp, -mpCost, "mp")
+      : {
+          before: mpBefore,
+          delta: 0,
+          after: mpBefore,
+          labelAfter: gameState.lucasStatus?.mp?.label || "",
+        };
+
+    const appliedSkills = [];
+    for (const skillPreview of preview.skillPreviews || []) {
+      if (skillPreview.blocked) {
+        throw validationError("magicPractice contiene progreso bloqueado.", {
+          techniqueId,
+          skillId: skillPreview.skillId,
+          blockedReason: skillPreview.blockedReason,
+        });
+      }
+      if (skillPreview.virtualPreviewOnly) {
+        throw validationError("magicPractice requiere una habilidad viva; desbloqueala primero con magicPatches.", {
+          techniqueId,
+          skillId: skillPreview.skillId,
+        });
+      }
+
+      const skill = gameState.skills.find((entry) => entry.skillId === skillPreview.skillId);
+      if (!skill) {
+        throw validationError("magicPractice no encontro la habilidad viva a actualizar.", {
+          techniqueId,
+          skillId: skillPreview.skillId,
+        });
+      }
+
+      const { before, after, levelUps } = skillPreview.progression || {};
+      if (!after) continue;
+
+      skill.phase = after.phase;
+      skill.level = after.level;
+      skill.exp = after.exp;
+      skill.expToNext = after.expToNext;
+
+      const change = {
+        skillId: skill.skillId,
+        name: skill.name,
+        source: "magicPractice",
+        techniqueId,
+        techniqueName: preview.technique.name,
+        reason,
+        category: skillPreview.validation?.categoryId || "",
+        recommendedRange: skillPreview.validation?.recommendedRange || null,
+        baseExpDelta: skillPreview.validation?.baseExpDelta ?? skillPreview.baseExp ?? 0,
+        durationMinutes: minutes,
+        effectiveExpDelta: skillPreview.validation?.effectiveExpDelta || 0,
+        multiplier: skillPreview.validation?.multiplier || 1,
+        multiplierParts: skillPreview.validation?.multiplierParts || [],
+        before,
+        after,
+        levelUps: levelUps || [],
+      };
+      appliedSkills.push(change);
+      skillChanges.push(change);
+    }
+
+    if (appliedSkills.length > 0) {
+      gameState.markModified("skills");
+    }
+
+    practiceChanges.push({
+      techniqueId,
+      techniqueName: preview.technique.name,
+      techniqueKind: preview.technique.kind,
+      disciplineId: preview.technique.disciplineId,
+      minutes,
+      reason,
+      guidedByNpcId: patch.guidedByNpcId || "",
+      mp: mpChange,
+      publicUseRisk: preview.technique.publicUseRisk || "low",
+      canProduceVisibleEffect: Boolean(preview.selfTrainingGuidance?.canProduceVisibleEffect),
+      shouldLearnSpell: false,
+      unlocks: preview.unlocks,
+      skills: appliedSkills,
+      narrativeBoundaries: [
+        preview.selfTrainingGuidance?.canProduceVisibleEffect
+          ? "Puede narrarse efecto visible solo si la tecnica ya era conocida y el backend lo permitio."
+          : "No narrar efecto externo real; solo control, teoria, sensaciones o fallo parcial.",
+        "No aprender hechizos desde magicPractice; usar magicPatches para conocimiento formal.",
+      ],
+    });
+  }
+
+  return {
+    practices: practiceChanges,
+    skills: skillChanges,
+  };
+}
+
 async function getKnownTechniqueSet({ characterId = "char_lucas", session = null } = {}) {
   const known = await CharacterMagicKnowledge.find({
     characterId,
@@ -3840,6 +4021,23 @@ async function applyTurn(req, res) {
 
         if (skillChanges.length > 0) {
           changes.skills = skillChanges;
+        }
+      }
+
+      if (body.magicPractice !== undefined) {
+        const magicPracticeChanges = await applyMagicPracticePatches({
+          gameState,
+          magicPractice: body.magicPractice,
+          body,
+          timeChange: changes.time || null,
+          session,
+        });
+
+        if (magicPracticeChanges.practices.length > 0) {
+          changes.magicPractice = magicPracticeChanges.practices;
+        }
+        if (magicPracticeChanges.skills.length > 0) {
+          changes.skills = [...(changes.skills || []), ...magicPracticeChanges.skills];
         }
       }
 

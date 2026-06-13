@@ -166,11 +166,53 @@
           "guidedByNpcId": {
             "type": "string",
             "description": "NPC guia si corresponde; vacio si practica solo."
+          },
+          "modifiers": {
+            "type": "object",
+            "description": "Modificadores de aprendizaje: newTechnique, increasedDifficulty, newGoal, newContext, realRisk, hasMaster.",
+            "additionalProperties": true
           }
         },
         "required": [
           "techniqueId",
           "minutes"
+        ],
+        "additionalProperties": false
+      },
+      "MagicPracticeApplyItem": {
+        "type": "object",
+        "description": "Practica magica real aplicada por applyTurn. Requiere timeAdvance positivo y activityCost de la misma categoria de la tecnica.",
+        "properties": {
+          "techniqueId": {
+            "type": "string",
+            "description": "ID de tecnica magica existente."
+          },
+          "minutes": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Debe coincidir con el tiempo avanzado por applyTurn si esta es la actividad principal."
+          },
+          "guidedByNpcId": {
+            "type": "string"
+          },
+          "characterId": {
+            "type": "string",
+            "default": "char_lucas"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 12
+          },
+          "modifiers": {
+            "type": "object",
+            "description": "Modificadores validos de progresion: newTechnique, increasedDifficulty, newGoal, newContext, realRisk, hasMaster.",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "techniqueId",
+          "minutes",
+          "reason"
         ],
         "additionalProperties": false
       },
@@ -418,6 +460,13 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/SkillPatchItem"
+            }
+          },
+          "magicPractice": {
+            "type": "array",
+            "description": "Practica magica real y mutadora: consume MP, aplica EXP validada y requiere timeAdvance + activityCost. No aprende hechizos; para eso usar magicPatches.",
+            "items": {
+              "$ref": "#/components/schemas/MagicPracticeApplyItem"
             }
           },
           "magicPatches": {

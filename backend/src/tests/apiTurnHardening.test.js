@@ -1768,6 +1768,109 @@ describe("turn hardening coverage", () => {
     assert.equal(after.skills[0].exp, initial.exp + 15);
   });
 
+  it("applies magicPractice only with real time, biological cost and backend skill validation", async () => {
+    const fixtureState = await GameState.findOne({ gameId: tempGameId });
+    fixtureState.currentDay = 10;
+    fixtureState.time = "12:00";
+    fixtureState.block = "Tarde";
+    fixtureState.lucasStatus.mp.current = 200;
+    fixtureState.lucasStatus.energy.current = 80;
+    fixtureState.lucasStatus.energy.label = "rendimiento normal";
+    fixtureState.biologicalClock = {
+      lastProcessedTime: "12:00",
+      currentHourBlock: "12:00-13:00",
+      pendingAccumulation: [],
+      pendingAccumulations: [],
+    };
+    for (const skill of fixtureState.skills) {
+      if (["skill_mana", "skill_magia"].includes(skill.skillId)) {
+        skill.phase = "Principiante";
+        skill.level = 1;
+        skill.exp = 0;
+        skill.expToNext = 100;
+      }
+    }
+    fixtureState.markModified("skills");
+    await fixtureState.save();
+
+    const beforeState = await getCanonicalState(tempGameId);
+    const missingTime = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Intento invalido de test: practica magica instantanea.",
+      activityCost: {
+        category: "descanso_sentado",
+        minutes: 30,
+        reason: "Practica magica sentada de fixture.",
+      },
+      magicPractice: [
+        {
+          techniqueId: "technique_mana_breathing_basic",
+          minutes: 30,
+          reason: "Lucas practica respiracion de mana sin avanzar tiempo real.",
+          modifiers: { newTechnique: true },
+        },
+      ],
+    });
+    assert.equal(missingTime.status, 400);
+    assert.match(missingTime.data.error, /timeAdvance/);
+    assertSameState(beforeState, await getCanonicalState(tempGameId));
+
+    const before = await GameState.findOne(
+      { gameId: tempGameId },
+      { skills: { $elemMatch: { skillId: "skill_mana" } } }
+    ).lean();
+    const initialMana = before.skills[0];
+
+    const applied = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: practica real de respiracion de mana.",
+      timeAdvance: {
+        from: "12:00",
+        to: "12:30",
+      },
+      activityCost: {
+        category: "descanso_sentado",
+        minutes: 30,
+        reason: "Practica magica sentada y contenida durante media hora.",
+      },
+      magicPractice: [
+        {
+          techniqueId: "technique_mana_breathing_basic",
+          minutes: 30,
+          reason: "Lucas practica respiracion de mana con control real y sin efecto externo.",
+          modifiers: { newTechnique: true },
+        },
+      ],
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de magicPractice validado.",
+          visibility: "hidden",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+    });
+
+    assert.equal(applied.status, 200, JSON.stringify(applied.data));
+    assert.equal(applied.data.changes.magicPractice[0].techniqueId, "technique_mana_breathing_basic");
+    assert.equal(applied.data.changes.magicPractice[0].mp.delta, 0);
+    assert.equal(applied.data.changes.magicPractice[0].shouldLearnSpell, false);
+    assert.equal(applied.data.changes.magicPractice[0].canProduceVisibleEffect, false);
+    assert.ok(
+      applied.data.changes.skills.some(
+        (change) => change.source === "magicPractice" && change.skillId === "skill_mana" && change.effectiveExpDelta > 0
+      )
+    );
+
+    const after = await GameState.findOne(
+      { gameId: tempGameId },
+      { skills: { $elemMatch: { skillId: "skill_mana" } }, lucasStatus: 1, biologicalClock: 1 }
+    ).lean();
+    assert.ok(after.skills[0].exp > initialMana.exp || after.skills[0].level > initialMana.level);
+    assert.equal(after.lucasStatus.mp.current, 200);
+    assert.ok((after.biologicalClock.pendingAccumulations || []).some((entry) => entry.category === "descanso_sentado"));
+  });
+
   it("applies formal magic patches and blocks unsafe spell unlocks", async () => {
     await CharacterMagicKnowledge.deleteMany({ characterId: tempMagicCharacterId });
     const fixtureState = await GameState.findOne({ gameId: tempGameId });
@@ -1893,6 +1996,43 @@ describe("turn hardening coverage", () => {
 
     const afterState = await GameState.findOne({ gameId: tempGameId }).lean();
     assert.equal(afterState.flags.knownSpells.includes("technique_locked_offensive_spark"), true);
+
+    const practicedSpell = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: uso practico de chispa ofensiva ya conocida.",
+      timeAdvance: {
+        from: "12:00",
+        to: "12:10",
+      },
+      activityCost: {
+        category: "actividad_normal",
+        minutes: 10,
+        reason: "Prueba magica breve con salida externa controlada.",
+      },
+      magicPractice: [
+        {
+          characterId: tempMagicCharacterId,
+          techniqueId: "technique_locked_offensive_spark",
+          minutes: 10,
+          reason: "Lucas practica una chispa ofensiva que ya fue desbloqueada formalmente.",
+          modifiers: { realRisk: true },
+        },
+      ],
+    });
+
+    assert.equal(practicedSpell.status, 200, JSON.stringify(practicedSpell.data));
+    assert.equal(practicedSpell.data.changes.magicPractice[0].techniqueId, "technique_locked_offensive_spark");
+    assert.equal(practicedSpell.data.changes.magicPractice[0].mp.delta, -15);
+    assert.equal(practicedSpell.data.changes.magicPractice[0].canProduceVisibleEffect, true);
+    assert.equal(practicedSpell.data.changes.magicPractice[0].shouldLearnSpell, false);
+    assert.ok(
+      practicedSpell.data.changes.skills.some(
+        (change) => change.source === "magicPractice" && change.skillId === "skill_magia_ofensiva"
+      )
+    );
+
+    const afterPracticeState = await GameState.findOne({ gameId: tempGameId }).lean();
+    assert.equal(afterPracticeState.lucasStatus.mp.current, 185);
 
     await GameState.updateOne({ gameId: tempGameId }, { $set: { characterId: originalCharacterId } });
   });

@@ -1,6 +1,6 @@
 # rules_engine.md — Motor Isekai Lucas
 
-Versión: Fase C17 v1.0 — playtest narrativo representativo, perfiles emocionales NPC y HUD obligatorio
+Versión: Fase C18 v1.0 — práctica mágica real mutadora y use_magic de combate conocido
 Estado: versión validada por Lucas mediante revisión guiada  
 Fuente de migración: Enciclopedia V2 Isekai Lucas + decisiones confirmadas por Lucas durante Fase 1 + validación guiada Fase 2  
 Propósito: este archivo define **cómo se resuelve el juego**. No contiene el save vivo completo ni el lore mundial extenso; eso vive en MongoDB y `world_bible.md`.
@@ -16,6 +16,7 @@ Actualizacion C15: agrega `Npc.emotionalProfile`, subtexto emocional en `dialogu
 Actualizacion C15.1: endurece dialogo NPC para evitar frases minimas pobres y sube rangos base de fundamentos tecnicos de combate de 30 min en habilidades principiantes.
 Actualizacion C16: agrega direccion emocional de escena (`dramaticContext.emotionalScene`) y rol dramatico por NPC (`dialogueProfile.dramaticRole`) para sostener anzuelo, mascara, presion, grieta visible y salida sin inventar mecanicas.
 Actualizacion C17: agrega `audit:narrative-scene-playtest` para validar, sin mutar canon, entrenamiento con Eddan, escena grupal en La Grulla Azul, tramite/reporte en gremio y escena solitaria de cansancio; las anclas sensoriales distinguen patio, gremio administrativo y habitacion privada.
+Actualizacion C18: agrega `applyTurn.magicPractice` para practica magica real con tiempo/coste/MP/EXP validados y permite `use_magic` en combate solo con hechizos conocidos formalmente.
 
 ---
 
@@ -1073,9 +1074,15 @@ Un elemento hijo no debe superar a su rama padre por más de una fase completa s
 
 ### 14.8 Desbloqueo formal por `magicPatches`
 
+Desde C18, la teoria simple puede seguir usando `skillPatch` si no proyecta efecto real. La practica magica real debe usar `applyTurn.magicPractice`: requiere `timeAdvance` positivo, `activityCost` de la misma categoria de la tecnica, MP suficiente y habilidades vivas. `magicPractice` puede consumir MP y dar EXP validada, pero nunca aprende hechizos ni desbloquea ramas por si sola.
+
+Narracion C18: antes de `changes.magic`, `knownSpells` o `changes.magicPractice[].canProduceVisibleEffect === true`, narrar estructura, intuicion, teoria, control o fracaso parcial; no narrar fuego, luz, dano, defensa, curacion ni efecto externo como exito real.
+
 La teoría, meditación o práctica segura puede dar EXP con `skillPatch`, pero no crea ramas mágicas ni hechizos por narración. Todo desbloqueo real de magia debe quedar guardado con `applyTurn.magicPatches`.
 
 Operaciones permitidas:
+
+- `magicPractice` no es un `magicPatch`: practica tecnicas ya permitidas o seguras, devuelve `canProduceVisibleEffect`, gasta MP si corresponde y conserva `shouldLearnSpell:false`.
 
 - `unlock_skill`: agrega una skill mágica viva si existe una disciplina asociada y Lucas cumple sus `unlockRequirements.skills`.
 - `set_technique`: registra conocimiento formal en `CharacterMagicKnowledge` para una técnica/hechizo existente.
@@ -1212,6 +1219,8 @@ Fatiga, miedo y retirada importan.
 Defender, bloquear, esquivar y retirarse son acciones mecanicas distintas. Bloqueo depende de guardia/equipo y `skill_bloqueo`; esquiva depende de espacio, terreno y `skill_esquiva`; retirada depende de distancia, ruta de escape, terreno, fatiga y `skill_retirada`. El GPT no decide si funcionan: debe usar preview/apply de combate.
 
 Usar objetos durante combate tambien requiere preview/apply de combate. `use_item` solo puede consumir items reales del inventario y, en C8.1, se limita a tratamiento de campo con `itemId` e `injuryId` reales. El backend decide consumo, calidad, estabilizacion y logs; el narrador no puede inventar curacion, vendajes disponibles ni restauracion de vida.
+
+Usar magia en combate tambien requiere preview/apply de combate. `use_magic` exige `params.techniqueId`, que el hechizo exista, sea real/ofensivo y este conocido formalmente por `knownSpells` o `CharacterMagicKnowledge`. El backend consume MP, tira control/resistencia, aplica dano/moral/fatiga/heridas si corresponde y sincroniza MP con `GameState`. El narrador no decide acierto, dano ni efecto externo por texto.
 
 Tratamiento y recuperacion son sistemas separados. `combatAdvancedPreviewTreatment`/`combatAdvancedApplyTreatment` estabilizan o mejoran sangrado/dolor, pero no restauran vida. `combatAdvancedPreviewRecovery`/`combatAdvancedApplyRecovery` acumulan horas efectivas de descanso/cuidado sobre una herida ya estabilizada; no avanzan el reloj, no reemplazan `applyTurn` para registrar tiempo biologico y no restauran vida. Si hay sangrado activo o tratamiento pendiente, recovery debe bloquearse hasta tratar la herida.
 

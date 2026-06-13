@@ -151,6 +151,7 @@ const SKILL_ACTIVITY_RANGES = {
   skill_magia_ofensiva: {
     teoria_ofensiva_1h: { min: 1, max: 4, unit: "hour" },
     practica_guiada_1h: { min: 4, max: 10, unit: "hour" },
+    uso_hechizo_ofensivo_conocido: { min: 2, max: 8, unit: "scene" },
     hechizo_imposible: { min: 0, max: 0, unit: "scene" },
   },
 };
@@ -223,6 +224,8 @@ const CATEGORY_ALIASES = {
   practica_guiada_hechizo_1h: "practica_guiada_hechizo_1h",
   practica_sin_maestro: "practica_sin_maestro",
   uso_exitoso_hechizo_conocido: "uso_exitoso_hechizo_conocido",
+  uso_hechizo_ofensivo_conocido: "uso_hechizo_ofensivo_conocido",
+  "uso hechizo ofensivo conocido": "uso_hechizo_ofensivo_conocido",
   hechizo_imposible: "hechizo_imposible",
   teoria_ofensiva_1h: "teoria_ofensiva_1h",
   "teoria ofensiva 1h": "teoria_ofensiva_1h",
