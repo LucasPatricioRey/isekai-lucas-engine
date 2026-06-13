@@ -193,11 +193,40 @@ describe("read-only API coverage", () => {
 
     const disciplines = await get("/api/magic/disciplines");
     assert.equal(disciplines.status, 200);
-    assert.ok((disciplines.data.disciplines || []).length >= 12);
+    assert.ok((disciplines.data.disciplines || []).length >= 13);
+    const disciplineIds = new Set((disciplines.data.disciplines || []).map((entry) => entry.disciplineId));
+    for (const disciplineId of [
+      "discipline_fire",
+      "discipline_lightning",
+      "discipline_ice",
+      "discipline_earth_wind",
+      "discipline_defensive_magic",
+      "discipline_magic_resistance",
+      "discipline_healing_magic",
+      "discipline_mental_magic",
+      "discipline_summoning_magic",
+    ]) {
+      assert.equal(disciplineIds.has(disciplineId), true, `${disciplineId} should be exposed`);
+    }
 
     const techniques = await get("/api/magic/techniques");
     assert.equal(techniques.status, 200);
-    assert.ok((techniques.data.techniques || []).length >= 7);
+    assert.ok((techniques.data.techniques || []).length >= 22);
+    const techniqueIds = new Set((techniques.data.techniques || []).map((entry) => entry.techniqueId));
+    for (const techniqueId of [
+      "technique_locked_offensive_spark",
+      "technique_locked_fire_ember_bolt",
+      "technique_locked_lightning_static_discharge",
+      "technique_locked_ice_shard",
+      "technique_locked_earth_wind_push",
+      "technique_locked_minor_ward",
+      "technique_locked_minor_stabilization",
+      "technique_locked_mental_presence_touch",
+      "technique_locked_summoning_anchor_mark",
+      "technique_locked_resistance_guard",
+    ]) {
+      assert.equal(techniqueIds.has(techniqueId), true, `${techniqueId} should be exposed`);
+    }
 
     const weather = await get("/api/weather/current?regionId=region_hoshimori");
     assert.equal(weather.status, 200);

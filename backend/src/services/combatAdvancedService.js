@@ -1812,6 +1812,11 @@ function getMagicMpCost(technique) {
   return 0;
 }
 
+function isSimpleOffensiveCombatSpell(technique) {
+  const combatUse = technique?.effectProfile?.combatUse || (technique?.isOffensive ? "offensive_simple" : "unsupported");
+  return Boolean(technique?.isRealSpell && technique?.isOffensive && combatUse === "offensive_simple");
+}
+
 async function getKnownMagicTechniqueForCombat({ gameState, techniqueId }) {
   const characterId = gameState.characterId || "char_lucas";
   const [technique, knowledge] = await Promise.all([
@@ -1861,8 +1866,8 @@ async function validateUseMagicIntent({ gameId, params = {} }) {
   if (!known) {
     blockingReasons.push(`Lucas no conoce formalmente el hechizo ${techniqueId}.`);
   }
-  if (!technique.isOffensive) {
-    blockingReasons.push(`C18 solo permite hechizos ofensivos simples en combate: ${techniqueId}.`);
+  if (!isSimpleOffensiveCombatSpell(technique)) {
+    blockingReasons.push(`El combate avanzado solo permite hechizos ofensivos simples: ${techniqueId}.`);
   }
 
   const mpCost = getMagicMpCost(technique);
@@ -2716,8 +2721,8 @@ async function resolveUseMagic({ rng, encounter, actor, target, gameState, enemy
   const { technique, known } = await getKnownMagicTechniqueForCombat({ gameState, techniqueId });
   if (!technique) throw makeError(`No existe tecnica magica: ${techniqueId}.`, 404);
   if (!known) throw makeError(`Lucas no conoce formalmente el hechizo ${techniqueId}.`, 400);
-  if (!technique.isRealSpell || !technique.isOffensive) {
-    throw makeError(`C18 solo permite hechizos ofensivos reales simples en combate: ${techniqueId}.`, 400);
+  if (!isSimpleOffensiveCombatSpell(technique)) {
+    throw makeError(`El combate avanzado solo permite hechizos ofensivos reales simples: ${techniqueId}.`, 400);
   }
 
   const mpCost = getMagicMpCost(technique);
@@ -2838,6 +2843,8 @@ async function resolveUseMagic({ rng, encounter, actor, target, gameState, enemy
       spell: {
         techniqueId,
         techniqueName: technique.name,
+        disciplineId: technique.disciplineId,
+        combatUse: technique.effectProfile?.combatUse || "offensive_simple",
         isRealSpell: true,
         offensive: true,
       },

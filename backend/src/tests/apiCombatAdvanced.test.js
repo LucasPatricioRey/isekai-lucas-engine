@@ -448,6 +448,60 @@ describe("combat advanced API", () => {
     });
   });
 
+  it("blocks known non-offensive magic from being resolved as combat damage", async () => {
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          "flags.knownSpells": ["technique_locked_minor_ward"],
+          "lucasStatus.mp.current": 200,
+        },
+      }
+    );
+
+    const enemyId = await createTempEnemyTemplate({
+      baseStats: {
+        life: 12,
+        hp: 12,
+        attack: 1,
+        defense: 0,
+        agility: 0,
+        perception: 1,
+        endurance: 1,
+        morale: 8,
+        speed: 0,
+      },
+    });
+    const started = await post("/api/combat/advanced/encounters/start", {
+      gameId: tempGameId,
+      enemyId,
+      reason: "Fixture: bloqueo de magia no ofensiva.",
+    });
+
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    const encounterId = started.data.encounter.encounterId;
+    const targetId = started.data.encounter.participants.find((entry) => entry.side === "enemy").combatantId;
+
+    const wardPreview = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/actions/preview`, {
+      gameId: tempGameId,
+      actionType: "use_magic",
+      targetIds: [targetId],
+      params: {
+        techniqueId: "technique_locked_minor_ward",
+      },
+    });
+
+    assert.equal(wardPreview.status, 200, JSON.stringify(wardPreview.data));
+    assert.equal(wardPreview.data.preview.canAct, false);
+    assert.match(wardPreview.data.preview.blockedReason, /ofensivos simples/);
+
+    await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/end`, {
+      gameId: tempGameId,
+      endStatus: "cancelled",
+      reason: "Fixture cleanup.",
+    });
+  });
+
   it("applies block and dodge as real defensive actions", async () => {
     const enemyId = await createTempEnemyTemplate({
       baseStats: {

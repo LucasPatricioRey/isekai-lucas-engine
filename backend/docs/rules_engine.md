@@ -1,6 +1,6 @@
 # rules_engine.md — Motor Isekai Lucas
 
-Versión: Fase C18 v1.0 — práctica mágica real mutadora y use_magic de combate conocido
+Versión: Fase C19 v1.0 — catálogo técnico de magia documentada
 Estado: versión validada por Lucas mediante revisión guiada  
 Fuente de migración: Enciclopedia V2 Isekai Lucas + decisiones confirmadas por Lucas durante Fase 1 + validación guiada Fase 2  
 Propósito: este archivo define **cómo se resuelve el juego**. No contiene el save vivo completo ni el lore mundial extenso; eso vive en MongoDB y `world_bible.md`.
@@ -17,6 +17,7 @@ Actualizacion C15.1: endurece dialogo NPC para evitar frases minimas pobres y su
 Actualizacion C16: agrega direccion emocional de escena (`dramaticContext.emotionalScene`) y rol dramatico por NPC (`dialogueProfile.dramaticRole`) para sostener anzuelo, mascara, presion, grieta visible y salida sin inventar mecanicas.
 Actualizacion C17: agrega `audit:narrative-scene-playtest` para validar, sin mutar canon, entrenamiento con Eddan, escena grupal en La Grulla Azul, tramite/reporte en gremio y escena solitaria de cansancio; las anclas sensoriales distinguen patio, gremio administrativo y habitacion privada.
 Actualizacion C18: agrega `applyTurn.magicPractice` para practica magica real con tiempo/coste/MP/EXP validados y permite `use_magic` en combate solo con hechizos conocidos formalmente.
+Actualizacion C19: convierte las ramas magicas documentadas en catalogo tecnico de disciplinas, teorias/ejercicios y plantillas `locked_template`; las plantillas existen para validar requisitos, no son hechizos conocidos por Lucas.
 
 ---
 
@@ -1067,6 +1068,7 @@ Desbloqueos relevantes:
 | Hielo | Magia ofensiva P.N2 + Maná P.N3 |
 | Tierra/Viento | Magia ofensiva P.N4 + Magia P.N4 + Maná P.N4 |
 | Magia curativa | Magia P.N5 + Maná P.N5 |
+| Resistencia mágica | Magia defensiva P.N2 + Maná P.N3 |
 | Magia mental | Magia Novato N5 + Maná Novato N5 + Percepción P.N8 |
 | Magia de invocación | Magia Competente N3 + Maná Competente N3 + Percepción mágica Novato N8 |
 
@@ -1093,6 +1095,18 @@ Ruta autodidacta mínima para el primer hechizo ofensivo:
 2. Con `skill_magia` P.N2 + `skill_mana` P.N2 puede desbloquear la rama `skill_magia_ofensiva` mediante `magicPatches[{ op:"unlock_skill", skillId:"skill_magia_ofensiva" }]`. Esto no desbloquea ningún hechizo.
 3. Con `skill_magia_ofensiva` P.N3 + `skill_mana` P.N3 puede intentar un breakthrough de `technique_locked_offensive_spark`.
 4. Un hechizo real solo puede pasar a `known`/`mastered` si `set_technique` incluye `breakthrough:true`, `safetyConfirmed:true`, una razón concreta y todos los requisitos de la técnica. Si falta algo, el backend debe rechazarlo.
+
+Catalogo tecnico C19:
+
+- `MagicDiscipline` contiene las ramas documentadas: Mana, Magia, Percepcion magica, Magia ofensiva, Fuego, Rayo/Electricidad, Hielo, Tierra/Viento, Magia defensiva, Resistencia magica, Magia curativa, Magia mental y Magia de invocacion.
+- `MagicTechnique` contiene ejercicios/teorias seguros y plantillas de hechizo. Que una plantilla exista no significa que Lucas la conozca.
+- Las plantillas de hechizo real quedan como `status:"locked_template"` hasta `magicPatches.set_technique`.
+- Cada plantilla debe declarar `effectProfile`: tipo de efecto, objetivo, rango, politica de combate y limites narrativos.
+- `use_magic` de combate solo acepta hechizos reales conocidos con `effectProfile.combatUse:"offensive_simple"`; defensa, curacion, mental, invocacion y resistencia quedan para resolvers futuros.
+- Magia curativa no restaura vida gratis; debe estabilizar/tratar solo cuando un resolver de heridas lo permita.
+- Magia mental no lee secretos ni fuerza emociones/decisiones por narracion.
+- Invocacion no crea aliados, objetos ni portales sin origen, costo, pacto/cierre y backend.
+- Resistencia magica no da inmunidad ni anula hechizos sin resolucion backend.
 
 Reglas de narración:
 

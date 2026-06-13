@@ -31,6 +31,56 @@ const BASIC_TECHNIQUE_IDS = [
   "technique_safe_rest_channeling",
 ];
 
+const CATALOG_THEORY_TECHNIQUE_IDS = [
+  "technique_offensive_magic_safety_theory",
+  "technique_defensive_magic_safety_theory",
+  "technique_healing_magic_ethics_theory",
+  "technique_mental_magic_ethics_theory",
+  "technique_summoning_anchor_theory",
+  "technique_magic_resistance_conditioning",
+];
+
+const LOCKED_SPELL_TEMPLATE_IDS = [
+  "technique_locked_offensive_spark",
+  "technique_locked_fire_ember_bolt",
+  "technique_locked_lightning_static_discharge",
+  "technique_locked_ice_shard",
+  "technique_locked_earth_wind_push",
+  "technique_locked_minor_ward",
+  "technique_locked_minor_stabilization",
+  "technique_locked_mental_presence_touch",
+  "technique_locked_summoning_anchor_mark",
+  "technique_locked_resistance_guard",
+];
+
+const DOCUMENTED_MAGIC_DISCIPLINE_IDS = [
+  "discipline_mana",
+  "discipline_magic",
+  "discipline_magic_perception",
+  "discipline_offensive_magic",
+  "discipline_fire",
+  "discipline_lightning",
+  "discipline_ice",
+  "discipline_earth_wind",
+  "discipline_defensive_magic",
+  "discipline_magic_resistance",
+  "discipline_healing_magic",
+  "discipline_mental_magic",
+  "discipline_summoning_magic",
+];
+
+const SPELL_TEMPLATE_DISCIPLINE_IDS = [
+  "discipline_fire",
+  "discipline_lightning",
+  "discipline_ice",
+  "discipline_earth_wind",
+  "discipline_defensive_magic",
+  "discipline_magic_resistance",
+  "discipline_healing_magic",
+  "discipline_mental_magic",
+  "discipline_summoning_magic",
+];
+
 const ADVANCED_TECHNIQUE_ID = "technique_locked_offensive_spark";
 const MAGIC_ITEM_REGEX = /magia|mana|hechizo|arcano|magico|magica|magic|spell/i;
 
@@ -196,8 +246,23 @@ async function main() {
   );
   assertTrue(
     issues,
+    "all documented magic discipline ids exposed",
+    DOCUMENTED_MAGIC_DISCIPLINE_IDS.every((disciplineId) => apiDisciplineIds.has(disciplineId))
+  );
+  assertTrue(
+    issues,
     "all basic technique ids exposed",
     BASIC_TECHNIQUE_IDS.every((techniqueId) => apiTechniqueIds.has(techniqueId))
+  );
+  assertTrue(
+    issues,
+    "all catalog theory/exercise technique ids exposed",
+    CATALOG_THEORY_TECHNIQUE_IDS.every((techniqueId) => apiTechniqueIds.has(techniqueId))
+  );
+  assertTrue(
+    issues,
+    "all locked spell template ids exposed",
+    LOCKED_SPELL_TEMPLATE_IDS.every((techniqueId) => apiTechniqueIds.has(techniqueId))
   );
 
   section("Practice Preview Checks");
@@ -226,14 +291,19 @@ async function main() {
     JSON.stringify(perceptionSkillPreview || {})
   );
   assertTrue(issues, "perception preview applies Aqua", hasAquaApplied(perceptionSkillPreview));
-  assertEqual(issues, "advanced preview blocked", advancedPreview.preview?.canPractice, false);
-  assertTrue(
-    issues,
-    "advanced preview has blocked reason",
-    (advancedPreview.preview?.blockingReasons || []).length > 0,
-    advancedPreview.preview?.blockedReason || ""
-  );
-  assertEqual(issues, "advanced preview no MP spend", advancedPreview.preview?.projectedMp?.delta, 0);
+  if (advancedPreview.preview?.canPractice) {
+    assertEqual(issues, "advanced preview known spell stage", advancedPreview.preview?.selfTrainingGuidance?.stage, "spell_known");
+    assertEqual(issues, "advanced preview known spell can produce visible effect", advancedPreview.preview?.selfTrainingGuidance?.canProduceVisibleEffect, true);
+  } else {
+    assertTrue(
+      issues,
+      "advanced preview has blocked reason",
+      (advancedPreview.preview?.blockingReasons || []).length > 0,
+      advancedPreview.preview?.blockedReason || ""
+    );
+    assertEqual(issues, "advanced preview no MP spend while blocked", advancedPreview.preview?.projectedMp?.delta, 0);
+  }
+  assertEqual(issues, "advanced preview actual MP will not mutate", advancedPreview.preview?.projectedMp?.willMutate, false);
   assertEqual(issues, "advanced preview no spell unlock", advancedPreview.preview?.unlocks?.willLearnSpell, false);
 
   section("Aqua Safety");
@@ -291,25 +361,44 @@ async function main() {
     .filter((disciplineId) => !liveDisciplineIds.has(disciplineId));
   assertEqual(issues, "missing technique discipline refs", missingTechniqueDisciplineRefs.length, 0);
 
-  section("Safety Checks");
-  const knowledge = await CharacterMagicKnowledge.find({
-    characterId: "char_lucas",
-    status: { $in: ["practicing", "known", "mastered"] },
-  }).lean();
-  const knownTechniqueIds = knowledge.map((entry) => entry.techniqueId);
-  const knownTechniques = knownTechniqueIds.length
-    ? await MagicTechnique.find({ techniqueId: { $in: knownTechniqueIds } }).lean()
-    : [];
-  const advancedKnown = knownTechniques.filter(
-    (entry) => entry.isAdvanced || entry.isRealSpell || entry.kind === "spell"
+  const liveTechniqueById = new Map(liveTechniques.map((entry) => [entry.techniqueId, entry]));
+  const lockedSpellTemplates = LOCKED_SPELL_TEMPLATE_IDS.map((techniqueId) => liveTechniqueById.get(techniqueId)).filter(Boolean);
+  const spellTemplateDisciplines = new Set(lockedSpellTemplates.map((entry) => entry.disciplineId));
+  const missingSpellTemplateDisciplines = SPELL_TEMPLATE_DISCIPLINE_IDS.filter(
+    (disciplineId) => !spellTemplateDisciplines.has(disciplineId)
   );
+  const spellTemplatesWithoutEffectProfile = lockedSpellTemplates.filter(
+    (entry) => !entry.effectProfile?.effectType || !entry.effectProfile?.combatUse
+  );
+  const nonOffensiveCombatLeaks = lockedSpellTemplates.filter(
+    (entry) => !entry.isOffensive && entry.effectProfile?.combatUse === "offensive_simple"
+  );
+  const offensiveCombatTemplates = lockedSpellTemplates.filter((entry) => entry.isOffensive);
+  const offensiveCombatMissingPolicy = offensiveCombatTemplates.filter(
+    (entry) => entry.effectProfile?.combatUse !== "offensive_simple"
+  );
+
+  assertEqual(issues, "locked spell template count", lockedSpellTemplates.length, LOCKED_SPELL_TEMPLATE_IDS.length);
+  assertEqual(issues, "missing spell-template discipline coverage", missingSpellTemplateDisciplines.length, 0);
+  assertEqual(issues, "spell templates without effectProfile", spellTemplatesWithoutEffectProfile.length, 0);
+  assertEqual(issues, "non-offensive spell combat leaks", nonOffensiveCombatLeaks.length, 0);
+  assertEqual(issues, "offensive spell templates without offensive_simple policy", offensiveCombatMissingPolicy.length, 0);
+
+  section("Safety Checks");
+  const seededKnowledge = await CharacterMagicKnowledge.find({ source: SOURCE }).lean();
+  const seededKnownRealSpellIds = seededKnowledge
+    .filter((entry) => ["known", "mastered"].includes(entry.status))
+    .map((entry) => entry.techniqueId);
+  const seededKnownRealSpells = seededKnownRealSpellIds.length
+    ? await MagicTechnique.find({ techniqueId: { $in: seededKnownRealSpellIds }, isRealSpell: true }).lean()
+    : [];
   const g11MagicItems = await Item.find({ tags: { $in: [SOURCE, "g11"] } }).lean();
   const commonMagicItems = g11MagicItems.filter((item) => {
     const text = [item.itemId, item.name, item.type, item.subtype, item.description, ...(item.tags || [])].join(" ");
     return MAGIC_ITEM_REGEX.test(text);
   });
 
-  assertEqual(issues, "advanced/real spell known count", advancedKnown.length, 0);
+  assertEqual(issues, "seeded known real spell count", seededKnownRealSpells.length, 0);
   assertEqual(issues, "G11 magic item count", g11MagicItems.length, 0);
   assertEqual(issues, "G11 common magic-like item count", commonMagicItems.length, 0);
 

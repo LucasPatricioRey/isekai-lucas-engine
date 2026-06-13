@@ -256,18 +256,28 @@ async function auditEvents({ gameState, gameId, issues, checks }) {
 
 async function auditMagic({ gameState, issues, checks }) {
   const techniques = await MagicTechnique.find({ status: "available" }).lean();
+  const liveSkillIds = cleanSortedIds((gameState.skills || []).map((skill) => skill.skillId));
+  const liveSkillIdSet = new Set(liveSkillIds);
+  const currentlyPracticeableTechniques = techniques.filter((technique) =>
+    (technique.requirements?.skills || []).every((requirement) => liveSkillIdSet.has(requirement.skillId))
+  );
+  const deferredTechniqueIds = techniques
+    .filter((technique) => !currentlyPracticeableTechniques.includes(technique))
+    .map((technique) => technique.techniqueId)
+    .sort();
   const referencedSkillIds = cleanSortedIds(
-    techniques.flatMap((technique) =>
+    currentlyPracticeableTechniques.flatMap((technique) =>
       (technique.expSuggestions || []).map((suggestion) => suggestion.skillId)
     )
   );
-  const liveSkillIds = cleanSortedIds((gameState.skills || []).map((skill) => skill.skillId));
   const missingSkillIds = referencedSkillIds.filter((skillId) => !liveSkillIds.includes(skillId));
 
   checks.magic = {
     referencedSkillIds,
     liveSkillIds,
     missingSkillIds,
+    currentlyPracticeableTechniqueIds: currentlyPracticeableTechniques.map((technique) => technique.techniqueId).sort(),
+    deferredTechniqueIds,
   };
 
   if (missingSkillIds.length > 0) {

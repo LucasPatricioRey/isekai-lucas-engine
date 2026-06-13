@@ -76,6 +76,44 @@ const mpCostSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const effectProfileSchema = new mongoose.Schema(
+  {
+    effectType: {
+      type: String,
+      enum: ["none", "internal_control", "perception", "offense", "defense", "healing", "mental", "summoning", "resistance", "utility"],
+      default: "none",
+    },
+    damageType: {
+      type: String,
+      default: "",
+    },
+    targetType: {
+      type: String,
+      enum: ["none", "self", "single_enemy", "single_ally", "object", "area", "ritual"],
+      default: "none",
+    },
+    rangeBand: {
+      type: String,
+      enum: ["none", "touch", "near", "short", "medium", "ritual"],
+      default: "none",
+    },
+    combatUse: {
+      type: String,
+      enum: ["unsupported", "offensive_simple", "defensive_future", "healing_future", "mental_future", "summoning_future", "resistance_future", "practice_only"],
+      default: "unsupported",
+    },
+    mechanicalNotes: {
+      type: [String],
+      default: [],
+    },
+    narrationLimits: {
+      type: [String],
+      default: [],
+    },
+  },
+  { _id: false }
+);
+
 const magicTechniqueSchema = new mongoose.Schema(
   {
     techniqueId: {
@@ -179,6 +217,10 @@ const magicTechniqueSchema = new mongoose.Schema(
       type: String,
       enum: ["none", "low", "medium", "high"],
       default: "low",
+    },
+    effectProfile: {
+      type: effectProfileSchema,
+      default: () => ({}),
     },
     safetyNotes: {
       type: [String],

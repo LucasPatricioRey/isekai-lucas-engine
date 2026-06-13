@@ -130,13 +130,13 @@ async function runSmokeTests() {
   const magicDisciplines = await request("/api/magic/disciplines");
   if (!magicDisciplines.ok) throw new Error("magic disciplines fallo");
   if (!Array.isArray(magicDisciplines.disciplines)) throw new Error("magic disciplines no devolvio disciplines");
-  if (magicDisciplines.disciplines.length < 12) throw new Error("magic disciplines devolvio menos de 12 disciplinas");
+  if (magicDisciplines.disciplines.length < 13) throw new Error("magic disciplines devolvio menos de 13 disciplinas");
   console.log("OK /api/magic/disciplines");
 
   const magicTechniques = await request("/api/magic/techniques");
   if (!magicTechniques.ok) throw new Error("magic techniques fallo");
   if (!Array.isArray(magicTechniques.techniques)) throw new Error("magic techniques no devolvio techniques");
-  if (magicTechniques.techniques.length < 6) throw new Error("magic techniques devolvio menos de 6 tecnicas");
+  if (magicTechniques.techniques.length < 22) throw new Error("magic techniques devolvio menos de 22 tecnicas");
   console.log("OK /api/magic/techniques");
 
   const weatherCurrent = await request("/api/weather/current?regionId=region_hoshimori");
