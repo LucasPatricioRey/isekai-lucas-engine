@@ -54,6 +54,10 @@ async function previewSkillController(req, res) {
       category: body.category || "",
       modifiers: body.modifiers || {},
       currentEnergy: body.currentEnergy ?? currentEnergy ?? null,
+      durationMinutes: body.durationMinutes ?? null,
+      antiFarmingContext: {
+        previousSimilarCount: Number.isInteger(body.previousSimilarCount) ? body.previousSimilarCount : 0,
+      },
     });
 
     return res.json({

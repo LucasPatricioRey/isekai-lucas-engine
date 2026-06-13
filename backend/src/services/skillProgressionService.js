@@ -29,6 +29,17 @@ const HARD_TO_TRAIN_SKILL_MULTIPLIERS = {
   skill_percepcion: 1.5,
 };
 
+const ANTI_FARMING_MULTIPLIERS = [1, 0.75, 0.5, 0.25];
+
+const ANTI_FARMING_EXCEPTION_MODIFIERS = [
+  "hasMaster",
+  "newTechnique",
+  "increasedDifficulty",
+  "newGoal",
+  "newContext",
+  "realRisk",
+];
+
 const MAGICAL_SKILL_IDS = new Set([
   "skill_mana",
   "skill_magia",
@@ -78,6 +89,36 @@ const SKILL_ACTIVITY_RANGES = {
     entreno_intenso: { min: 10, max: 16, unit: "hour" },
     combate_esquivas: { min: 4, max: 12, unit: "scene" },
     terreno_dificil: { min: 3, max: 8, unit: "hour" },
+  },
+  skill_esquiva: {
+    entrenamiento_guardia_distancia_30min: { min: 1, max: 4, unit: "block" },
+    retirada_controlada_30min: { min: 1, max: 4, unit: "block" },
+    combate_esquivas: { min: 4, max: 12, unit: "scene" },
+  },
+  skill_bloqueo: {
+    entrenamiento_guardia_distancia_30min: { min: 1, max: 4, unit: "block" },
+    practica_guiada_1h: { min: 4, max: 10, unit: "hour" },
+    combate_bloqueos: { min: 3, max: 10, unit: "scene" },
+  },
+  skill_retirada: {
+    retirada_controlada_30min: { min: 1, max: 4, unit: "block" },
+    entrenamiento_guardia_distancia_30min: { min: 1, max: 4, unit: "block" },
+    huida_controlada: { min: 3, max: 10, unit: "scene" },
+  },
+  skill_pelea_sin_armas: {
+    fundamentos_30min: { min: 1, max: 4, unit: "block" },
+    practica_guiada_1h: { min: 4, max: 10, unit: "hour" },
+    combate: { min: 3, max: 12, unit: "scene" },
+  },
+  skill_daga: {
+    fundamentos_30min: { min: 1, max: 4, unit: "block" },
+    practica_guiada_1h: { min: 4, max: 10, unit: "hour" },
+    combate: { min: 3, max: 12, unit: "scene" },
+  },
+  skill_tactica_basica: {
+    lectura_distancia_30min: { min: 1, max: 4, unit: "block" },
+    analizar_combate_30min: { min: 1, max: 4, unit: "block" },
+    combate: { min: 2, max: 8, unit: "scene" },
   },
   skill_percepcion: {
     trabajo_comun: { min: 0, max: 0, unit: "hour" },
@@ -147,7 +188,21 @@ const CATEGORY_ALIASES = {
   turno_tarde: "turno_tarde",
   "turno tarde": "turno_tarde",
   combate_esquivas: "combate_esquivas",
+  combate_bloqueos: "combate_bloqueos",
+  "combate bloqueos": "combate_bloqueos",
   terreno_dificil: "terreno_dificil",
+  entrenamiento_guardia_distancia_30min: "entrenamiento_guardia_distancia_30min",
+  "entrenamiento guardia distancia 30min": "entrenamiento_guardia_distancia_30min",
+  retirada_controlada_30min: "retirada_controlada_30min",
+  "retirada controlada 30min": "retirada_controlada_30min",
+  huida_controlada: "huida_controlada",
+  "huida controlada": "huida_controlada",
+  fundamentos_30min: "fundamentos_30min",
+  "fundamentos 30min": "fundamentos_30min",
+  lectura_distancia_30min: "lectura_distancia_30min",
+  "lectura distancia 30min": "lectura_distancia_30min",
+  analizar_combate_30min: "analizar_combate_30min",
+  "analizar combate 30min": "analizar_combate_30min",
   trabajo_comun: "trabajo_comun",
   vigilar_30min: "vigilar_30min",
   buscar_detalles_30min: "buscar_detalles_30min",
@@ -185,6 +240,13 @@ function normalizeText(value) {
 function normalizeCategory(category) {
   const normalized = normalizeText(category).replace(/-/g, "_");
   return CATEGORY_ALIASES[normalized] || CATEGORY_ALIASES[normalized.replace(/_/g, " ")] || normalized;
+}
+
+function normalizeDurationMinutes(durationMinutes) {
+  if (durationMinutes === undefined || durationMinutes === null || durationMinutes === "") return null;
+  const parsed = Number(durationMinutes);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.round(parsed);
 }
 
 function getNextPhase(currentPhase) {
@@ -261,7 +323,83 @@ function getEnergyExpMultiplier(currentEnergy) {
   return 0;
 }
 
-function calculateExpMultiplier({ skillId, modifiers = {}, currentEnergy = null, currentPhase = "" }) {
+function calculateAntiFarmingMultiplier({ previousSimilarCount = 0, modifiers = {} } = {}) {
+  const previousCount = Math.max(0, Number.isInteger(previousSimilarCount) ? previousSimilarCount : 0);
+  const exceptionCount = ANTI_FARMING_EXCEPTION_MODIFIERS.reduce(
+    (count, key) => count + (modifiers?.[key] === true ? 1 : 0),
+    0
+  );
+  const effectiveRepeatIndex = Math.max(0, previousCount - exceptionCount);
+  const multiplier =
+    effectiveRepeatIndex >= ANTI_FARMING_MULTIPLIERS.length
+      ? 0
+      : ANTI_FARMING_MULTIPLIERS[effectiveRepeatIndex];
+
+  return {
+    multiplier,
+    applied: previousCount > 0,
+    previousSimilarCount: previousCount,
+    effectiveRepeatIndex,
+    exceptionCount,
+    exceptionsApplied: ANTI_FARMING_EXCEPTION_MODIFIERS.filter((key) => modifiers?.[key] === true),
+    guidance:
+      multiplier === 0
+        ? "Repeticion agotada para este dia sin novedad suficiente."
+        : previousCount > 0
+          ? "Repeticion diaria reducida; variar tecnica, dificultad, contexto u objetivo mejora el aprendizaje."
+          : "",
+  };
+}
+
+function calculateDurationAdjustedBaseExp({ expDelta, range = null, durationMinutes = null } = {}) {
+  if (!Number.isInteger(expDelta) || expDelta < 0) {
+    return {
+      expDelta: 0,
+      inputMode: "invalid",
+      scaledRange: null,
+    };
+  }
+
+  const minutes = normalizeDurationMinutes(durationMinutes);
+  if (!range || range.unit !== "hour" || !minutes) {
+    return {
+      expDelta,
+      inputMode: "canonical_unit",
+      scaledRange: null,
+    };
+  }
+
+  const factor = minutes / 60;
+  const scaledRange = {
+    min: Math.max(0, Math.round(range.min * factor)),
+    max: Math.max(0, Math.round(range.max * factor)),
+    unit: "duration",
+  };
+  const inCanonicalHourRange = expDelta >= range.min && expDelta <= range.max;
+  const inDurationRange = expDelta >= scaledRange.min && expDelta <= scaledRange.max;
+
+  if (inDurationRange && !inCanonicalHourRange) {
+    return {
+      expDelta,
+      inputMode: "duration_adjusted_input",
+      scaledRange,
+    };
+  }
+
+  return {
+    expDelta: Math.max(0, Math.round(expDelta * factor)),
+    inputMode: "prorated_from_hour",
+    scaledRange,
+  };
+}
+
+function calculateExpMultiplier({
+  skillId,
+  modifiers = {},
+  currentEnergy = null,
+  currentPhase = "",
+  antiFarmingContext = {},
+}) {
   const isMagical = MAGICAL_SKILL_IDS.has(skillId);
   const multiplierParts = [];
   let multiplier = 1;
@@ -299,16 +437,16 @@ function calculateExpMultiplier({ skillId, modifiers = {}, currentEnergy = null,
   }
 
   multiplier = Math.min(multiplier, 10);
+  const antiFarming = calculateAntiFarmingMultiplier({
+    previousSimilarCount: antiFarmingContext.previousSimilarCount,
+    modifiers,
+  });
 
   return {
     isMagical,
     multiplier,
     multiplierParts,
-    antiFarming: {
-      multiplier: 1,
-      applied: false,
-      todo: "Implementar reduccion por repeticion cuando exista historial diario de entrenamientos.",
-    },
+    antiFarming,
   };
 }
 
@@ -328,6 +466,8 @@ function validateSkillPatch({
   modifiers = {},
   currentEnergy = null,
   currentPhase = "",
+  durationMinutes = null,
+  antiFarmingContext = {},
 }) {
   const issues = [];
 
@@ -340,16 +480,42 @@ function validateSkillPatch({
   }
 
   const { categoryId, range } = getRecommendedRange({ skillId, category });
-  const multiplierInfo = calculateExpMultiplier({ skillId, modifiers, currentEnergy, currentPhase });
+  const durationAdjustment = calculateDurationAdjustedBaseExp({
+    expDelta,
+    range,
+    durationMinutes,
+  });
+  const durationAdjustedBaseExpDelta = durationAdjustment.expDelta;
+  const multiplierInfo = calculateExpMultiplier({
+    skillId,
+    modifiers,
+    currentEnergy,
+    currentPhase,
+    antiFarmingContext,
+  });
   const effectiveExpDelta = Number.isInteger(expDelta)
-    ? Math.max(0, Math.round(expDelta * multiplierInfo.multiplier * multiplierInfo.antiFarming.multiplier))
+    ? Math.max(
+        0,
+        Math.round(
+          durationAdjustedBaseExpDelta * multiplierInfo.multiplier * multiplierInfo.antiFarming.multiplier
+        )
+      )
     : 0;
 
-  if (range && Number.isInteger(expDelta) && expDelta > range.max) {
+  const inCanonicalRange = range && Number.isInteger(expDelta) && expDelta >= range.min && expDelta <= range.max;
+  const scaledRange = durationAdjustment.scaledRange;
+  const inDurationRange =
+    range &&
+    scaledRange &&
+    Number.isInteger(expDelta) &&
+    expDelta >= scaledRange.min &&
+    expDelta <= scaledRange.max;
+
+  if (range && Number.isInteger(expDelta) && !inCanonicalRange && !inDurationRange && expDelta > range.max) {
     issues.push(`expDelta ${expDelta} supera el rango base recomendado ${range.min}-${range.max} para ${skillId}/${categoryId}.`);
   }
 
-  if (range && Number.isInteger(expDelta) && expDelta < range.min) {
+  if (range && Number.isInteger(expDelta) && !inCanonicalRange && !inDurationRange && expDelta < range.min) {
     issues.push(`expDelta ${expDelta} queda por debajo del rango base recomendado ${range.min}-${range.max} para ${skillId}/${categoryId}.`);
   }
 
@@ -361,12 +527,25 @@ function validateSkillPatch({
     categoryId,
     recommendedRange: range,
     baseExpDelta: Number.isInteger(expDelta) ? expDelta : null,
+    durationMinutes: normalizeDurationMinutes(durationMinutes),
+    durationAdjustedBaseExpDelta,
+    durationAdjustmentMode: durationAdjustment.inputMode,
+    durationAdjustedRange: scaledRange,
     effectiveExpDelta,
     ...multiplierInfo,
   };
 }
 
-function previewSkillProgression({ skill, expDelta, reason = "", category = "", modifiers = {}, currentEnergy = null }) {
+function previewSkillProgression({
+  skill,
+  expDelta,
+  reason = "",
+  category = "",
+  modifiers = {},
+  currentEnergy = null,
+  durationMinutes = null,
+  antiFarmingContext = {},
+}) {
   const validation = validateSkillPatch({
     skillId: skill?.skillId,
     expDelta,
@@ -375,6 +554,8 @@ function previewSkillProgression({ skill, expDelta, reason = "", category = "", 
     modifiers,
     currentEnergy,
     currentPhase: skill?.phase || "",
+    durationMinutes,
+    antiFarmingContext,
   });
 
   if (!validation.ok) {
@@ -396,11 +577,15 @@ module.exports = {
   MAGICAL_SKILL_IDS,
   PHASE_ORDER,
   SKILL_ACTIVITY_RANGES,
+  ANTI_FARMING_MULTIPLIERS,
   applySkillExpPreview,
+  calculateAntiFarmingMultiplier,
+  calculateDurationAdjustedBaseExp,
   calculateExpMultiplier,
   getEnergyExpMultiplier,
   getNextPhase,
   getRecommendedRange,
+  normalizeCategory,
   previewSkillProgression,
   validateSkillPatch,
 };

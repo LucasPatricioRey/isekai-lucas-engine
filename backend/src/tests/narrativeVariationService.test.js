@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const {
   ACTION_FAMILIES,
   buildNarrativeHintsFromRecentLogs,
+  getTrackedActionFamily,
   inferActionFamily,
 } = require("../services/narrativeVariationService");
 
@@ -131,5 +132,24 @@ describe("narrative variation service", () => {
     assert.ok(["silencio", "gesto", "limite", "cansancio", "continuidad de confianza"].includes(
       hints.variationGuidance.primaryLever
     ));
+  });
+
+  it("prefers stored narrative tracking over noisy log text", () => {
+    const log = {
+      type: "eddan_guard_distance_training",
+      summary: "Lucas trabaja guardia, distancia y retirada en el gremio antes de volver.",
+      tags: ["physical_training", "action_family_physical_training"],
+      mechanicalChanges: {
+        location: { before: "loc_a", after: "loc_b" },
+        time: { before: "08:00", after: "08:30" },
+        narrativeTracking: {
+          actionFamily: ACTION_FAMILIES.PHYSICAL_TRAINING,
+          actionFingerprint: "physical_training:loc_guild:npc_eddan_rusk",
+        },
+      },
+    };
+
+    assert.equal(getTrackedActionFamily(log), ACTION_FAMILIES.PHYSICAL_TRAINING);
+    assert.equal(inferActionFamily({ log }), ACTION_FAMILIES.PHYSICAL_TRAINING);
   });
 });

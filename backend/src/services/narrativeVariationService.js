@@ -304,7 +304,32 @@ function collectTextParts({ actionSummary = "", log = null, changes = null, extr
     .join(" ");
 }
 
+function normalizeKnownActionFamily(value) {
+  const normalized = normalizeText(value).replace(/-/g, "_");
+  return Object.values(ACTION_FAMILIES).includes(normalized) ? normalized : "";
+}
+
+function getTrackedActionFamily(log = null) {
+  const tracked = normalizeKnownActionFamily(log?.mechanicalChanges?.narrativeTracking?.actionFamily || "");
+  if (tracked) return tracked;
+
+  for (const tag of toArray(log?.tags)) {
+    const normalized = normalizeText(tag).replace(/-/g, "_");
+    if (!normalized.startsWith("action_family_")) continue;
+    const family = normalizeKnownActionFamily(normalized.replace(/^action_family_/, ""));
+    if (family) return family;
+  }
+
+  return "";
+}
+
 function inferActionFamily(input = {}) {
+  const explicitFamily = normalizeKnownActionFamily(input.actionFamily || input.log?.actionFamily || "");
+  if (explicitFamily) return explicitFamily;
+
+  const trackedFamily = getTrackedActionFamily(input.log);
+  if (trackedFamily) return trackedFamily;
+
   const tags = new Set(toArray(input.tags || input.log?.tags).map(normalizeText));
   const type = normalizeText(input.type || input.log?.type || "");
   const text = normalizeText(collectTextParts(input));
@@ -735,7 +760,7 @@ async function buildNarrativeContextSummary({
   const lastByFamily = new Map();
 
   for (const log of recentLogs) {
-    const family = inferActionFamily({ log });
+    const family = getTrackedActionFamily(log) || inferActionFamily({ log });
     counts.set(family, (counts.get(family) || 0) + 1);
     if (!lastByFamily.has(family)) {
       lastByFamily.set(family, {
@@ -767,7 +792,7 @@ async function buildNarrativeContextSummary({
     windowDays: RECENT_WINDOW_DAYS,
     recentLogCount: recentLogs.length,
     repeatedFamilies,
-    lastActionFamily: recentLogs[0] ? inferActionFamily({ log: recentLogs[0] }) : "",
+    lastActionFamily: recentLogs[0] ? getTrackedActionFamily(recentLogs[0]) || inferActionFamily({ log: recentLogs[0] }) : "",
   };
 }
 
@@ -779,5 +804,6 @@ module.exports = {
   buildNarrativeContextSummary,
   buildNarrativeHints,
   buildNarrativeHintsFromRecentLogs,
+  getTrackedActionFamily,
   inferActionFamily,
 };

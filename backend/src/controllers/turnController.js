@@ -18,7 +18,7 @@ const { calculateActivityCost, normalizeCategory } = require("../services/biolog
 const { reconcileDailyEventsForGameState } = require("../services/dailyEventSchedulerService");
 const { buildWorldEventSocialConsequencePlan } = require("../services/dailyEventSocialService");
 const { expireAvailableMissionsForGameState } = require("../services/missionService");
-const { previewSkillProgression } = require("../services/skillProgressionService");
+const { normalizeCategory: normalizeSkillCategory, previewSkillProgression } = require("../services/skillProgressionService");
 const { ensureCurrentWeatherForGameState } = require("../services/weatherService");
 const { createAutomaticCheckpoint } = require("../services/checkpointService");
 const {
@@ -612,7 +612,15 @@ function applyStatDelta(stat, delta, statKey) {
   };
 }
 
-const ALLOWED_SKILL_PATCH_MODIFIERS = new Set(["aquaBlessing", "hasMaster"]);
+const ALLOWED_SKILL_PATCH_MODIFIERS = new Set([
+  "aquaBlessing",
+  "hasMaster",
+  "newTechnique",
+  "increasedDifficulty",
+  "newGoal",
+  "newContext",
+  "realRisk",
+]);
 
 function normalizeSkillPatchInput(patch) {
   if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
@@ -648,15 +656,93 @@ function normalizeSkillPatchInput(patch) {
     }
   }
 
+  let durationMinutes = null;
+  if (patch.durationMinutes !== undefined && patch.durationMinutes !== null && patch.durationMinutes !== "") {
+    durationMinutes = Number(patch.durationMinutes);
+    if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 24 * 60) {
+      throw validationError("skillPatch.durationMinutes debe ser entero entre 1 y 1440 si se envia.");
+    }
+  }
+
   return {
     reason,
     category,
     modifiers,
+    durationMinutes,
   };
 }
 
-function applyValidatedSkillPatch({ gameState, skill, patch }) {
+function inferSkillPatchDurationMinutes({ input, patch, body, skillPatchCount }) {
+  if (input.durationMinutes) return input.durationMinutes;
+
+  const patchCategory = normalizeSkillCategory(input.category);
+  const activityCost = body?.activityCost || null;
+  if (
+    activityCost &&
+    Number.isInteger(activityCost.minutes) &&
+    activityCost.minutes > 0 &&
+    normalizeCategory(activityCost.category || "") === patchCategory
+  ) {
+    return activityCost.minutes;
+  }
+
+  const timeAdvance = body?.timeAdvance || null;
+  if (skillPatchCount === 1 && timeAdvance?.from && timeAdvance?.to) {
+    const fromDay = timeAdvance.fromDay || gameState.currentDay;
+    const toDay = timeAdvance.toDay || fromDay;
+    const elapsedMinutes = diffAdvanceMinutes({
+      fromDay,
+      from: timeAdvance.from,
+      toDay,
+      to: timeAdvance.to,
+    });
+    if (elapsedMinutes > 0 && elapsedMinutes <= 24 * 60) return elapsedMinutes;
+  }
+
+  return null;
+}
+
+function countPriorSimilarSkillProgress({ logs = [], skillId, categoryId }) {
+  let count = 0;
+
+  for (const log of logs || []) {
+    const skillChanges = log?.mechanicalChanges?.skills;
+    if (!Array.isArray(skillChanges)) continue;
+
+    for (const change of skillChanges) {
+      if (change?.skillId !== skillId) continue;
+      if (normalizeSkillCategory(change.category || "") !== categoryId) continue;
+      count += 1;
+      break;
+    }
+  }
+
+  return count;
+}
+
+function applyValidatedSkillPatch({
+  gameState,
+  skill,
+  patch,
+  body = {},
+  recentSkillLogs = [],
+  priorLocalSimilarCount = 0,
+  skillPatchCount = 1,
+}) {
   const input = normalizeSkillPatchInput(patch);
+  const categoryId = normalizeSkillCategory(input.category);
+  const previousSimilarCount =
+    countPriorSimilarSkillProgress({
+      logs: recentSkillLogs,
+      skillId: patch.skillId,
+      categoryId,
+    }) + priorLocalSimilarCount;
+  const durationMinutes = inferSkillPatchDurationMinutes({
+    input,
+    patch,
+    body,
+    skillPatchCount,
+  });
   const preview = previewSkillProgression({
     skill: toPlain(skill),
     expDelta: patch.expDelta,
@@ -664,6 +750,10 @@ function applyValidatedSkillPatch({ gameState, skill, patch }) {
     category: input.category,
     modifiers: input.modifiers,
     currentEnergy: gameState.lucasStatus?.energy?.current ?? null,
+    durationMinutes,
+    antiFarmingContext: {
+      previousSimilarCount,
+    },
   });
 
   if (!preview.validation.recommendedRange) {
@@ -688,6 +778,10 @@ function applyValidatedSkillPatch({ gameState, skill, patch }) {
     category: preview.validation.categoryId,
     recommendedRange: preview.validation.recommendedRange,
     baseExpDelta: preview.validation.baseExpDelta,
+    durationMinutes: preview.validation.durationMinutes,
+    durationAdjustedBaseExpDelta: preview.validation.durationAdjustedBaseExpDelta,
+    durationAdjustmentMode: preview.validation.durationAdjustmentMode,
+    durationAdjustedRange: preview.validation.durationAdjustedRange,
     effectiveExpDelta: preview.validation.effectiveExpDelta,
     expDelta: preview.validation.effectiveExpDelta,
     multiplier: preview.validation.multiplier,
@@ -3336,6 +3430,16 @@ async function applyTurn(req, res) {
 
       if (Array.isArray(body.skillPatch)) {
         const skillChanges = [];
+        const recentSkillLogs = await EventLog.find({
+          gameId,
+          day: gameState.currentDay,
+          "mechanicalChanges.skills": { $exists: true },
+        })
+          .sort({ createdAt: 1 })
+          .limit(100)
+          .session(session)
+          .lean();
+        const localSkillCategoryCounts = new Map();
 
         for (const patch of body.skillPatch) {
           const skill = gameState.skills.find((entry) => entry.skillId === patch.skillId);
@@ -3344,13 +3448,22 @@ async function applyTurn(req, res) {
             throw validationError(`No existe la habilidad: ${patch.skillId}`);
           }
 
+          const inputCategoryId = normalizeSkillCategory(patch.category || "");
+          const localKey = `${patch.skillId}:${inputCategoryId}`;
+          const priorLocalSimilarCount = localSkillCategoryCounts.get(localKey) || 0;
+
           skillChanges.push({
             ...applyValidatedSkillPatch({
               gameState,
               skill,
               patch,
+              body,
+              recentSkillLogs,
+              priorLocalSimilarCount,
+              skillPatchCount: body.skillPatch.length,
             }),
           });
+          localSkillCategoryCounts.set(localKey, priorLocalSimilarCount + 1);
         }
 
         if (skillChanges.length > 0) {

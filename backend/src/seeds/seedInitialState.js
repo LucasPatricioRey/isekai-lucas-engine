@@ -448,6 +448,12 @@ async function seedInitialState() {
           { skillId: "skill_resistencia", name: "Resistencia", phase: "Principiante", level: 6, exp: 68, expToNext: 100 },
           { skillId: "skill_vitalidad", name: "Vitalidad", phase: "Principiante", level: 6, exp: 13, expToNext: 100 },
           { skillId: "skill_agilidad", name: "Agilidad", phase: "Principiante", level: 4, exp: 69, expToNext: 100 },
+          { skillId: "skill_esquiva", name: "Esquiva", phase: "Principiante", level: 1, exp: 0, expToNext: 100 },
+          { skillId: "skill_bloqueo", name: "Bloqueo", phase: "Principiante", level: 1, exp: 0, expToNext: 100 },
+          { skillId: "skill_retirada", name: "Retirada", phase: "Principiante", level: 1, exp: 0, expToNext: 100 },
+          { skillId: "skill_pelea_sin_armas", name: "Pelea sin armas", phase: "Principiante", level: 1, exp: 0, expToNext: 100 },
+          { skillId: "skill_daga", name: "Daga", phase: "Principiante", level: 1, exp: 0, expToNext: 100 },
+          { skillId: "skill_tactica_basica", name: "Táctica básica", phase: "Principiante", level: 1, exp: 0, expToNext: 100 },
           { skillId: "skill_percepcion", name: "Percepción", phase: "Principiante", level: 2, exp: 33, expToNext: 100 },
           { skillId: "skill_mana", name: "Maná", phase: "Principiante", level: 1, exp: 35, expToNext: 100 },
           { skillId: "skill_magia", name: "Magia", phase: "Principiante", level: 1, exp: 0, expToNext: 100 }

@@ -119,6 +119,17 @@
             "type": "object",
             "additionalProperties": true
           },
+          "durationMinutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1440,
+            "description": "Minutos reales de la practica si la categoria se mide por hora; permite prorratear EXP."
+          },
+          "previousSimilarCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Cantidad de sesiones similares previas del dia para simular anti-farmeo."
+          },
           "currentEnergy": {
             "type": "integer",
             "minimum": 0,
@@ -1121,6 +1132,12 @@
             "type": "string",
             "description": "Categoria canonica de actividad para validar rango, por ejemplo trabajo_normal, buscar_detalles_30min, practica_basica_10_30min."
           },
+          "durationMinutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1440,
+            "description": "Minutos reales de la practica cuando la categoria es por hora. Si se omite, applyTurn intenta inferirlo desde activityCost/timeAdvance."
+          },
           "reason": {
             "type": "string",
             "minLength": 8
@@ -1133,6 +1150,21 @@
                 "type": "boolean"
               },
               "hasMaster": {
+                "type": "boolean"
+              },
+              "newTechnique": {
+                "type": "boolean"
+              },
+              "increasedDifficulty": {
+                "type": "boolean"
+              },
+              "newGoal": {
+                "type": "boolean"
+              },
+              "newContext": {
+                "type": "boolean"
+              },
+              "realRisk": {
                 "type": "boolean"
               }
             },

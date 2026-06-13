@@ -870,6 +870,19 @@ No dar Vitalidad por estar cómodo.
 | Combate con esquivas | +4 a +12/escena |
 | Terreno difícil | +3 a +8/h |
 
+### 12.4.1 Subskills técnicas de combate
+
+Estas habilidades no inician combate por sí solas. Se entrenan con práctica supervisada, sombra, fundamentos o combate real cuando exista encuentro formal.
+
+| Habilidad | Acciones base |
+|---|---|
+| Esquiva | guardia/distancia 30 min +1 a +4; retirada controlada 30 min +1 a +4; combate con esquivas +4 a +12/escena |
+| Bloqueo | guardia/distancia 30 min +1 a +4; práctica guiada 1h +4 a +10; combate con bloqueos +3 a +10/escena |
+| Retirada | retirada controlada 30 min +1 a +4; guardia/distancia 30 min +1 a +4; huida controlada +3 a +10/escena |
+| Pelea sin armas | fundamentos 30 min +1 a +4; práctica guiada 1h +4 a +10; combate +3 a +12/escena |
+| Daga | fundamentos 30 min +1 a +4; práctica guiada 1h +4 a +10; combate +3 a +12/escena |
+| Táctica básica | lectura de distancia/análisis 30 min +1 a +4; combate +2 a +8/escena |
+
 ### 12.5 Percepción
 
 | Acción | EXP |
@@ -918,6 +931,8 @@ Aqua ×5 aplica.
 
 La misma acción repetida muchas veces da menos EXP si no añade dificultad, riesgo, técnica, guía, objetivo nuevo o contexto nuevo.
 
+Las categorías marcadas por hora se prorratean por minutos reales. Una práctica de 30 min usa la mitad de la EXP base/h antes de multiplicadores. No contar 30 min como una hora completa.
+
 | Sesión igual en el mismo día | Efectividad |
 |---|---:|
 | 1ª | 100% |
@@ -933,6 +948,8 @@ Excepciones:
 - riesgo real nuevo;
 - contexto obliga adaptación;
 - jornada laboral evaluada como bloque único.
+
+El backend debe registrar y aplicar este anti-farmeo con historial diario por habilidad/categoría. La guía de un maestro, técnica nueva, dificultad nueva, objetivo nuevo, contexto nuevo o riesgo real suavizan la penalización, pero no convierten repetición vacía en aprendizaje infinito.
 
 ---
 

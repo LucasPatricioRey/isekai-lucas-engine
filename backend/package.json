@@ -49,7 +49,9 @@
     "repair:daily-events": "node src/utils/repairDailyEventIntegrity.js",
     "repair:live-start-readiness": "node src/utils/repairLiveStartReadiness.js",
     "repair:live-continuity-bugs": "node src/utils/repairLiveContinuityBugs.js",
-    "repair:lucas-morning-shift-exit": "node src/utils/repairLucasMorningShiftExit.js"
+    "repair:lucas-morning-shift-exit": "node src/utils/repairLucasMorningShiftExit.js",
+    "repair:forest-evidence-progress": "node src/utils/repairForestEvidenceProgress.js",
+    "ensure:combat-training-skills": "node src/utils/ensureCombatTrainingSkills.js"
   },
   "keywords": [],
   "author": "",
