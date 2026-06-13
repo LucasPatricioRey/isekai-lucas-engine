@@ -3915,12 +3915,56 @@ async function claimCombatLoot({ gameId = "isekai_lucas_main", encounterId } = {
 }
 
 const TREATMENT_QUALITIES = ["poor", "basic", "good", "excellent"];
+const TREATMENT_TYPES = ["field_dressing", "clean_and_bind", "rest_care", "ointment", "pain_relief"];
+const RECOVERY_REST_QUALITIES = ["poor", "basic", "good", "excellent"];
+const RECOVERY_CARE_LEVELS = ["none", "self", "trained", "healer"];
+const RECOVERY_ACTIVITY_LEVELS = ["rest", "light", "normal", "hard"];
+const RISK_LEVELS = ["none", "low", "medium", "high", "critical"];
 
 function normalizeTreatmentQuality(value = "basic") {
   return TREATMENT_QUALITIES.includes(value) ? value : "basic";
 }
 
+function normalizeTreatmentType(value = "field_dressing") {
+  return TREATMENT_TYPES.includes(value) ? value : "field_dressing";
+}
+
+function normalizeRecoveryOption(value, allowed, fallback) {
+  return allowed.includes(value) ? value : fallback;
+}
+
+function normalizeRecoveryHours(hours = 8) {
+  return clamp(numberOr(hours, 8), 1, 24);
+}
+
+function roundTenths(value) {
+  return Math.round(numberOr(value, 0) * 10) / 10;
+}
+
+function lowerUntreatedRisk(risk = "none", steps = 1) {
+  const index = RISK_LEVELS.indexOf(risk);
+  if (index <= 0) return "none";
+  return RISK_LEVELS[Math.max(0, index - Math.max(0, steps))];
+}
+
+function getRecoveryTotalHours(injury) {
+  const expectedDays = numberOr(injury.expectedRecoveryDays, 0);
+  if (expectedDays > 0) return Math.max(1, expectedDays * 24);
+
+  const bySeverity = {
+    scratch: 6,
+    minor: 18,
+    moderate: 72,
+    serious: 168,
+    critical: 336,
+    maimed: 9999,
+  };
+
+  return bySeverity[injury.severity] || 24;
+}
+
 function buildTreatmentPlan(injury, { treatmentType = "field_dressing", quality = "basic" } = {}) {
+  const normalizedType = normalizeTreatmentType(treatmentType);
   const normalizedQuality = normalizeTreatmentQuality(quality);
   const qualityPower = {
     poor: 0,
@@ -3928,19 +3972,50 @@ function buildTreatmentPlan(injury, { treatmentType = "field_dressing", quality 
     good: 2,
     excellent: 3,
   }[normalizedQuality];
-  const isOintment = treatmentType === "ointment" || treatmentType === "pain_relief";
+  const isOintment = normalizedType === "ointment" || normalizedType === "pain_relief";
   const bleedingBefore = numberOr(injury.bleeding, 0);
   const painBefore = numberOr(injury.pain, 0);
-  const bleedingAfter = isOintment ? bleedingBefore : Math.max(0, bleedingBefore - Math.max(0, qualityPower));
-  const painAfter = isOintment
-    ? Math.max(0, painBefore - Math.max(1, qualityPower))
-    : Math.max(0, painBefore - (qualityPower >= 2 ? 1 : 0));
-  const statusAfter = bleedingAfter > 0 ? "treated" : "healing";
+  const blockingReasons = [];
+
+  if (["healed", "permanent"].includes(injury.status)) {
+    blockingReasons.push(`La herida no admite tratamiento en estado ${injury.status}.`);
+  }
+  if (normalizedType === "rest_care" && bleedingBefore > 0) {
+    blockingReasons.push("rest_care no reemplaza tratamiento: primero hay que estabilizar el sangrado.");
+  }
+
+  const canTreat = blockingReasons.length === 0;
+  let bleedingReduction = 0;
+  let painReduction = 0;
+
+  if (canTreat) {
+    if (isOintment) {
+      painReduction = Math.max(1, qualityPower);
+    } else if (normalizedType === "clean_and_bind") {
+      bleedingReduction = Math.max(0, qualityPower);
+      painReduction = qualityPower >= 1 ? 1 : 0;
+    } else if (normalizedType === "rest_care") {
+      painReduction = Math.max(1, qualityPower);
+    } else {
+      bleedingReduction = Math.max(0, qualityPower);
+      painReduction = qualityPower >= 2 ? 1 : 0;
+    }
+  }
+
+  const bleedingAfter = isOintment ? bleedingBefore : Math.max(0, bleedingBefore - bleedingReduction);
+  const painAfter = Math.max(0, painBefore - painReduction);
+  const statusAfter = !canTreat ? injury.status : bleedingAfter > 0 ? "treated" : "healing";
+  const untreatedRiskAfter = !canTreat
+    ? injury.untreatedRisk || "none"
+    : bleedingAfter > 0
+      ? lowerUntreatedRisk(injury.untreatedRisk || "low", qualityPower >= 2 ? 1 : 0)
+      : lowerUntreatedRisk(injury.untreatedRisk || "low", normalizedType === "clean_and_bind" && qualityPower >= 2 ? 2 : 1);
 
   return {
-    treatmentType,
+    treatmentType: normalizedType,
     quality: normalizedQuality,
-    canTreat: !["healed", "permanent"].includes(injury.status),
+    canTreat,
+    blockingReasons,
     bleeding: {
       before: bleedingBefore,
       after: bleedingAfter,
@@ -3961,7 +4036,7 @@ function buildTreatmentPlan(injury, { treatmentType = "field_dressing", quality 
     },
     untreatedRisk: {
       before: injury.untreatedRisk || "none",
-      after: bleedingAfter > 0 ? (injury.untreatedRisk || "low") : "low",
+      after: untreatedRiskAfter,
     },
     policy: "Tratamiento C5 estabiliza o mejora; no cura instantaneamente ni restaura vida.",
   };
@@ -3977,8 +4052,7 @@ async function previewInjuryTreatment({
   const injury = await InjuryRecord.findOne({ gameId, injuryId }).lean();
   if (!injury) throw makeError(`No existe InjuryRecord: ${injuryId}`, 404);
   const plan = buildTreatmentPlan(injury, { treatmentType, quality });
-  const blockingReasons = [];
-  if (!plan.canTreat) blockingReasons.push(`La herida no admite tratamiento en estado ${injury.status}.`);
+  const blockingReasons = plan.blockingReasons || [];
 
   return {
     dryRun: true,
@@ -3999,10 +4073,197 @@ function syncLegacyLucasInjuryTreatment(gameState, injuryId, plan) {
   const injuries = gameState.lucasStatus?.injuries || [];
   const legacy = injuries.find((entry) => entry.injuryId === injuryId);
   if (!legacy) return null;
+  legacy.status = plan.status.after;
+  legacy.treated = true;
   legacy.effects = unique([
     ...(legacy.effects || []),
     `tratada:${plan.quality}`,
     plan.bleeding.after === 0 ? "sangrado_estabilizado" : "",
+  ]);
+  return legacy;
+}
+
+function buildRecoveryPlan(
+  injury,
+  {
+    hours = 8,
+    restQuality = "basic",
+    careLevel = "self",
+    activityLevel = "rest",
+    currentDay = null,
+    currentTime = "",
+  } = {}
+) {
+  const normalizedHours = normalizeRecoveryHours(hours);
+  const normalizedRestQuality = normalizeRecoveryOption(restQuality, RECOVERY_REST_QUALITIES, "basic");
+  const normalizedCareLevel = normalizeRecoveryOption(careLevel, RECOVERY_CARE_LEVELS, "self");
+  const normalizedActivityLevel = normalizeRecoveryOption(activityLevel, RECOVERY_ACTIVITY_LEVELS, "rest");
+  const totalHours = getRecoveryTotalHours(injury);
+  const storedProgress = clamp(numberOr(injury.healingProgress, 0), 0, totalHours);
+  const storedRemaining =
+    injury.recoveryHoursRemaining === null || injury.recoveryHoursRemaining === undefined
+      ? null
+      : clamp(numberOr(injury.recoveryHoursRemaining, totalHours), 0, totalHours);
+  const progressBefore = storedRemaining === null ? storedProgress : Math.max(storedProgress, totalHours - storedRemaining);
+  const remainingBefore = Math.max(0, totalHours - progressBefore);
+  const bleedingBefore = numberOr(injury.bleeding, 0);
+  const painBefore = numberOr(injury.pain, 0);
+  const statusBefore = injury.status || "active";
+  const blockingReasons = [];
+
+  if (["healed", "permanent"].includes(statusBefore) || injury.severity === "maimed") {
+    blockingReasons.push(`La herida no admite recuperacion en estado ${statusBefore}.`);
+  }
+  if (bleedingBefore > 0 || injury.requiresTreatment) {
+    blockingReasons.push("La recuperacion C13 requiere sangrado estabilizado y tratamiento pendiente resuelto.");
+  }
+  if (normalizedActivityLevel === "hard") {
+    blockingReasons.push("Actividad dura no cuenta como recuperacion de herida.");
+  }
+  if (
+    currentDay !== null &&
+    injury.lastRecoveryDay === currentDay &&
+    injury.lastRecoveryTime &&
+    injury.lastRecoveryTime === currentTime
+  ) {
+    blockingReasons.push("Ya se aplico recuperacion de esta herida en el timestamp actual del GameState.");
+  }
+
+  const canRecover = blockingReasons.length === 0;
+  const qualityMultiplier = {
+    poor: 0.5,
+    basic: 1,
+    good: 1.25,
+    excellent: 1.5,
+  }[normalizedRestQuality];
+  const careMultiplier = {
+    none: injury.treated ? 0.75 : 0.35,
+    self: 1,
+    trained: 1.25,
+    healer: 1.6,
+  }[normalizedCareLevel];
+  const activityMultiplier = {
+    rest: 1,
+    light: 0.5,
+    normal: 0.2,
+    hard: 0,
+  }[normalizedActivityLevel];
+  const effectiveHours = canRecover
+    ? roundTenths(clamp(normalizedHours * qualityMultiplier * careMultiplier * activityMultiplier, 0, normalizedHours * 2))
+    : 0;
+  const progressAfter = roundTenths(clamp(progressBefore + effectiveHours, 0, totalHours));
+  const remainingAfter = roundTenths(Math.max(0, totalHours - progressAfter));
+  const painReduction = canRecover
+    ? clamp(Math.floor(effectiveHours / 12) + (normalizedCareLevel === "healer" && effectiveHours >= 4 ? 1 : 0), 0, painBefore)
+    : 0;
+  const painAfter = Math.max(0, painBefore - painReduction);
+  const healed = canRecover && remainingAfter <= 0 && bleedingBefore === 0;
+  const statusAfter = healed ? "healed" : progressAfter > progressBefore ? "healing" : statusBefore;
+  const untreatedRiskAfter = healed
+    ? "none"
+    : effectiveHours >= 8
+      ? lowerUntreatedRisk(injury.untreatedRisk || "none", normalizedCareLevel === "healer" ? 2 : 1)
+      : injury.untreatedRisk || "none";
+
+  return {
+    hours: normalizedHours,
+    restQuality: normalizedRestQuality,
+    careLevel: normalizedCareLevel,
+    activityLevel: normalizedActivityLevel,
+    canRecover,
+    blockingReasons,
+    recovery: {
+      totalHours,
+      effectiveHours,
+      progressBefore,
+      progressAfter,
+      delta: roundTenths(progressAfter - progressBefore),
+    },
+    recoveryHoursRemaining: {
+      before: roundTenths(remainingBefore),
+      after: remainingAfter,
+      delta: roundTenths(remainingAfter - remainingBefore),
+    },
+    bleeding: {
+      before: bleedingBefore,
+      after: bleedingBefore,
+      delta: 0,
+    },
+    pain: {
+      before: painBefore,
+      after: painAfter,
+      delta: painAfter - painBefore,
+    },
+    status: {
+      before: statusBefore,
+      after: statusAfter,
+    },
+    requiresTreatment: {
+      before: Boolean(injury.requiresTreatment),
+      after: healed ? false : Boolean(injury.requiresTreatment),
+    },
+    untreatedRisk: {
+      before: injury.untreatedRisk || "none",
+      after: untreatedRiskAfter,
+    },
+    policy:
+      "Recuperacion C13 acumula horas efectivas de descanso/cuidado; no avanza reloj, no restaura vida y no sustituye tratamiento de sangrado.",
+  };
+}
+
+async function previewInjuryRecovery({
+  gameId = "isekai_lucas_main",
+  injuryId,
+  hours = 8,
+  restQuality = "basic",
+  careLevel = "self",
+  activityLevel = "rest",
+} = {}) {
+  if (!injuryId) throw makeError("injuryId es obligatorio.", 400);
+  const [gameState, injury] = await Promise.all([
+    getGameStateOrThrow(gameId),
+    InjuryRecord.findOne({ gameId, injuryId }).lean(),
+  ]);
+  if (!injury) throw makeError(`No existe InjuryRecord: ${injuryId}`, 404);
+
+  const plan = buildRecoveryPlan(injury, {
+    hours,
+    restQuality,
+    careLevel,
+    activityLevel,
+    currentDay: gameState.currentDay,
+    currentTime: gameState.time,
+  });
+
+  return {
+    dryRun: true,
+    canRecover: plan.canRecover,
+    blockedReason: plan.blockingReasons.join(" "),
+    blockingReasons: plan.blockingReasons,
+    injury,
+    recovery: plan,
+    mutation: {
+      willMutateInjury: plan.canRecover,
+      willRestoreLife: false,
+      willAdvanceClock: false,
+      willCreateCheckpoint: plan.canRecover,
+    },
+  };
+}
+
+function syncLegacyLucasInjuryRecovery(gameState, injuryId, plan, injury) {
+  const injuries = gameState.lucasStatus?.injuries || [];
+  const legacy = injuries.find((entry) => entry.injuryId === injuryId);
+  if (!legacy) return null;
+
+  legacy.status = plan.status.after;
+  legacy.treated = Boolean(injury.treated || legacy.treated || plan.status.after !== "active");
+  legacy.healingProgress = plan.recovery.progressAfter;
+  legacy.recoveryHoursRemaining = plan.recoveryHoursRemaining.after;
+  legacy.effects = unique([
+    ...(legacy.effects || []),
+    plan.status.after === "healed" ? "curada" : "recuperando",
+    plan.recovery.delta > 0 ? `recuperacion:${plan.recovery.delta}h` : "",
   ]);
   return legacy;
 }
@@ -4095,6 +4356,116 @@ async function applyInjuryTreatment({
   };
 }
 
+async function applyInjuryRecovery({
+  gameId = "isekai_lucas_main",
+  injuryId,
+  hours = 8,
+  restQuality = "basic",
+  careLevel = "self",
+  activityLevel = "rest",
+} = {}) {
+  if (!injuryId) throw makeError("injuryId es obligatorio.", 400);
+  const [gameState, injury] = await Promise.all([
+    getGameStateDocOrThrow(gameId),
+    InjuryRecord.findOne({ gameId, injuryId }),
+  ]);
+  if (!injury) throw makeError(`No existe InjuryRecord: ${injuryId}`, 404);
+
+  const plan = buildRecoveryPlan(injury, {
+    hours,
+    restQuality,
+    careLevel,
+    activityLevel,
+    currentDay: gameState.currentDay,
+    currentTime: gameState.time,
+  });
+  if (!plan.canRecover) {
+    throw makeError(plan.blockingReasons.join(" ") || "La herida no admite recuperacion ahora.", 400, {
+      injuryId,
+      status: injury.status,
+      blockingReasons: plan.blockingReasons,
+    });
+  }
+
+  const checkpoint = await safeCombatCheckpoint({
+    gameId,
+    title: `Auto checkpoint - antes de recuperacion de herida ${injuryId}`,
+    reason: "Checkpoint automatico antes de aplicar recuperacion de herida.",
+    triggerKey: `combat_advanced_recovery:${injuryId}:${gameState.currentDay}:${gameState.time}`,
+    metadata: {
+      source: "applyInjuryRecovery",
+      injuryId,
+      hours: plan.hours,
+      restQuality: plan.restQuality,
+      careLevel: plan.careLevel,
+      activityLevel: plan.activityLevel,
+    },
+  });
+
+  injury.healingProgress = plan.recovery.progressAfter;
+  injury.recoveryHoursRemaining = plan.recoveryHoursRemaining.after;
+  injury.pain = plan.pain.after;
+  injury.requiresTreatment = plan.requiresTreatment.after;
+  injury.untreatedRisk = plan.untreatedRisk.after;
+  injury.status = plan.status.after;
+  injury.lastRecoveryDay = gameState.currentDay;
+  injury.lastRecoveryTime = gameState.time;
+  injury.flags = {
+    ...(injury.flags || {}),
+    recoveryHistory: [
+      ...(injury.flags?.recoveryHistory || []),
+      {
+        day: gameState.currentDay,
+        time: gameState.time,
+        hours: plan.hours,
+        effectiveHours: plan.recovery.effectiveHours,
+        restQuality: plan.restQuality,
+        careLevel: plan.careLevel,
+        activityLevel: plan.activityLevel,
+        statusAfter: plan.status.after,
+      },
+    ],
+  };
+  injury.markModified("flags");
+
+  const legacyInjury =
+    injury.targetType === "character" && injury.targetId === "char_lucas"
+      ? syncLegacyLucasInjuryRecovery(gameState, injuryId, plan, injury)
+      : null;
+
+  await injury.save();
+  if (legacyInjury) gameState.markModified("lucasStatus.injuries");
+  await gameState.save();
+
+  await EventLog.create({
+    logId: createId("log"),
+    gameId,
+    day: gameState.currentDay,
+    timeStart: gameState.time,
+    timeEnd: gameState.time,
+    locationId: gameState.locationId,
+    type: "combat_advanced_injury_recovery",
+    summary: `Recuperacion ${plan.recovery.effectiveHours}h aplicada a herida ${injuryId}.`,
+    involvedCharacterIds: injury.targetType === "character" ? [injury.targetId] : ["char_lucas"],
+    mechanicalChanges: {
+      injuryId,
+      recovery: plan,
+      restoredLife: false,
+      advancedClock: false,
+    },
+    visibility: "private",
+    source: "system",
+    tags: ["combat", "combat_advanced", "injury", "recovery"],
+  });
+
+  return {
+    injury: injury.toObject(),
+    recovery: plan,
+    legacyInjury,
+    autoCheckpoint: checkpoint,
+  };
+}
+
 module.exports = {
   ADVANCED_ACTIONS,
   previewStartEncounter,
@@ -4111,4 +4482,6 @@ module.exports = {
   claimCombatLoot,
   previewInjuryTreatment,
   applyInjuryTreatment,
+  previewInjuryRecovery,
+  applyInjuryRecovery,
 };

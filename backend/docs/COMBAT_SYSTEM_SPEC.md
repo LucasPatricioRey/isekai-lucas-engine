@@ -197,11 +197,10 @@ Recommended initial endpoints:
 12. `combatAdvancedClaimLoot`
 13. `combatAdvancedPreviewTreatment`
 14. `combatAdvancedApplyTreatment`
-15. `combatAdvancedListEnemyTemplates`
-16. `combatAdvancedGetEnemyTemplate`
-17. `combatAdvancedListWeaponProfiles`
-18. `combatAdvancedGetWeaponProfile`
-19. `combatAdvancedAuditEncounter`
+15. `combatAdvancedPreviewRecovery`
+16. `combatAdvancedApplyRecovery`
+
+Keep enemy templates, weapon profiles and direct audit/debug endpoints outside the GPT combat Action unless a later phase needs a separate read-only combat catalog.
 
 Do not create separate endpoints for flee/surrender/protect/intimidate at first. They should be action types handled by `previewAction/applyAction`.
 
@@ -724,6 +723,31 @@ Fields:
   status
 }
 ```
+
+### 7.10 CombatRecoveryState C13
+
+Purpose: formal wound recovery after bleeding/treatment is stable.
+
+Fields live on `InjuryRecord`:
+
+```js
+{
+  healingProgress,
+  recoveryHoursRemaining,
+  lastRecoveryDay,
+  lastRecoveryTime,
+  status // active, treated, healing, healed, worsened, permanent
+}
+```
+
+Flow:
+
+1. Use `combatAdvancedPreviewRecovery`.
+2. If `canRecover` is false, narrate the blocked reason and do not cure by text.
+3. Use `combatAdvancedApplyRecovery` only when Lucas actually rested or received care.
+4. Register any real passage of time through normal turn/time systems; recovery does not advance clock by itself.
+
+Recovery depends on hours, rest quality, care level and activity level. Active bleeding or pending treatment blocks recovery. Recovery may lower pain, reduce remaining hours or mark the wound healed, but never restores life.
 
 ---
 

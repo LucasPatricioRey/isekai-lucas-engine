@@ -27,6 +27,8 @@ const {
   combatAdvancedClaimLootController,
   combatAdvancedPreviewTreatmentController,
   combatAdvancedApplyTreatmentController,
+  combatAdvancedPreviewRecoveryController,
+  combatAdvancedApplyRecoveryController,
 } = require("../controllers/combatAdvancedController");
 
 const router = express.Router();
@@ -46,6 +48,8 @@ router.post("/advanced/encounters/:encounterId/end/preview", requireApiKey, comb
 router.post("/advanced/encounters/:encounterId/end", requireApiKey("gameplay"), combatAdvancedEndEncounterController);
 router.post("/advanced/injuries/:injuryId/treatment/preview", requireApiKey, combatAdvancedPreviewTreatmentController);
 router.post("/advanced/injuries/:injuryId/treatment/apply", requireApiKey("gameplay"), combatAdvancedApplyTreatmentController);
+router.post("/advanced/injuries/:injuryId/recovery/preview", requireApiKey, combatAdvancedPreviewRecoveryController);
+router.post("/advanced/injuries/:injuryId/recovery/apply", requireApiKey("gameplay"), combatAdvancedApplyRecoveryController);
 
 router.get("/actions", requireApiKey, listCombatActionsController);
 

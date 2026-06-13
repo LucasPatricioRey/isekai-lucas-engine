@@ -111,6 +111,7 @@ npm run audit:combat-advanced
 npm run audit:combat-playtest
 npm run audit:combat-balance
 npm run audit:combat-behavior
+npm run audit:combat-recovery
 npm run audit:gpt-readiness-compact
 ```
 
@@ -124,6 +125,7 @@ Condicion minima para abrir Preview:
 - `audit:combat-playtest` pasa si se va a usar combate real en partida.
 - `audit:combat-balance` pasa si se cambiaron formulas, enemigos, armas, armaduras o reglas de retirada.
 - `audit:combat-behavior` pasa si se cambiaron tipos de encuentro, conducta enemiga, moral, distancia o perfiles de enemigos.
+- `audit:combat-recovery` pasa si se tocaron heridas, tratamiento, recuperacion o endpoints medicos de combate.
 - El dia/hora/ubicacion existen y tienen formato valido.
 - Dinero y MP son numeros no negativos.
 - `activeMissionIds` es array.

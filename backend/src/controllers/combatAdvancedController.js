@@ -14,6 +14,8 @@ const {
   claimCombatLoot,
   previewInjuryTreatment,
   applyInjuryTreatment,
+  previewInjuryRecovery,
+  applyInjuryRecovery,
 } = require("../services/combatAdvancedService");
 
 function sendCombatAdvancedError(res, error) {
@@ -297,6 +299,49 @@ async function combatAdvancedApplyTreatmentController(req, res) {
   }
 }
 
+async function combatAdvancedPreviewRecoveryController(req, res) {
+  try {
+    const body = req.body || {};
+    const preview = await previewInjuryRecovery({
+      gameId: body.gameId || "isekai_lucas_main",
+      injuryId: req.params.injuryId,
+      hours: body.hours ?? 8,
+      restQuality: body.restQuality || "basic",
+      careLevel: body.careLevel || "self",
+      activityLevel: body.activityLevel || "rest",
+    });
+
+    return res.json({
+      ok: true,
+      preview,
+    });
+  } catch (error) {
+    return sendCombatAdvancedError(res, error);
+  }
+}
+
+async function combatAdvancedApplyRecoveryController(req, res) {
+  try {
+    const body = req.body || {};
+    const result = await applyInjuryRecovery({
+      gameId: body.gameId || "isekai_lucas_main",
+      injuryId: req.params.injuryId,
+      hours: body.hours ?? 8,
+      restQuality: body.restQuality || "basic",
+      careLevel: body.careLevel || "self",
+      activityLevel: body.activityLevel || "rest",
+    });
+
+    return res.json({
+      ok: true,
+      message: "Recuperacion aplicada correctamente.",
+      ...result,
+    });
+  } catch (error) {
+    return sendCombatAdvancedError(res, error);
+  }
+}
+
 module.exports = {
   combatAdvancedListActionsController,
   combatAdvancedPreviewStartEncounterController,
@@ -313,4 +358,6 @@ module.exports = {
   combatAdvancedClaimLootController,
   combatAdvancedPreviewTreatmentController,
   combatAdvancedApplyTreatmentController,
+  combatAdvancedPreviewRecoveryController,
+  combatAdvancedApplyRecoveryController,
 };

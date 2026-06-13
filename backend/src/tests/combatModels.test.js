@@ -205,6 +205,10 @@ describe("advanced combat models", () => {
       createdDay: 16,
       createdTime: "08:42",
       expectedRecoveryDays: 2,
+      healingProgress: 4,
+      recoveryHoursRemaining: 44,
+      lastRecoveryDay: 16,
+      lastRecoveryTime: "20:00",
     });
 
     const invalid = new InjuryRecord({
@@ -217,6 +221,8 @@ describe("advanced combat models", () => {
     });
 
     assert.equal(injury.validateSync(), undefined);
+    assert.equal(injury.healingProgress, 4);
+    assert.equal(injury.recoveryHoursRemaining, 44);
     assert.match(invalid.validateSync().message, /`leve` is not a valid enum value/);
   });
 

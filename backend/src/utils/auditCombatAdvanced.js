@@ -202,6 +202,13 @@ async function main() {
   assertTrue(issues, "schema includes block enum", combatSchema.components?.schemas?.PreviewActionRequest?.properties?.actionType?.enum?.includes("block"));
   assertTrue(issues, "schema includes combatMode", Boolean(combatSchema.components?.schemas?.CombatMode));
   assertTrue(issues, "schema includes encounterType", Boolean(combatSchema.components?.schemas?.EncounterType));
+  assertTrue(issues, "schema includes C13 RecoveryRequest", Boolean(combatSchema.components?.schemas?.RecoveryRequest));
+  assertTrue(
+    issues,
+    "schema includes recovery preview/apply",
+    Boolean(combatSchema.paths?.["/api/combat/advanced/injuries/{injuryId}/recovery/preview"]?.post) &&
+      Boolean(combatSchema.paths?.["/api/combat/advanced/injuries/{injuryId}/recovery/apply"]?.post)
+  );
 
   await assertMongoAvailable();
 

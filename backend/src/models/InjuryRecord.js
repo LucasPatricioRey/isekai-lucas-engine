@@ -142,6 +142,28 @@ const injuryRecordSchema = new mongoose.Schema(
       min: 0,
     },
 
+    healingProgress: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    recoveryHoursRemaining: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+
+    lastRecoveryDay: {
+      type: Number,
+      default: null,
+    },
+
+    lastRecoveryTime: {
+      type: String,
+      default: "",
+    },
+
     status: {
       type: String,
       enum: ["active", "treated", "healing", "healed", "worsened", "permanent"],

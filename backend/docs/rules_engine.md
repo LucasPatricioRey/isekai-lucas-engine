@@ -1,6 +1,6 @@
 # rules_engine.md — Motor Isekai Lucas
 
-Versión: Fase C12 v0.7 — conducta enemiga, tipos de encuentro y politica de combate backend
+Versión: Fase C13 v0.8 — recuperacion formal de heridas post-combate
 Estado: versión validada por Lucas mediante revisión guiada  
 Fuente de migración: Enciclopedia V2 Isekai Lucas + decisiones confirmadas por Lucas durante Fase 1 + validación guiada Fase 2  
 Propósito: este archivo define **cómo se resuelve el juego**. No contiene el save vivo completo ni el lore mundial extenso; eso vive en MongoDB y `world_bible.md`.
@@ -10,6 +10,7 @@ Actualización C9: el contexto compacto normal usa perfiles de proyección, ocul
 Actualización C10: agrega auditoria mutante controlada `audit:combat-playtest` sobre `GameState` temporal para verificar sparring, amenaza menor, bloqueo/esquiva, moral enemiga, retirada de Lucas, herida leve/tratamiento y evidencia post-combate sin loot inventado.
 Actualización C11: agrega `audit:combat-balance`, suaviza el escalado de críticos, aplica modificadores de arma/equipo defensivo y formaliza chaleco de cuero ligero/escudo simple como equipo común limitado.
 Actualización C12: agrega tipos formales de encuentro (`encounterType`), `encounterPolicy`, decision NPC persistida y `audit:combat-behavior` para validar que bandidos, depredadores, criaturas territoriales y sparring actuen por backend.
+Actualizacion C13: agrega recuperacion formal de heridas (`combatAdvancedPreviewRecovery`/`combatAdvancedApplyRecovery`), progreso en `InjuryRecord`, bloqueo por sangrado activo y `audit:combat-recovery`.
 
 ---
 
@@ -1184,6 +1185,8 @@ Defender, bloquear, esquivar y retirarse son acciones mecanicas distintas. Bloqu
 
 Usar objetos durante combate tambien requiere preview/apply de combate. `use_item` solo puede consumir items reales del inventario y, en C8.1, se limita a tratamiento de campo con `itemId` e `injuryId` reales. El backend decide consumo, calidad, estabilizacion y logs; el narrador no puede inventar curacion, vendajes disponibles ni restauracion de vida.
 
+Tratamiento y recuperacion son sistemas separados. `combatAdvancedPreviewTreatment`/`combatAdvancedApplyTreatment` estabilizan o mejoran sangrado/dolor, pero no restauran vida. `combatAdvancedPreviewRecovery`/`combatAdvancedApplyRecovery` acumulan horas efectivas de descanso/cuidado sobre una herida ya estabilizada; no avanzan el reloj, no reemplazan `applyTurn` para registrar tiempo biologico y no restauran vida. Si hay sangrado activo o tratamiento pendiente, recovery debe bloquearse hasta tratar la herida.
+
 ### 16.4 Playtest C10 obligatorio
 
 Antes de usar mucho combate real en partida, el backend debe pasar `npm run audit:combat-playtest` ademas de `npm run audit:combat-advanced`. Este playtest no toca el canon: clona el `GameState` vivo a un `gameId` temporal, crea enemigos/eventos/misiones/heridas temporales, ejecuta acciones reales de combate y borra todo al final.
@@ -1258,11 +1261,44 @@ Este audit clona el `GameState` vivo a un `gameId` temporal y verifica:
 - sparring con politica controlada;
 - limpieza total de documentos temporales.
 
-### 16.7 Muerte
+### 16.7 Recuperacion C13
+
+La recuperacion formal vive en `InjuryRecord`:
+
+- `healingProgress`;
+- `recoveryHoursRemaining`;
+- `lastRecoveryDay`;
+- `lastRecoveryTime`;
+- `status`: `active`, `treated`, `healing`, `healed`, `worsened` o `permanent`.
+
+El GPT debe usar preview antes de aplicar recuperacion. El resultado depende de:
+
+- horas de descanso/cuidado, maximo 24 por llamada;
+- calidad del descanso: `poor`, `basic`, `good`, `excellent`;
+- nivel de cuidado: `none`, `self`, `trained`, `healer`;
+- actividad durante la ventana: `rest`, `light`, `normal`, `hard`;
+- sangrado y tratamiento pendiente.
+
+Reglas:
+
+- Sangrado activo bloquea recuperacion; primero treatment.
+- Actividad dura no cuenta como recuperacion.
+- Una herida no puede recibir recovery dos veces en el mismo dia/hora del `GameState`.
+- Recovery puede bajar dolor, reducir horas restantes o marcar `healed`.
+- Recovery nunca sube `lucasStatus.life.current`.
+- Recovery no avanza reloj ni procesa hambre/energia; si Lucas descansa varias horas, el turno normal debe registrar ese paso de tiempo.
+
+Antes de usar recuperacion larga en partida, ejecutar:
+
+```bash
+npm run audit:combat-recovery
+```
+
+### 16.8 Muerte
 
 Muerte posible y permanente si la situación lo justifica. No matar NPCs importantes de forma barata, pero no usar plot armor si la situación fue letal.
 
-### 16.8 Recompensas
+### 16.9 Recompensas
 
 Matar enemigo no da loot automático. Sin contrato/prueba, no hay recompensa de gremio automática.
 

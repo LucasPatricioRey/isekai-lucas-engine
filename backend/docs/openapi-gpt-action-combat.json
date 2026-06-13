@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Combat Advanced",
-    "version": "0.6.0",
-    "description": "Tercer bloque de Actions para combate avanzado. Cubre preview/apply con previewId, backend rolls, ataque, defensa, bloqueo, esquiva, retirada, moral enemiga, fatiga, heridas, conducta enemiga C12 por tipo de encuentro, uso controlado de objetos de tratamiento, evidencia/loot logico sin inventario automatico y tratamiento basico."
+    "version": "0.7.0",
+    "description": "Tercer bloque de Actions para combate avanzado. Cubre preview/apply con previewId, backend rolls, ataque, defensa, bloqueo, esquiva, retirada, moral enemiga, fatiga, heridas, conducta enemiga C12 por tipo de encuentro, uso controlado de objetos de tratamiento, evidencia/loot logico sin inventario automatico, tratamiento basico y recuperacion C13 sin restauracion gratuita de vida."
   },
   "servers": [
     {
@@ -208,6 +208,37 @@
             "type": "string",
             "enum": ["poor", "basic", "good", "excellent"],
             "default": "basic"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RecoveryRequest": {
+        "type": "object",
+        "properties": {
+          "gameId": {
+            "$ref": "#/components/schemas/GameId"
+          },
+          "hours": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 24,
+            "default": 8,
+            "description": "Ventana de descanso/cuidado a registrar. No avanza el reloj por si sola."
+          },
+          "restQuality": {
+            "type": "string",
+            "enum": ["poor", "basic", "good", "excellent"],
+            "default": "basic"
+          },
+          "careLevel": {
+            "type": "string",
+            "enum": ["none", "self", "trained", "healer"],
+            "default": "self"
+          },
+          "activityLevel": {
+            "type": "string",
+            "enum": ["rest", "light", "normal", "hard"],
+            "default": "rest"
           }
         },
         "additionalProperties": false
@@ -727,9 +758,87 @@
           }
         }
       }
+    },
+    "/api/combat/advanced/injuries/{injuryId}/recovery/preview": {
+      "post": {
+        "operationId": "combatAdvancedPreviewRecovery",
+        "summary": "Previsualiza recuperacion formal de una herida.",
+        "description": "No muta estado. Calcula progreso por horas efectivas de descanso/cuidado. No avanza reloj, no restaura vida y no reemplaza tratamiento de sangrado.",
+        "parameters": [
+          {
+            "name": "injuryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Preview de recuperacion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/combat/advanced/injuries/{injuryId}/recovery/apply": {
+      "post": {
+        "operationId": "combatAdvancedApplyRecovery",
+        "summary": "Aplica recuperacion formal de una herida.",
+        "description": "Muta InjuryRecord y, si corresponde, la herida legacy de Lucas. No restaura vida automaticamente ni avanza el reloj; el turno normal debe registrar el paso del tiempo.",
+        "parameters": [
+          {
+            "name": "injuryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recuperacion aplicada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "x-action-role": "combat-advanced",
   "x-no-overlap-with": "openapi-gpt-action-compact.json",
-  "x-phase": "C8.1-combat-equipment-items"
+  "x-phase": "C13-combat-injury-recovery"
 }

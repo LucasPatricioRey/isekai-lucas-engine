@@ -1204,4 +1204,172 @@ describe("combat advanced API", () => {
     const legacy = afterState.lucasStatus.injuries.find((entry) => entry.injuryId === tempInjuryId);
     assert.ok(legacy.effects.includes("tratada:good"));
   });
+
+  it("previews and applies C13 injury recovery without restoring life or healing active bleeding", async () => {
+    const bleedingInjuryId = `injury_combat_c13_bleeding_${Date.now()}`;
+    const recoveryInjuryId = `injury_combat_c13_recovery_${Date.now()}`;
+    const healedInjuryId = `injury_combat_c13_healed_${Date.now()}`;
+    const gameState = await GameState.findOne({ gameId: tempGameId });
+    const lifeBefore = gameState.lucasStatus.life.current;
+
+    await InjuryRecord.create([
+      {
+        injuryId: bleedingInjuryId,
+        gameId: tempGameId,
+        encounterId: "",
+        targetType: "character",
+        targetId: "char_lucas",
+        bodyPart: "right_arm",
+        injuryType: "cut",
+        severity: "minor",
+        bleeding: 1,
+        pain: 2,
+        untreatedRisk: "low",
+        requiresTreatment: true,
+        createdDay: gameState.currentDay,
+        createdTime: gameState.time,
+        notes: "Fixture C13 bleeding injury.",
+      },
+      {
+        injuryId: recoveryInjuryId,
+        gameId: tempGameId,
+        encounterId: "",
+        targetType: "character",
+        targetId: "char_lucas",
+        bodyPart: "left_leg",
+        injuryType: "sprain",
+        severity: "minor",
+        bleeding: 0,
+        pain: 2,
+        untreatedRisk: "low",
+        requiresTreatment: false,
+        treated: true,
+        treatmentQuality: "basic",
+        healingProgress: 0,
+        recoveryHoursRemaining: 18,
+        expectedRecoveryDays: 0,
+        status: "healing",
+        createdDay: gameState.currentDay,
+        createdTime: gameState.time,
+        notes: "Fixture C13 recovery injury.",
+      },
+      {
+        injuryId: healedInjuryId,
+        gameId: tempGameId,
+        encounterId: "",
+        targetType: "character",
+        targetId: "char_lucas",
+        bodyPart: "left_arm",
+        injuryType: "cut",
+        severity: "scratch",
+        bleeding: 0,
+        pain: 1,
+        untreatedRisk: "low",
+        requiresTreatment: false,
+        treated: true,
+        healingProgress: 0,
+        recoveryHoursRemaining: 6,
+        expectedRecoveryDays: 0,
+        status: "healing",
+        createdDay: gameState.currentDay,
+        createdTime: gameState.time,
+        notes: "Fixture C13 healed injury.",
+      },
+    ]);
+
+    gameState.lucasStatus.injuries.push(
+      {
+        injuryId: recoveryInjuryId,
+        location: "left_leg",
+        severity: "leve",
+        description: "Fixture C13 recovery injury.",
+        effects: ["dolor 2"],
+        createdDay: gameState.currentDay,
+        createdTime: gameState.time,
+      },
+      {
+        injuryId: healedInjuryId,
+        location: "left_arm",
+        severity: "leve",
+        description: "Fixture C13 healed injury.",
+        effects: ["dolor 1"],
+        createdDay: gameState.currentDay,
+        createdTime: gameState.time,
+      }
+    );
+    await gameState.save();
+
+    const blockedRecovery = await post(`/api/combat/advanced/injuries/${encodeURIComponent(bleedingInjuryId)}/recovery/preview`, {
+      gameId: tempGameId,
+      hours: 8,
+      restQuality: "good",
+      careLevel: "self",
+      activityLevel: "rest",
+    });
+
+    assert.equal(blockedRecovery.status, 200, JSON.stringify(blockedRecovery.data));
+    assert.equal(blockedRecovery.data.preview.canRecover, false);
+    assert.match(blockedRecovery.data.preview.blockedReason, /sangrado estabilizado/);
+    const bleedingAfterPreview = await InjuryRecord.findOne({ gameId: tempGameId, injuryId: bleedingInjuryId }).lean();
+    assert.equal(bleedingAfterPreview.healingProgress, 0);
+
+    const previewRecovery = await post(`/api/combat/advanced/injuries/${encodeURIComponent(recoveryInjuryId)}/recovery/preview`, {
+      gameId: tempGameId,
+      hours: 8,
+      restQuality: "good",
+      careLevel: "trained",
+      activityLevel: "rest",
+    });
+
+    assert.equal(previewRecovery.status, 200, JSON.stringify(previewRecovery.data));
+    assert.equal(previewRecovery.data.preview.canRecover, true);
+    assert.equal(previewRecovery.data.preview.mutation.willRestoreLife, false);
+    assert.equal(previewRecovery.data.preview.mutation.willAdvanceClock, false);
+    assert.ok(previewRecovery.data.preview.recovery.recovery.effectiveHours > 8);
+
+    const appliedRecovery = await post(`/api/combat/advanced/injuries/${encodeURIComponent(recoveryInjuryId)}/recovery/apply`, {
+      gameId: tempGameId,
+      hours: 8,
+      restQuality: "good",
+      careLevel: "trained",
+      activityLevel: "rest",
+    });
+
+    assert.equal(appliedRecovery.status, 200, JSON.stringify(appliedRecovery.data));
+    assert.equal(appliedRecovery.data.ok, true);
+    assert.equal(appliedRecovery.data.recovery.policy.includes("no restaura vida"), true);
+    assert.equal(appliedRecovery.data.recovery.status.after, "healing");
+    assert.ok(appliedRecovery.data.injury.healingProgress > 0);
+    assert.equal(appliedRecovery.data.injury.recoveryHoursRemaining < 18, true);
+    assert.equal(appliedRecovery.data.autoCheckpoint.created, true);
+
+    const duplicateRecovery = await post(`/api/combat/advanced/injuries/${encodeURIComponent(recoveryInjuryId)}/recovery/apply`, {
+      gameId: tempGameId,
+      hours: 8,
+      restQuality: "basic",
+      careLevel: "self",
+      activityLevel: "rest",
+    });
+    assert.equal(duplicateRecovery.status, 400);
+
+    const appliedHealed = await post(`/api/combat/advanced/injuries/${encodeURIComponent(healedInjuryId)}/recovery/apply`, {
+      gameId: tempGameId,
+      hours: 8,
+      restQuality: "excellent",
+      careLevel: "healer",
+      activityLevel: "rest",
+    });
+
+    assert.equal(appliedHealed.status, 200, JSON.stringify(appliedHealed.data));
+    assert.equal(appliedHealed.data.injury.status, "healed");
+    assert.equal(appliedHealed.data.injury.recoveryHoursRemaining, 0);
+    assert.equal(appliedHealed.data.injury.pain, 0);
+
+    const afterState = await GameState.findOne({ gameId: tempGameId }).lean();
+    assert.equal(afterState.lucasStatus.life.current, lifeBefore);
+    const legacy = afterState.lucasStatus.injuries.find((entry) => entry.injuryId === healedInjuryId);
+    assert.equal(legacy.status, "healed");
+    assert.equal(legacy.recoveryHoursRemaining, 0);
+    assert.ok(legacy.effects.includes("curada"));
+  });
 });
