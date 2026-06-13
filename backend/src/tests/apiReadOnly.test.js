@@ -52,7 +52,19 @@ describe("read-only API coverage", () => {
 
     const defaultCompact = await get("/api/context/compact");
     assert.equal(defaultCompact.status, 200);
+    assert.equal(defaultCompact.data.profile, "player_scene");
     assert.equal(defaultCompact.data.context.technicalSummary, undefined);
+  });
+
+  it("serves read-only state audit for technical admin mode", async () => {
+    const audit = await get("/api/context/audit-state");
+    assert.equal(audit.status, 200);
+    assert.equal(audit.data.schemaVersion, "state_audit_v1");
+    assert.ok(Array.isArray(audit.data.issues));
+    assert.ok(audit.data.checks.missions);
+    assert.ok(audit.data.checks.events);
+    assert.ok(audit.data.checks.magic);
+    assert.ok(audit.data.checks.combatSchema);
   });
 
   it("serves public OpenAPI schemas for GPT Builder import", async () => {
@@ -66,6 +78,7 @@ describe("read-only API coverage", () => {
     assert.equal(adminExtra.data.openapi, "3.1.0");
     assert.match(adminExtra.data.servers[0].url, /^http:\/\/127\.0\.0\.1:\d+$/);
     assert.ok(adminExtra.data.paths["/api/world/events"]);
+    assert.ok(adminExtra.data.paths["/api/context/audit-state"]);
   });
 
   it("searches DB and docs", async () => {

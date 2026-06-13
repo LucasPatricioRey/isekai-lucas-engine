@@ -18,6 +18,9 @@ async function getMissionBoardController(req, res) {
       includeExpiredAvailable: ["1", "true", "yes"].includes(
         String(req.query.includeExpiredAvailable || "").toLowerCase()
       ),
+      includeTestSuite: ["1", "true", "yes"].includes(
+        String(req.query.includeTestSuite || "").toLowerCase()
+      ),
     });
 
     return res.json({

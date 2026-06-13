@@ -212,7 +212,7 @@
       "get": {
         "operationId": "combatAdvancedListActions",
         "summary": "Lista acciones de combate avanzado disponibles.",
-        "description": "Lectura. Devuelve actionTypes, economia de accion y notas. attack/defend/block/dodge/observe/move/flee/surrender/intimidate/prepare tienen aplicacion backend basica.",
+        "description": "Lectura. Devuelve actionTypes, economia de accion y notas. attack/defend/block/dodge/observe/move/flee/surrender/use_item/intimidate/prepare tienen aplicacion backend basica.",
         "responses": {
           "200": {
             "description": "Acciones.",

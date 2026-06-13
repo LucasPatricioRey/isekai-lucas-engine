@@ -822,6 +822,21 @@ function summarizeRumor(rumor) {
   };
 }
 
+function isDebugNarrativeTag(tag = "") {
+  const normalized = String(tag || "").toLowerCase();
+  return (
+    normalized === "admin_fix" ||
+    normalized.includes("repair") ||
+    normalized.includes("test") ||
+    normalized.startsWith("former_") ||
+    normalized.startsWith("debug_")
+  );
+}
+
+function narrativeTags(tags = []) {
+  return (tags || []).filter((tag) => !isDebugNarrativeTag(tag));
+}
+
 function summarizeWorldEvent(event) {
   if (!event) return null;
   const storedEffects = event.effects || [];
@@ -892,7 +907,7 @@ function summarizeWorldEvent(event) {
     dailyEventNotice: countsAsMainEvent ? buildDailyEventNotice(event) : null,
     cause: truncateText(event.cause || "", 500),
     effects: relevantEffects.slice(0, 6),
-    tags,
+    tags: narrativeTags(tags),
   };
 }
 

@@ -2,6 +2,8 @@
 const Mission = require("../models/Mission");
 const EventLog = require("../models/EventLog");
 
+const CANON_GAME_ID = "isekai_lucas_main";
+
 const GUILD_RANKS_REQUIRING_FORMAL_REGISTRATION = new Set([
   "Cobre",
   "Bronce",
@@ -37,6 +39,34 @@ function createLogId() {
 
 function getMissionFlags(mission = {}) {
   return mission.flags && typeof mission.flags === "object" ? mission.flags : {};
+}
+
+function shouldIncludeTestSuiteMissions({ gameId = CANON_GAME_ID, includeTestSuite = false } = {}) {
+  return Boolean(includeTestSuite) || gameId !== CANON_GAME_ID;
+}
+
+function applyMissionEnvironmentFilter(query, { gameId = CANON_GAME_ID, includeTestSuite = false } = {}) {
+  if (!shouldIncludeTestSuiteMissions({ gameId, includeTestSuite })) {
+    query["flags.testSuite"] = { $ne: true };
+  }
+
+  return query;
+}
+
+function canonicalActiveMissionQuery(gameState = {}, { includeTestSuite = false } = {}) {
+  const characterId = gameState.characterId || "char_lucas";
+  const activeMissionIds = gameState.activeMissionIds || [];
+  const query = {
+    $or: [
+      { status: "accepted", acceptedByCharacterId: characterId },
+      { status: "accepted", missionId: { $in: activeMissionIds } },
+    ],
+  };
+
+  return applyMissionEnvironmentFilter(query, {
+    gameId: gameState.gameId || CANON_GAME_ID,
+    includeTestSuite,
+  });
 }
 
 function missionRequiresFormalRegistration(mission = {}) {
@@ -89,8 +119,9 @@ async function getMissionBoard({
   rank,
   riskLevel,
   sourceFactionId,
-  gameId = "isekai_lucas_main",
+  gameId = CANON_GAME_ID,
   includeExpiredAvailable = false,
+  includeTestSuite = false,
 } = {}) {
   const query = {};
 
@@ -104,6 +135,7 @@ async function getMissionBoard({
   if (rank) query.rank = rank;
   if (riskLevel) query.riskLevel = riskLevel;
   if (sourceFactionId) query.sourceFactionId = sourceFactionId;
+  applyMissionEnvironmentFilter(query, { gameId, includeTestSuite });
 
   const missions = await Mission.find(query)
     .sort({ status: 1, rank: 1, postedDay: -1, postedTime: -1 })
@@ -133,7 +165,7 @@ async function getMissionDetail(missionId) {
   return mission;
 }
 
-async function acceptMission({ missionId, gameId = "isekai_lucas_main", characterId = "char_lucas" }) {
+async function acceptMission({ missionId, gameId = CANON_GAME_ID, characterId = "char_lucas" }) {
   const gameState = await GameState.findOne({ gameId });
 
   if (!gameState) {
@@ -205,7 +237,7 @@ async function acceptMission({ missionId, gameId = "isekai_lucas_main", characte
 
 async function submitMissionReport({
   missionId,
-  gameId = "isekai_lucas_main",
+  gameId = CANON_GAME_ID,
   characterId = "char_lucas",
   reportSummary = "",
 }) {
@@ -273,8 +305,10 @@ async function expireAvailableMissionsForGameState(
 ) {
   const query = { status: "available" };
 
-  if (gameState.gameId && gameState.gameId !== "isekai_lucas_main") {
+  if (gameState.gameId && gameState.gameId !== CANON_GAME_ID) {
     query["flags.testSuite"] = true;
+  } else {
+    applyMissionEnvironmentFilter(query, { gameId: gameState.gameId || CANON_GAME_ID });
   }
 
   const available = await Mission.find(query).session(session).exec();
@@ -309,7 +343,7 @@ async function expireAvailableMissionsForGameState(
   };
 }
 
-async function expireAvailableMissions({ gameId = "isekai_lucas_main" }) {
+async function expireAvailableMissions({ gameId = CANON_GAME_ID }) {
   const gameState = await GameState.findOne({ gameId }).lean();
 
   if (!gameState) {
@@ -331,4 +365,7 @@ module.exports = {
   isMissionExpired,
   annotateMissionForBoard,
   missionRequiresFormalRegistration,
+  shouldIncludeTestSuiteMissions,
+  applyMissionEnvironmentFilter,
+  canonicalActiveMissionQuery,
 };

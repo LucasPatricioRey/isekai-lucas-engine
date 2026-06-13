@@ -444,8 +444,9 @@ function main() {
   const adminExtraOperationIds = collectOperationIds(adminExtra);
   const duplicatedOperationIds = adminExtraOperationIds.filter((operationId) => compactOperationIds.has(operationId));
   assertCondition(issues, "admin extra schema exists", fs.existsSync(ADMIN_EXTRA_PATH));
-  assertCondition(issues, "admin extra has 10 operations", adminExtraOps.size === 10, String(adminExtraOps.size));
+  assertCondition(issues, "admin extra has 11 operations", adminExtraOps.size === 11, String(adminExtraOps.size));
   assertCondition(issues, "admin extra schema has only GET operations", adminExtraMutators.length === 0, adminExtraMutators.join(", "));
+  assertCondition(issues, "admin extra includes state audit", adminExtraOps.has("GET /api/context/audit-state"));
   assertCondition(issues, "admin extra includes world event list", adminExtraOps.has("GET /api/world/events"));
   assertCondition(issues, "admin extra includes world event detail", adminExtraOps.has("GET /api/world/events/{eventId}"));
   assertCondition(issues, "admin extra operationIds do not duplicate compact", duplicatedOperationIds.length === 0, duplicatedOperationIds.join(", "));

@@ -3295,6 +3295,17 @@
             }
           },
           {
+            "name": "profile",
+            "in": "query",
+            "required": false,
+            "description": "Perfil de proyeccion del contexto compacto.",
+            "schema": {
+              "type": "string",
+              "enum": ["player_scene", "mechanical_turn", "minimal_header", "debug_audit"],
+              "default": "player_scene"
+            }
+          },
+          {
             "name": "npcLimit",
             "in": "query",
             "required": false,

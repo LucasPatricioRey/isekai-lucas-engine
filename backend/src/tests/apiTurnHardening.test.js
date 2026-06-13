@@ -32,6 +32,7 @@ let tempGameId = "";
 let tempMissionId = "";
 let tempExpiredMissionId = "";
 let tempGuildMissionId = "";
+let tempCanonLeakMissionId = "";
 let tempJobContractId = "";
 let tempCreatedJobContractId = "";
 let tempNpcId = "";
@@ -44,6 +45,7 @@ async function createIsolatedGameState() {
   tempMissionId = `mission_test_turn_hardening_${Date.now()}`;
   tempExpiredMissionId = `mission_test_turn_hardening_expired_${Date.now()}`;
   tempGuildMissionId = `mission_test_turn_hardening_cobre_${Date.now()}`;
+  tempCanonLeakMissionId = `mission_test_turn_hardening_canon_leak_${Date.now()}`;
   tempJobContractId = `contract_test_turn_hardening_${Date.now()}`;
   tempNpcId = `npc_test_relationship_${Date.now()}`;
   tempRemoteNpcId = `npc_test_relationship_remote_${Date.now()}`;
@@ -142,6 +144,31 @@ async function createIsolatedGameState() {
     postedTime: "12:00",
     expiresDay: 10,
     expiresTime: "18:00",
+    proofRequired: "Reporte de prueba.",
+    proofStatus: "pending",
+    flags: { testSuite: true },
+  });
+
+  await Mission.create({
+    missionId: tempCanonLeakMissionId,
+    templateId: "test_turn_hardening_canon_leak",
+    title: "Test controlado invisible en canon",
+    description: "Mision temporal para validar que fixtures testSuite no entren al contexto canon.",
+    sourceFactionId: "faction_hoshimori_guild",
+    clientNpcId: "npc_garrick_thorne",
+    locationId: "loc_hoshimori_guild",
+    rank: "Porcelana",
+    requirements: [],
+    reward: { moneyCopper: 1, items: [], other: "" },
+    mgReward: 0,
+    riskLevel: "none",
+    status: "accepted",
+    postedDay: 10,
+    postedTime: "12:00",
+    expiresDay: 10,
+    expiresTime: "18:00",
+    acceptedByCharacterId: "char_lucas",
+    acceptedDay: 10,
     proofRequired: "Reporte de prueba.",
     proofStatus: "pending",
     flags: { testSuite: true },
@@ -249,7 +276,9 @@ async function cleanupIsolatedState() {
   if (tempGameId) await Evidence.deleteMany({ gameId: tempGameId });
   if (tempGameId) await WorldEvent.deleteMany({ gameId: tempGameId });
   await Mission.deleteMany({
-    missionId: { $in: [tempMissionId, tempExpiredMissionId, tempGuildMissionId].filter(Boolean) },
+    missionId: {
+      $in: [tempMissionId, tempExpiredMissionId, tempGuildMissionId, tempCanonLeakMissionId].filter(Boolean),
+    },
   });
   await JobContract.deleteMany({
     contractId: { $in: [tempJobContractId, tempCreatedJobContractId].filter(Boolean) },
@@ -293,6 +322,48 @@ describe("turn hardening coverage", () => {
     assert.equal(debugBoard.status, 200);
     assert.equal(debugBoard.data.ok, true);
     assert.equal(debugBoard.data.missions.some((mission) => mission.missionId === tempExpiredMissionId), true);
+  });
+
+  it("keeps testSuite missions out of canonical board and compact context", async () => {
+    const canonicalBoard = await get("/api/missions/board?status=accepted&locationId=loc_hoshimori_guild");
+    assert.equal(canonicalBoard.status, 200);
+    assert.equal(
+      canonicalBoard.data.missions.some((mission) => mission.missionId === tempCanonLeakMissionId),
+      false
+    );
+
+    const debugBoard = await get(
+      `/api/missions/board?status=accepted&locationId=loc_hoshimori_guild&includeTestSuite=true`
+    );
+    assert.equal(debugBoard.status, 200);
+    assert.equal(
+      debugBoard.data.missions.some((mission) => mission.missionId === tempCanonLeakMissionId),
+      true
+    );
+
+    const canonicalCompact = await get("/api/context/compact");
+    assert.equal(canonicalCompact.status, 200);
+    assert.equal(
+      (canonicalCompact.data.context.activeMissions || []).some(
+        (mission) => mission.missionId === tempCanonLeakMissionId
+      ),
+      false
+    );
+    assert.equal(
+      (canonicalCompact.data.context.missionAgenda?.acceptedExpired || []).some(
+        (mission) => mission.missionId === tempCanonLeakMissionId
+      ),
+      false
+    );
+
+    const isolatedCompact = await get(`/api/context/compact?gameId=${encodeURIComponent(tempGameId)}`);
+    assert.equal(isolatedCompact.status, 200);
+    assert.equal(
+      (isolatedCompact.data.context.activeMissions || []).some(
+        (mission) => mission.missionId === tempCanonLeakMissionId
+      ),
+      true
+    );
   });
 
   it("shows formally blocked guild missions on the board with a clear block reason", async () => {

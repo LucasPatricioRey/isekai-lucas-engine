@@ -25,7 +25,12 @@ const KnowledgeRecord = require("../models/KnowledgeRecord");
 const responseShaping = require("../utils/responseShaping");
 const { buildNarrativeContextSummary } = require("../services/narrativeVariationService");
 const { buildNpcKnowledgeContext } = require("../services/knowledgeService");
-const { annotateMissionForBoard } = require("../services/missionService");
+const { buildStateAudit } = require("../services/stateAuditService");
+const {
+  annotateMissionForBoard,
+  applyMissionEnvironmentFilter,
+  shouldIncludeTestSuiteMissions,
+} = require("../services/missionService");
 const {
   DAILY_EVENT_TAG,
   EVENT_LAYERS,
@@ -37,6 +42,157 @@ const {
 
 function unique(values) {
   return Array.from(new Set(values.filter(Boolean)));
+}
+
+function normalizeCompactProfile(value, includeTechnicalSummary = false) {
+  const requested = String(value || "").trim();
+  if (["player_scene", "mechanical_turn", "minimal_header", "debug_audit"].includes(requested)) {
+    return requested;
+  }
+  return includeTechnicalSummary ? "debug_audit" : "player_scene";
+}
+
+function compactProfileDefaults(profile) {
+  if (profile === "debug_audit") {
+    return {
+      npcLimit: 20,
+      memoryLimit: 6,
+      rumorLimit: 5,
+      missionLimit: 8,
+      eventLimit: 6,
+      logLimit: 5,
+      commitmentLimit: 8,
+    };
+  }
+
+  if (profile === "minimal_header") {
+    return {
+      npcLimit: 4,
+      memoryLimit: 1,
+      rumorLimit: 1,
+      missionLimit: 3,
+      eventLimit: 4,
+      logLimit: 1,
+      commitmentLimit: 3,
+    };
+  }
+
+  if (profile === "mechanical_turn") {
+    return {
+      npcLimit: 8,
+      memoryLimit: 2,
+      rumorLimit: 2,
+      missionLimit: 5,
+      eventLimit: 5,
+      logLimit: 3,
+      commitmentLimit: 5,
+    };
+  }
+
+  return {
+    npcLimit: 6,
+    memoryLimit: 3,
+    rumorLimit: 3,
+    missionLimit: 5,
+    eventLimit: 5,
+    logLimit: 3,
+    commitmentLimit: 5,
+  };
+}
+
+function compactProfileCaps(profile) {
+  if (profile === "debug_audit") {
+    return {
+      npcLimit: 30,
+      memoryLimit: 12,
+      rumorLimit: 10,
+      missionLimit: 15,
+      eventLimit: 12,
+      logLimit: 10,
+      commitmentLimit: 15,
+    };
+  }
+
+  return {
+    npcLimit: 12,
+    memoryLimit: 6,
+    rumorLimit: 5,
+    missionLimit: 8,
+    eventLimit: 8,
+    logLimit: 5,
+    commitmentLimit: 8,
+  };
+}
+
+function slimNpcSummaryForProfile(npc, profile) {
+  if (!npc || profile === "debug_audit") return npc;
+
+  return {
+    npcId: npc.npcId,
+    name: npc.name,
+    role: npc.role || "",
+    currentLocationId: npc.currentLocationId || "",
+    currentTask: npc.currentTask || "",
+    availability: npc.availability || {},
+    persistenceLevel: npc.persistenceLevel || "",
+    socialProfile: npc.socialProfile
+      ? {
+          values: (npc.socialProfile.values || []).slice(0, 4),
+          tolerates: (npc.socialProfile.tolerates || []).slice(0, 4),
+          rejects: (npc.socialProfile.rejects || []).slice(0, 4),
+          boundaries: (npc.socialProfile.boundaries || []).slice(0, 4),
+          trustTriggers: (npc.socialProfile.trustTriggers || []).slice(0, 3),
+          trustBreakers: (npc.socialProfile.trustBreakers || []).slice(0, 3),
+        }
+      : null,
+    voiceProfile: npc.voiceProfile
+      ? {
+          speechStyle: npc.voiceProfile.speechStyle || "",
+          personality: (npc.voiceProfile.personality || []).slice(0, 4),
+          values: (npc.voiceProfile.values || []).slice(0, 3),
+          boundaries: (npc.voiceProfile.boundaries || []).slice(0, 3),
+          dialogueGuidance: (npc.voiceProfile.dialogueGuidance || []).slice(0, 2),
+        }
+      : null,
+    relationshipBands: npc.relationshipBands || {},
+    relationshipState: npc.relationshipState || null,
+    factionLinks: (npc.factionLinks || []).slice(0, 3).map((link) => ({
+      factionId: link.factionId,
+      role: link.role || "",
+      standing: link.standing || "",
+    })),
+    knownPublicFacts: (npc.knownPublicFacts || []).slice(0, 3),
+  };
+}
+
+function slimNpcKnowledgeContextForProfile(context, profile) {
+  if (!context || profile === "debug_audit") return context;
+
+  return {
+    ...context,
+    perNpc: (context.perNpc || []).map((entry) => ({
+      npcId: entry.npcId,
+      name: entry.name,
+      knownRecordCount: (entry.knownRecords || []).length,
+      knownRecords: (entry.knownRecords || []).slice(0, 2).map((record) => ({
+        knowledgeId: record.knowledgeId,
+        factKey: record.factKey,
+        summary: record.summary || record.fact || "",
+        sourceType: record.sourceType,
+        certainty: record.certainty,
+        visibility: record.visibility,
+        canShare: Boolean(record.canShare),
+      })),
+      jobAvailability: entry.jobAvailability
+        ? {
+            publicWorkKnown: Boolean(entry.jobAvailability.publicWorkKnown),
+            institutionalCanAskAvailability: Boolean(entry.jobAvailability.institutionalCanAskAvailability),
+            exactSchedule: entry.jobAvailability.exactSchedule,
+            recommendedWording: entry.jobAvailability.recommendedWording,
+          }
+        : null,
+    })),
+  };
 }
 
 function uniqueByEventId(events) {
@@ -281,22 +437,47 @@ function getStalePendingAccumulations(gameState) {
   });
 }
 
+function commitmentAgendaEntry(commitment) {
+  return {
+    commitmentId: commitment.commitmentId,
+    title: commitment.title,
+    type: commitment.type,
+    status: commitment.status,
+    priority: commitment.priority,
+    dueDay: commitment.dueDay,
+    dueTime: commitment.dueTime || "",
+    dueStatus: commitment.dueStatus,
+    urgency: commitment.urgency,
+    targetNpcIds: commitment.targetNpcIds || [],
+    relatedEventIds: commitment.relatedEventIds || [],
+    relatedMissionIds: commitment.relatedMissionIds || [],
+    consequencePreview: commitment.consequencePreview
+      ? {
+          severity: commitment.consequencePreview.severity,
+          pastGrace: Boolean(commitment.consequencePreview.pastGrace),
+          requiresExplicitResolution: Boolean(commitment.consequencePreview.requiresExplicitResolution),
+          recommendedAction: commitment.consequencePreview.recommendedAction || "",
+        }
+      : null,
+  };
+}
+
 function buildCommitmentAgenda(commitments = []) {
   const byUrgency = (urgency) => commitments.filter((commitment) => commitment.urgency === urgency);
   const consequenceReady = commitments.filter((commitment) => commitment.consequencePreview?.pastGrace);
   const needsResolution = commitments.filter((commitment) => commitment.consequencePreview?.requiresExplicitResolution);
 
   return {
-    consequenceReady,
-    overdue: byUrgency("consequence_ready").concat(byUrgency("overdue_in_grace")),
-    dueNow: byUrgency("due_now"),
-    dueSoon: byUrgency("due_soon").concat(byUrgency("upcoming")),
+    consequenceReady: consequenceReady.map(commitmentAgendaEntry),
+    overdue: byUrgency("consequence_ready").concat(byUrgency("overdue_in_grace")).map(commitmentAgendaEntry),
+    dueNow: byUrgency("due_now").map(commitmentAgendaEntry),
+    dueSoon: byUrgency("due_soon").concat(byUrgency("upcoming")).map(commitmentAgendaEntry),
     unscheduledImportant: commitments.filter(
       (commitment) =>
         commitment.dueStatus === "unscheduled" && ["critical", "high"].includes(commitment.priority)
-    ),
-    needsResolution,
-    next: commitments.slice(0, 5),
+    ).map(commitmentAgendaEntry),
+    needsResolution: needsResolution.map(commitmentAgendaEntry),
+    next: commitments.slice(0, 5).map(commitmentAgendaEntry),
   };
 }
 
@@ -735,14 +916,22 @@ async function getCompactContext(req, res) {
 
     const gameId = req.query.gameId || "isekai_lucas_main";
     const includeTechnicalSummary = responseShaping.queryBoolean(req.query.includeTechnicalSummary, false);
+    const profile = normalizeCompactProfile(req.query.profile, includeTechnicalSummary);
+    const defaultLimits = compactProfileDefaults(profile);
+    const capLimits = compactProfileCaps(profile);
     const limits = {
-      npcLimit: responseShaping.toIntQuery(req.query.npcLimit, 20, 1, 30),
-      memoryLimit: responseShaping.toIntQuery(req.query.memoryLimit, 6, 0, 12),
-      rumorLimit: responseShaping.toIntQuery(req.query.rumorLimit, 5, 0, 10),
-      missionLimit: responseShaping.toIntQuery(req.query.missionLimit, 8, 0, 15),
-      eventLimit: responseShaping.toIntQuery(req.query.eventLimit, 6, 0, 12),
-      logLimit: responseShaping.toIntQuery(req.query.logLimit, 5, 0, 10),
-      commitmentLimit: responseShaping.toIntQuery(req.query.commitmentLimit, 8, 0, 15),
+      npcLimit: responseShaping.toIntQuery(req.query.npcLimit, defaultLimits.npcLimit, 1, capLimits.npcLimit),
+      memoryLimit: responseShaping.toIntQuery(req.query.memoryLimit, defaultLimits.memoryLimit, 0, capLimits.memoryLimit),
+      rumorLimit: responseShaping.toIntQuery(req.query.rumorLimit, defaultLimits.rumorLimit, 0, capLimits.rumorLimit),
+      missionLimit: responseShaping.toIntQuery(req.query.missionLimit, defaultLimits.missionLimit, 0, capLimits.missionLimit),
+      eventLimit: responseShaping.toIntQuery(req.query.eventLimit, defaultLimits.eventLimit, 0, capLimits.eventLimit),
+      logLimit: responseShaping.toIntQuery(req.query.logLimit, defaultLimits.logLimit, 0, capLimits.logLimit),
+      commitmentLimit: responseShaping.toIntQuery(
+        req.query.commitmentLimit,
+        defaultLimits.commitmentLimit,
+        0,
+        capLimits.commitmentLimit
+      ),
     };
 
     const gameState = await GameState.findOne({ gameId }).lean();
@@ -757,6 +946,10 @@ async function getCompactContext(req, res) {
     const currentLocationId = gameState.locationId;
     const activeEventIds = gameState.activeEventIds || [];
     const activeMissionIds = gameState.activeMissionIds || [];
+    const includeTestSuiteMissions = shouldIncludeTestSuiteMissions({
+      gameId,
+      includeTestSuite: responseShaping.queryBoolean(req.query.includeTestSuite, false),
+    });
     const pendingBiologicalAccumulations = getRelevantPendingAccumulations(gameState);
     const stalePendingBiologicalAccumulations = getStalePendingAccumulations(gameState);
 
@@ -812,6 +1005,7 @@ async function getCompactContext(req, res) {
           .lean()
       : [];
     const nearbyShopIds = nearbyShops.map((shop) => shop.shopId);
+    const nearbyShopStockLimit = profile === "debug_audit" ? 80 : profile === "minimal_header" ? 24 : 48;
     const nearbyFactionIds = unique([
       currentLocation?.controllingFactionId,
       parentLocation?.controllingFactionId,
@@ -823,7 +1017,7 @@ async function getCompactContext(req, res) {
           shopId: { $in: nearbyShopIds },
         })
           .sort({ shopId: 1, itemId: 1 })
-          .limit(80)
+          .limit(nearbyShopStockLimit)
           .lean()
       : [];
     const inventoryItemIds = unique([
@@ -862,6 +1056,18 @@ async function getCompactContext(req, res) {
     knowledgeClauses.push({ holderCharacterIds: { $in: [characterId] } });
     if (activeEventIds.length > 0) knowledgeClauses.push({ relatedEventIds: { $in: activeEventIds } });
     if (activeMissionIds.length > 0) knowledgeClauses.push({ relatedMissionIds: { $in: activeMissionIds } });
+
+    const activeMissionQuery = applyMissionEnvironmentFilter(
+      { $or: activeMissionClauses },
+      { gameId, includeTestSuite: includeTestSuiteMissions }
+    );
+    const availableMissionQuery = applyMissionEnvironmentFilter(
+      { status: "available" },
+      { gameId, includeTestSuite: includeTestSuiteMissions }
+    );
+    const socialLedgerLimit = profile === "debug_audit" ? 20 : profile === "minimal_header" ? 4 : 10;
+    const knowledgeRecordLimit = profile === "debug_audit" ? 40 : profile === "minimal_header" ? 12 : 24;
+    const narrativeContextLimit = profile === "debug_audit" ? 30 : profile === "minimal_header" ? 8 : 18;
 
     const [
       inventoryItems,
@@ -946,13 +1152,13 @@ async function getCompactContext(req, res) {
             .lean()
         : Promise.resolve([]),
 
-      Mission.find({ $or: activeMissionClauses })
+      Mission.find(activeMissionQuery)
         .sort({ postedDay: -1, postedTime: -1 })
         .limit(limits.missionLimit)
         .lean(),
 
       limits.missionLimit > 0
-        ? Mission.find({ status: "available" })
+        ? Mission.find(availableMissionQuery)
             .sort({ postedDay: -1, postedTime: -1 })
             .limit(Math.max(limits.missionLimit * 4, limits.missionLimit))
             .lean()
@@ -1008,7 +1214,7 @@ async function getCompactContext(req, res) {
             day: gameState.currentDay,
           })
             .sort({ createdAt: -1 })
-            .limit(20)
+            .limit(socialLedgerLimit)
             .lean()
         : Promise.resolve([]),
 
@@ -1051,7 +1257,7 @@ async function getCompactContext(req, res) {
         $or: knowledgeClauses,
       })
         .sort({ createdDay: -1, createdTime: -1, updatedAt: -1 })
-        .limit(40)
+        .limit(knowledgeRecordLimit)
         .lean(),
 
       Faction.findOne({ factionId: "faction_hoshimori_guild" }).lean(),
@@ -1092,6 +1298,8 @@ async function getCompactContext(req, res) {
       guildState,
     });
     const nearbyNpcSummaries = nearbyNpcs.map(responseShaping.summarizeNpc);
+    const nearbyNpcSummariesForResponse = nearbyNpcSummaries.map((npc) => slimNpcSummaryForProfile(npc, profile));
+    const npcKnowledgeContextForResponse = slimNpcKnowledgeContextForProfile(npcKnowledgeContext, profile);
     const socialRhythm = buildSocialRhythm({
       nearbyNpcSummaries,
       todaySocialLedger,
@@ -1404,7 +1612,7 @@ async function getCompactContext(req, res) {
     const narrativeContext = await buildNarrativeContextSummary({
       gameId,
       gameState,
-      limit: 30,
+      limit: narrativeContextLimit,
     });
     const technicalSummary = includeTechnicalSummary
       ? summarizeTechnicalReadiness({
@@ -1432,6 +1640,7 @@ async function getCompactContext(req, res) {
     return res.json({
       ok: true,
       compact: true,
+      profile,
       limits,
       context: {
         gameState: responseShaping.summarizeGameState(gameState),
@@ -1443,7 +1652,7 @@ async function getCompactContext(req, res) {
           staticVisibleNpcIds: directVisibleNpcIds,
           probableNpcIds,
           npcsPresent: npcPresence.visible,
-          nearbyNpcs: nearbyNpcSummaries,
+          nearbyNpcs: nearbyNpcSummariesForResponse,
           npcPresence,
           routineOverrides,
           recentEventSummaries: recentEventLogs.map((log) => responseShaping.summarizeEventLog(log)),
@@ -1463,7 +1672,7 @@ async function getCompactContext(req, res) {
         activeRumors: activeRumors.map(responseShaping.summarizeRumor),
         socialLedgerToday: todaySocialLedger.map(responseShaping.summarizeNpcSocialLedger),
         socialRhythm,
-        npcKnowledgeContext,
+        npcKnowledgeContext: npcKnowledgeContextForResponse,
         pendingCommitments: pendingCommitmentSummaries,
         commitmentAgenda,
         guildState,
@@ -1491,7 +1700,30 @@ async function getCompactContext(req, res) {
   }
 }
 
+async function getStateAuditController(req, res) {
+  try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        ok: false,
+        error: "MongoDB no esta conectado. Configura MONGODB_URI para usar /api/context/audit-state.",
+      });
+    }
+
+    const audit = await buildStateAudit({
+      gameId: req.query.gameId || "isekai_lucas_main",
+    });
+
+    return res.json(audit);
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      ok: false,
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   getFullContext,
   getCompactContext,
+  getStateAuditController,
 };

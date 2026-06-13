@@ -3201,6 +3201,17 @@
             }
           },
           {
+            "name": "profile",
+            "in": "query",
+            "required": false,
+            "description": "Perfil de proyeccion del contexto. Usar player_scene por defecto; mechanical_turn para chequeos mecanicos; minimal_header para lectura minima.",
+            "schema": {
+              "type": "string",
+              "enum": ["player_scene", "mechanical_turn", "minimal_header"],
+              "default": "player_scene"
+            }
+          },
+          {
             "name": "npcLimit",
             "in": "query",
             "required": false,

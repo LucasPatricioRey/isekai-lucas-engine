@@ -455,6 +455,7 @@ async function seedInitialState() {
           { skillId: "skill_daga", name: "Daga", phase: "Principiante", level: 1, exp: 0, expToNext: 100 },
           { skillId: "skill_tactica_basica", name: "Táctica básica", phase: "Principiante", level: 1, exp: 0, expToNext: 100 },
           { skillId: "skill_percepcion", name: "Percepción", phase: "Principiante", level: 2, exp: 33, expToNext: 100 },
+          { skillId: "skill_percepcion_magica", name: "Percepcion magica", phase: "Principiante", level: 1, exp: 0, expToNext: 100 },
           { skillId: "skill_mana", name: "Maná", phase: "Principiante", level: 1, exp: 35, expToNext: 100 },
           { skillId: "skill_magia", name: "Magia", phase: "Principiante", level: 1, exp: 0, expToNext: 100 }
         ],

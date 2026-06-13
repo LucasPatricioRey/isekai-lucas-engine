@@ -12,6 +12,7 @@ Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.j
 | getCombatEncounter | `GET /api/combat/encounters/{encounterId}` | si | si | lectura | gameplay |
 | listCombatEnemies | `GET /api/combat/enemies` | si | no | lectura | gameplay/debug |
 | getCombatEnemy | `GET /api/combat/enemies/{enemyId}` | si | no | lectura | gameplay |
+| adminGetStateAudit | `GET /api/context/audit-state` | no | no | lectura | admin/debug |
 | getCompactContext | `GET /api/context/compact` | si | si | lectura | gameplay |
 | getFullContext | `GET /api/context/full` | si | no | lectura | debug/admin |
 | getItem | `GET /api/economy/items/{itemId}` | si | si | lectura | gameplay |

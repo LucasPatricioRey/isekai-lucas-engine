@@ -219,7 +219,12 @@ async function main() {
     Math.max(0, beforeState.mpCurrent - 5)
   );
   assertEqual(issues, "perception preview actual MP will not mutate", perceptionPreview.preview?.projectedMp?.willMutate, false);
-  assertTrue(issues, "perception preview virtual skill", Boolean(perceptionSkillPreview?.virtualPreviewOnly));
+  assertTrue(
+    issues,
+    "perception preview has skill progression",
+    Boolean(perceptionSkillPreview?.progression),
+    JSON.stringify(perceptionSkillPreview || {})
+  );
   assertTrue(issues, "perception preview applies Aqua", hasAquaApplied(perceptionSkillPreview));
   assertEqual(issues, "advanced preview blocked", advancedPreview.preview?.canPractice, false);
   assertTrue(

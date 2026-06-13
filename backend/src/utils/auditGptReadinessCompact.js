@@ -427,8 +427,9 @@ async function main() {
   assertCondition(issues, "compact excludes direct accept mission", !compact.paths?.["/api/missions/{missionId}/accept"]);
   assertCondition(issues, "compact excludes direct report mission", !compact.paths?.["/api/missions/{missionId}/report"]);
   assertCondition(issues, "admin schema has only GET operations", adminOps.every((operation) => operation.startsWith("GET ")));
-  assertEqual(issues, "admin extra operation count", adminExtraOps.length, 10);
+  assertEqual(issues, "admin extra operation count", adminExtraOps.length, 11);
   assertCondition(issues, "admin extra has only GET operations", adminExtraOps.every((operation) => operation.startsWith("GET ")));
+  assertCondition(issues, "admin extra includes state audit", adminExtraOps.includes("GET /api/context/audit-state"));
   assertCondition(issues, "admin extra includes world event list", adminExtraOps.includes("GET /api/world/events"));
   assertCondition(issues, "admin extra includes world event detail", adminExtraOps.includes("GET /api/world/events/{eventId}"));
   assertCondition(issues, "admin extra operationIds do not duplicate compact", adminExtraDuplicates.length === 0, adminExtraDuplicates.join(", "));

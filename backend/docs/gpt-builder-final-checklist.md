@@ -104,6 +104,7 @@ Ejecutar en backend:
 npm run check
 npm run audit:openapi
 npm run audit:openapi-compact
+npm run audit:state-hygiene
 npm run audit:gpt-readiness-compact
 ```
 
@@ -119,6 +120,7 @@ Condicion minima para abrir Preview:
 - `activeMissionIds` es array.
 - Combates activos responde como array.
 - OpenAPI validado.
+- `audit:state-hygiene` sin issues criticos.
 - `.env` no aparece en `git status --short`.
 
 ## URLs para importar desde GPT Builder

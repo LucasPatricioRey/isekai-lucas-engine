@@ -1,11 +1,12 @@
 # rules_engine.md — Motor Isekai Lucas
 
-Versión: Fase 2 v0.3 — social, confianza y voz NPC
+Versión: Fase C9 v0.4 — social, confianza, voz NPC, contexto compacto y auditoria de estado
 Estado: versión validada por Lucas mediante revisión guiada  
 Fuente de migración: Enciclopedia V2 Isekai Lucas + decisiones confirmadas por Lucas durante Fase 1 + validación guiada Fase 2  
 Propósito: este archivo define **cómo se resuelve el juego**. No contiene el save vivo completo ni el lore mundial extenso; eso vive en MongoDB y `world_bible.md`.
 
 Actualización v0.3: agrega sistema social ampliado, formato obligatorio de diálogo NPC y libertad creativa controlada para NPCs según personalidad, memoria y conocimiento.
+Actualización C9: el contexto compacto normal usa perfiles de proyección, oculta fixtures `testSuite` del canon, expone auditoría read-only `auditState` para modo técnico y formaliza que los archivos de conocimiento del GPT son guía estable, no save vivo.
 
 ---
 
@@ -130,26 +131,30 @@ MongoDB guarda todo lo dinámico:
 
 Antes de resolver un turno, el GPT debe leer el backend.
 
-Endpoint conceptual recomendado:
+Endpoint normal recomendado:
 
 ```txt
-GET /api/context/full
+GET /api/context/compact
 ```
 
-Debe devolver un contexto dinámico amplio y estructurado:
+`context/compact` debe usar `profile=player_scene` por defecto. Para chequeos técnicos se puede usar `profile=mechanical_turn`, `profile=minimal_header` o `includeTechnicalSummary=true`; `context/full` queda para modo técnico/admin cuando el compacto no alcanza.
 
-- estado completo de Lucas;
+Debe devolver un contexto dinámico suficiente y estructurado:
+
+- estado resumido de Lucas;
 - ubicación actual;
 - estado de la zona actual;
 - NPCs visibles, audibles, probables y ausentes relevantes;
 - rutinas activas;
 - memorias relevantes de NPCs involucrados;
 - rumores vivos relevantes;
-- eventos activos o próximos;
+- eventos principales, rumores menores y eventos de fondo separados;
 - stock y comercios relevantes;
 - misiones relevantes;
 - facciones y reputación;
 - alertas de coherencia.
+
+El contexto de partida normal no debe exponer fixtures `flags.testSuite === true` ni tags técnicos como `admin_fix`, `repair`, `test` o `former_*`. Si aparecen en modo técnico, no son conocimiento diegético.
 
 Si `context/full` no trae la información necesaria, el GPT no debe inventar. Debe buscar más con endpoints profundos:
 
@@ -1929,6 +1934,6 @@ Lucas confirmó las siguientes decisiones como parte de la validación de `rules
 15. Romance lento, lógico e inocente si son menores; celos y malentendidos solo con personalidad, señales y contexto.
 16. Economía avanzada con stock real, oferta/demanda y negocios afectados por eventos; bancos/deudas/alquiler/impuestos existen como sistemas dormidos hasta interacción.
 17. Gremio: reglas y pool base en archivos; cartelera activa y estado vivo de misiones en MongoDB.
-18. Backend: primero `context/full`; si falta información, búsqueda profunda en docs/mundo/DB antes de inventar o preguntar.
+18. Backend: primero `context/compact`; `context/full` queda para modo técnico/debug. Si falta información, búsqueda profunda en docs/mundo/DB antes de inventar o preguntar.
 
 Estas decisiones son parte del núcleo validado del motor.
