@@ -157,4 +157,9 @@ test("npc summaries expose compact voice guidance for narration variety", () => 
   assert.equal(summary.voiceProfile.speechStyle, "formal, seca, muy concreta");
   assert(summary.voiceProfile.dialogueGuidance.some((line) => /registro confirmado/.test(line)));
   assert(summary.voiceProfile.avoid.some((line) => /fuente diegetica/.test(line)));
+  assert.equal(summary.dialogueProfile.schemaVersion, "dialogue_profile_v1");
+  assert.equal(summary.dialogueProfile.relationshipRegister.key, "stranger_public");
+  assert.equal(summary.dialogueProfile.emotionalTemperature.key, "neutral");
+  assert(summary.dialogueProfile.dialogueMoves.some((line) => /procedimiento|registro/.test(line)));
+  assert(summary.dialogueProfile.rule.includes("intencion"));
 });

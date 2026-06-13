@@ -29,6 +29,18 @@ describe("read-only API coverage", () => {
         (npc) => npc.relationshipState?.schemaVersion === "social_state_v1"
       )
     );
+    assert.equal(compact.data.context.dramaticContext?.schemaVersion, "dramatic_context_v1");
+    assert.equal(compact.data.context.dramaticContext?.outputContract?.hudRequired, true);
+    assert.ok(
+      (compact.data.context.dramaticContext?.dialogueDirectives || []).some((line) =>
+        /dialogueProfile/.test(line)
+      )
+    );
+    assert.ok(
+      (compact.data.context.scene.nearbyNpcs || []).some(
+        (npc) => npc.dialogueProfile?.schemaVersion === "dialogue_profile_v1"
+      )
+    );
     assert.deepEqual(
       compact.data.context.pendingBiology,
       compact.data.context.pendingBiologicalAccumulations

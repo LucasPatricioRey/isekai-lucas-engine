@@ -12,6 +12,8 @@ Actualizacion C12: `src/utils/auditCombatBehavior.js` agrega matriz temporal de 
 
 Actualizacion C13: `src/utils/auditCombatRecovery.js` agrega recuperacion formal de heridas. `InjuryRecord` guarda progreso/horas restantes, el Action de combate expone recovery preview/apply, y el backend bloquea recuperacion con sangrado activo o aplicacion duplicada en el mismo timestamp.
 
+Actualizacion C14: `context/compact` expone `dramaticContext` y `scene.nearbyNpcs[].dialogueProfile`. El narrador conserva HUD obligatorio al final, pero recibe direccion compacta de tension de escena, voz por NPC, registro segun relacion, subtexto, limites y dinamica de grupo. `src/utils/auditNarrativeDrama.js` valida que los perfiles existan y sigan compactos.
+
 ## Resumen ejecutivo
 
 G1 compara tres niveles:

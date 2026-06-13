@@ -1,6 +1,6 @@
 # rules_engine.md — Motor Isekai Lucas
 
-Versión: Fase C13 v0.8 — recuperacion formal de heridas post-combate
+Versión: Fase C14 v0.9 — narracion dramatica, dialogo vivo y HUD obligatorio
 Estado: versión validada por Lucas mediante revisión guiada  
 Fuente de migración: Enciclopedia V2 Isekai Lucas + decisiones confirmadas por Lucas durante Fase 1 + validación guiada Fase 2  
 Propósito: este archivo define **cómo se resuelve el juego**. No contiene el save vivo completo ni el lore mundial extenso; eso vive en MongoDB y `world_bible.md`.
@@ -11,6 +11,7 @@ Actualización C10: agrega auditoria mutante controlada `audit:combat-playtest` 
 Actualización C11: agrega `audit:combat-balance`, suaviza el escalado de críticos, aplica modificadores de arma/equipo defensivo y formaliza chaleco de cuero ligero/escudo simple como equipo común limitado.
 Actualización C12: agrega tipos formales de encuentro (`encounterType`), `encounterPolicy`, decision NPC persistida y `audit:combat-behavior` para validar que bandidos, depredadores, criaturas territoriales y sparring actuen por backend.
 Actualizacion C13: agrega recuperacion formal de heridas (`combatAdvancedPreviewRecovery`/`combatAdvancedApplyRecovery`), progreso en `InjuryRecord`, bloqueo por sangrado activo y `audit:combat-recovery`.
+Actualizacion C14: agrega `dramaticContext` y `dialogueProfile` en contexto compacto para guiar escena novelada, subtexto, voz por NPC, dinamica de grupo y contrato de HUD final sin inventar mecanicas.
 
 ---
 
@@ -1641,7 +1642,36 @@ Si `narrativeHints.scenePlan` pide escena comprimida, resumir la rutina y elegir
 
 Cuando el GPT use `applyTurn` debe enviar `actionFamily` si la accion tiene familia clara (`investigation`, `report`, `travel`, `social`, `physical_training`, `magic_practice`, `mission`, etc.). Este campo solo guia `narrativeHints`: no crea mecanicas ni reemplaza tags, pero evita que reportes, investigaciones o viajes se clasifiquen como compra/entrenamiento por inferencia.
 
-### 19.10 Ejemplo: charla ligera con Yara
+### 19.10 Narracion dramatica y dialogo vivo C14
+
+`getCompactContext` debe exponer `dramaticContext` para cada escena jugable. Este bloque no cambia estado ni autoriza resultados; solo guia estilo:
+
+- la escena novelada va antes del HUD;
+- el HUD mecanico final sigue siendo obligatorio;
+- la tension sale de estado confirmado: cuerpo de Lucas, evento principal, compromisos, misiones, clima, friccion de mundo, NPCs presentes o combate activo;
+- la prosa puede dramatizar sensaciones, gestos, silencios, interrupciones, tareas y entorno, pero no crea dano, curacion, loot, EXP, dinero, relaciones ni resoluciones;
+- si no hay tension fuerte, el lugar, el cuerpo de Lucas y las agendas abiertas deben sostener una escena breve pero viva.
+
+Cada `scene.nearbyNpcs[]` debe exponer `dialogueProfile` compacto:
+
+- `speechRhythm`: como suena el NPC;
+- `relationshipRegister`: como cambia el trato por confianza, respeto, sospecha, miedo o familiaridad;
+- `emotionalTemperature`: que emocion domina la respuesta;
+- `currentPressure`: si el NPC esta libre, trabajando, ocupado o ausente;
+- `subtextSeed`: valores, rechazos y postura social resumidos;
+- `dialogueMoves`: recursos de dialogo permitidos para ese NPC;
+- `avoid`: limites para no hacerlo generico, omnisciente o mecanico.
+
+Reglas de uso:
+
+- cada linea de dialogo debe tener intencion: medir, cuidar, presionar, ocultar, corregir, negociar, provocar o revelar algo permitido;
+- un NPC seco no significa NPC plano: puede variar con pausas, gestos, humor breve, correccion practica o distancia profesional;
+- un NPC calido no debe repetir gratitud generica: debe mostrar cuidado mediante acciones concretas, preguntas pequenas o atencion a la escena;
+- en grupos, no hacer turnos artificiales: usar miradas, interrupciones, silencio, alianzas pequenas y reacciones cruzadas;
+- respetar `npcKnowledgeContext`: certeza solo con fuente diegetica, inferencias como duda/pregunta/rumor;
+- ningun NPC debe recitar HUD, numeros o reglas salvo interfaz administrativa explicita.
+
+### 19.11 Ejemplo: charla ligera con Yara
 
 Si Lucas acompaña a Yara mientras trabaja, hace bromas suaves, no estorba y ella se ríe:
 

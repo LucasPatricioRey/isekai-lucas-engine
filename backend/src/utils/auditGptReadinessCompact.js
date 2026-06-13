@@ -213,6 +213,23 @@ async function checkCompactEndpoints(issues) {
       (npc) => npc.relationshipState?.schemaVersion === "social_state_v1"
     )
   );
+  assertCondition(
+    issues,
+    "context/compact exposes dramaticContext",
+    context.context?.dramaticContext?.schemaVersion === "dramatic_context_v1"
+  );
+  assertCondition(
+    issues,
+    "context/compact dramaticContext keeps HUD required",
+    context.context?.dramaticContext?.outputContract?.hudRequired === true
+  );
+  assertCondition(
+    issues,
+    "context/compact exposes NPC dialogue profiles",
+    (context.context?.scene?.nearbyNpcs || []).some(
+      (npc) => npc.dialogueProfile?.schemaVersion === "dialogue_profile_v1"
+    )
+  );
   assertCondition(issues, "character state has HP", Boolean(characterState.state?.life?.max));
   assertCondition(issues, "character state has MP", Boolean(characterState.state?.mp?.max));
   assertCondition(issues, "search/db returns Fern", (fern.results?.npcs || []).length > 0);

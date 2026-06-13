@@ -32,6 +32,18 @@ function truncateText(value, maxLength = 700) {
   return `${text.slice(0, Math.max(0, maxLength - 1))}...`;
 }
 
+function normalizeForMatch(value = "") {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function textHasAny(text, patterns = []) {
+  const normalized = normalizeForMatch(text);
+  return patterns.some((pattern) => normalized.includes(normalizeForMatch(pattern)));
+}
+
 function timeToMinutes(time) {
   const [hours, minutes] = String(time || "00:00").split(":").map(Number);
   if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return 0;
@@ -658,9 +670,221 @@ function buildNpcVoiceProfile(npc) {
   };
 }
 
+function relationshipDialogueRegister(relationship = {}, relationshipState = null) {
+  const stanceKey = relationshipState?.stance?.key || "";
+  const trust = Number(relationship.trust) || 0;
+  const familiarity = Number(relationship.familiarity) || 0;
+  const respect = Number(relationship.respect) || 0;
+  const suspicion = Number(relationship.suspicion) || 0;
+  const fear = Number(relationship.fear) || 0;
+
+  if (fear >= 50) {
+    return {
+      key: "fearful_distance",
+      label: "distancia por miedo",
+      guidance: "Responde con cautela defensiva; no narrar obediencia como confianza.",
+    };
+  }
+  if (suspicion >= 50 || stanceKey === "closed_suspicious") {
+    return {
+      key: "suspicious_guarded",
+      label: "sospecha activa",
+      guidance: "Pregunta, mide contradicciones y limita informacion; el subtexto pesa mas que la cordialidad.",
+    };
+  }
+  if (trust >= 70 && familiarity >= 25 && respect >= 25) {
+    return {
+      key: "trusted_personal",
+      label: "trato personal confiado",
+      guidance: "Puede hablar con mas matiz, memoria y calidez, sin volverlo romance automatico.",
+    };
+  }
+  if (trust >= 50 || relationshipState?.accessScore >= 55) {
+    return {
+      key: "reliable_warm",
+      label: "trato fiable",
+      guidance: "Puede colaborar y mostrar familiaridad practica; el afecto fuerte requiere escena concreta.",
+    };
+  }
+  if (respect >= 25 && trust < 35) {
+    return {
+      key: "respects_competence",
+      label: "respeta competencia, no intimidad",
+      guidance: "Reconoce esfuerzo o utilidad sin abrir secretos ni sonar cercano de golpe.",
+    };
+  }
+  if (trust <= 9 && familiarity <= 9) {
+    return {
+      key: "stranger_public",
+      label: "trato de desconocido",
+      guidance: "Mantener distancia social, preguntas basicas y tono acorde al rol publico.",
+    };
+  }
+
+  return {
+    key: "cautious_open",
+    label: "apertura cauta",
+    guidance: "Puede conversar y reaccionar a la escena, pero evita intimidad o favores grandes.",
+  };
+}
+
+function emotionalTemperatureForDialogue(relationship = {}, npc = {}) {
+  const drivers = [];
+  const personalityText = `${(npc.personality || []).join(" ")} ${npc.speechStyle || ""}`;
+  const suspicion = Number(relationship.suspicion) || 0;
+  const fear = Number(relationship.fear) || 0;
+  const jealousy = Number(relationship.jealousy) || 0;
+  const affection = Number(relationship.affection) || 0;
+  const trust = Number(relationship.trust) || 0;
+  const respect = Number(relationship.respect) || 0;
+
+  if (suspicion >= 25) drivers.push("sospecha");
+  if (fear >= 25) drivers.push("miedo");
+  if (jealousy >= 25) drivers.push("celos/tension comparativa");
+  if (respect >= 25) drivers.push("respeto");
+  if (trust >= 25) drivers.push("confianza");
+  if (affection >= 25) drivers.push("calidez personal");
+  if (textHasAny(personalityText, ["nerviosa", "timida", "reservada", "inseguro"])) drivers.push("contencion/inseguridad");
+  if (textHasAny(personalityText, ["seco", "aspero", "frontal", "directo"])) drivers.push("dureza verbal");
+  if (textHasAny(personalityText, ["charlatan", "dramatica", "energetica", "vendedor"])) drivers.push("expresividad");
+
+  if (fear >= 50 || suspicion >= 50) {
+    return { key: "tense", label: "tenso", drivers: drivers.slice(0, 4) };
+  }
+  if (affection >= 25 || trust >= 50) {
+    return { key: "warm", label: "calido contenido", drivers: drivers.slice(0, 4) };
+  }
+  if (respect >= 25 || trust >= 25) {
+    return { key: "engaged", label: "atento", drivers: drivers.slice(0, 4) };
+  }
+  if (drivers.includes("expresividad")) {
+    return { key: "expressive", label: "expresivo", drivers: drivers.slice(0, 4) };
+  }
+  return { key: "neutral", label: "neutral/cotidiano", drivers: drivers.slice(0, 4) };
+}
+
+function buildDialogueMovesForNpc(npc = {}, relationship = {}) {
+  const text = `${(npc.personality || []).join(" ")} ${npc.speechStyle || ""} ${(npc.values || []).join(" ")}`;
+  const moves = [];
+
+  if (textHasAny(text, ["seco", "aspero", "frontal", "directo", "grunon"])) {
+    moves.push("Usar frases cortas con filo practico; el gesto o la pausa puede decir mas que una explicacion.");
+  }
+  if (textHasAny(text, ["formal", "institucional", "ordenada", "precisa", "burocratica", "procedimiento"])) {
+    moves.push("Hablar desde procedimiento, registro o responsabilidad; separar hecho confirmado de inferencia.");
+  }
+  if (textHasAny(text, ["amable", "gentil", "compasivo", "maternal", "calida", "suave"])) {
+    moves.push("Mostrar calidez en acciones concretas y preguntas pequenas, no solo en elogios genericos.");
+  }
+  if (textHasAny(text, ["nerviosa", "timida", "reservada", "inseguro"])) {
+    moves.push("Dejar silencios, miradas evitadas o correcciones timidas; no volverlo discurso seguro de golpe.");
+  }
+  if (textHasAny(text, ["charlatan", "dramatica", "vendedor", "energetica", "cuenta historias"])) {
+    moves.push("Permitir ritmo mas vivo, exageracion controlada, interrupciones o remates que busquen reaccion.");
+  }
+  if (textHasAny(text, ["misteriosa", "intuitiva", "reflexivo", "pausado"])) {
+    moves.push("Responder con preguntas, observaciones laterales o verdades incompletas sin inventar secretos.");
+  }
+  if (textHasAny(text, ["competitivo", "ambiciosa", "quiere demostrar", "reconocimiento"])) {
+    moves.push("Convertir la charla en pequeno desafio, comparacion o oportunidad de quedar bien.");
+  }
+  if ((Number(relationship.trust) || 0) < 15) {
+    moves.push("Con poca confianza, el NPC debe pedir contexto o mantenerse practico antes de mostrar interes fuerte.");
+  } else if ((Number(relationship.trust) || 0) >= 50) {
+    moves.push("Con confianza alta, puede usar memoria compartida o una broma privada suave si encaja.");
+  }
+
+  return unique(moves).slice(0, 5);
+}
+
+function buildDialogueAvoidForNpc(npc = {}, relationship = {}) {
+  const avoids = [
+    "no sonar intercambiable con otros NPCs",
+    "no explicar mecanicas ni HUD en boca del NPC",
+  ];
+  const rejects = unique(npc.rejects || []);
+  const boundaries = unique(npc.socialProfile?.boundaries || []);
+  const combined = [...rejects, ...boundaries].slice(0, 3);
+
+  if (combined.length > 0) {
+    avoids.push(`evitar cruzar sus limites sin consecuencia: ${combined.join(", ")}`);
+  }
+  if ((Number(relationship.suspicion) || 0) >= 25) {
+    avoids.push("no aceptar contradicciones de Lucas sin marcar duda o distancia");
+  }
+  if ((Number(relationship.fear) || 0) >= 25) {
+    avoids.push("no confundir miedo con ternura, respeto o confianza");
+  }
+
+  return unique(avoids).slice(0, 5);
+}
+
+function currentDialoguePressure(npc = {}) {
+  const status = npc.availability?.status || "";
+  const task = truncateText(npc.currentTask || "", 120);
+  if (["busy", "working"].includes(status)) {
+    return {
+      key: "busy",
+      summary: task ? `Ocupado/a: ${task}.` : "Ocupado/a con su rutina.",
+      guidance: "Puede interrumpir, contestar mientras trabaja o cortar una charla larga.",
+    };
+  }
+  if (status === "absent" || status === "traveling") {
+    return {
+      key: "not_available",
+      summary: npc.availability?.reason || "No esta disponible.",
+      guidance: "No tratarlo como presente salvo que el contexto lo ubique en escena.",
+    };
+  }
+  if (task) {
+    return {
+      key: "on_task",
+      summary: task,
+      guidance: "Su dialogo debe rozar su tarea, interes propio o interrupcion actual.",
+    };
+  }
+  return {
+    key: "available",
+    summary: "Disponible para escena breve si corresponde.",
+    guidance: "Puede participar, pero no debe absorber la escena sin motivo.",
+  };
+}
+
+function buildNpcDialogueProfile(npc, relationshipInput = null) {
+  if (!npc) return null;
+  const relationship = normalizeRelationship(relationshipInput || npc.relationshipWithLucas || {});
+  const relationshipState = evaluateSocialRelationshipState(relationship);
+  const register = relationshipDialogueRegister(relationship, relationshipState);
+  const emotionalTemperature = emotionalTemperatureForDialogue(relationship, npc);
+  const pressure = currentDialoguePressure(npc);
+  const socialProfile = summarizeNpcSocialProfile(npc);
+
+  return {
+    schemaVersion: "dialogue_profile_v1",
+    speechRhythm: truncateText(npc.speechStyle || "voz cotidiana segun rol y personalidad", 140),
+    relationshipRegister: register,
+    emotionalTemperature,
+    currentPressure: pressure,
+    subtextSeed: truncateText(
+      [
+        socialProfile.values?.length ? `valora ${socialProfile.values.slice(0, 3).join(", ")}` : "",
+        socialProfile.rejects?.length ? `rechaza ${socialProfile.rejects.slice(0, 3).join(", ")}` : "",
+        relationshipState?.stance?.summary || "",
+      ]
+        .filter(Boolean)
+        .join("; "),
+      260
+    ),
+    dialogueMoves: buildDialogueMovesForNpc(npc, relationship),
+    avoid: buildDialogueAvoidForNpc(npc, relationship),
+    rule: "Cada linea debe tener intencion: presionar, cuidar, medir, ocultar, provocar, corregir, negociar o revelar algo permitido por conocimiento.",
+  };
+}
+
 function summarizeNpc(npc) {
   if (!npc) return null;
   const relationship = normalizeRelationship(npc.relationshipWithLucas || {});
+  const relationshipState = evaluateSocialRelationshipState(relationship);
   return {
     npcId: npc.npcId,
     name: npc.name,
@@ -671,6 +895,7 @@ function summarizeNpc(npc) {
     persistenceLevel: npc.persistenceLevel || "",
     socialProfile: summarizeNpcSocialProfile(npc),
     voiceProfile: buildNpcVoiceProfile(npc),
+    dialogueProfile: buildNpcDialogueProfile(npc, relationship),
     relationshipWithLucas: relationship,
     relationshipBands: {
       trust: relationshipBand(relationship.trust),
@@ -681,7 +906,7 @@ function summarizeNpc(npc) {
       fear: relationshipBand(relationship.fear),
       jealousy: relationshipBand(relationship.jealousy),
     },
-    relationshipState: evaluateSocialRelationshipState(relationship),
+    relationshipState,
     factionLinks: npc.factionLinks || [],
     knownPublicFacts: npc.knownPublicFacts || [],
     flags: npc.flags || {},
@@ -1011,6 +1236,196 @@ function summarizeCombatEncounter(encounter) {
   };
 }
 
+function statPercent(stat) {
+  const current = Number(stat?.current);
+  const max = Number(stat?.max);
+  if (!Number.isFinite(current) || !Number.isFinite(max) || max <= 0) return null;
+  return Math.round((current / max) * 100);
+}
+
+function buildDramaticContext({
+  gameState = null,
+  lucasSummary = null,
+  currentLocation = null,
+  npcPresence = null,
+  nearbyNpcs = [],
+  mainEvent = null,
+  missionAgenda = null,
+  pendingCommitments = [],
+  worldFriction = null,
+  socialRhythm = null,
+  weather = null,
+  activeCombatEncounters = [],
+} = {}) {
+  const sources = [];
+  const satietyPercent = statPercent(lucasSummary?.satiety);
+  const energyPercent = statPercent(lucasSummary?.energy);
+  const lifePercent = statPercent(lucasSummary?.life);
+  const injuries = toArray(lucasSummary?.injuries);
+  const conditions = toArray(lucasSummary?.conditions);
+  const sameRoom = toArray(npcPresence?.sameRoom || npcPresence?.visible);
+  const sameBuilding = toArray(npcPresence?.sameBuilding);
+  const visibleNpcIds = sameRoom.map((npc) => npc.npcId).filter(Boolean);
+  const openMissionCount = toArray(missionAgenda?.next).length;
+  const dueCommitments = toArray(pendingCommitments).filter((commitment) =>
+    ["consequence_ready", "overdue_in_grace", "due_now", "due_soon", "upcoming"].includes(commitment.urgency)
+  );
+  const socialSaturatedIds = toArray(socialRhythm?.saturatedNpcIds);
+  const combatActive = toArray(activeCombatEncounters).some((encounter) => encounter.status === "active");
+
+  if (combatActive) {
+    sources.push({
+      key: "active_combat",
+      severity: "high",
+      summary: "Hay combate activo; backend decide rolls, dano, moral, heridas y consecuencias.",
+    });
+  }
+  if (mainEvent && ["scheduled", "active"].includes(mainEvent.status)) {
+    sources.push({
+      key: "main_event",
+      severity: mainEvent.severity === "major" || mainEvent.severity === "high" ? "high" : "medium",
+      summary: truncateText(`${mainEvent.title || "Evento principal activo"}: ${mainEvent.progress?.summary || mainEvent.cause || ""}`, 180),
+    });
+  }
+  if (lifePercent !== null && lifePercent < 75) {
+    sources.push({ key: "wounded_body", severity: lifePercent < 45 ? "high" : "medium", summary: "Lucas no esta fisicamente entero." });
+  }
+  if (injuries.length > 0) {
+    sources.push({
+      key: "injuries",
+      severity: "medium",
+      summary: `Heridas presentes: ${injuries.slice(0, 3).map((injury) => injury.label || injury.type || injury.injuryId || "herida").join(", ")}.`,
+    });
+  }
+  if (satietyPercent !== null && satietyPercent <= 45) {
+    sources.push({
+      key: "hunger",
+      severity: satietyPercent <= 25 ? "high" : "medium",
+      summary: "El hambre debe sentirse en cuerpo, paciencia y decisiones practicas.",
+    });
+  }
+  if (energyPercent !== null && energyPercent <= 40) {
+    sources.push({
+      key: "fatigue",
+      severity: energyPercent <= 20 ? "high" : "medium",
+      summary: "El cansancio debe afectar ritmo, respiracion y tolerancia a esfuerzos.",
+    });
+  }
+  if (conditions.length > 0) {
+    sources.push({
+      key: "conditions",
+      severity: "medium",
+      summary: `Condiciones activas: ${conditions.slice(0, 3).map((condition) => condition.label || condition.type || condition).join(", ")}.`,
+    });
+  }
+  if (openMissionCount > 0) {
+    sources.push({
+      key: "mission_pressure",
+      severity: toArray(missionAgenda?.acceptedExpired).length || toArray(missionAgenda?.proofRejected).length ? "high" : "medium",
+      summary: "Hay agenda de misiones que puede presionar prioridades; no resolver recompensas por narracion.",
+    });
+  }
+  if (dueCommitments.length > 0) {
+    sources.push({
+      key: "commitment_pressure",
+      severity: dueCommitments.some((commitment) => commitment.consequencePreview?.pastGrace) ? "high" : "medium",
+      summary: "Hay compromisos cercanos o vencidos; evitar saltos largos que los ignoren.",
+    });
+  }
+  if (worldFriction?.travel?.hasPressure || worldFriction?.economy?.hasPressure) {
+    sources.push({
+      key: "world_friction",
+      severity: "medium",
+      summary: truncateText((worldFriction.guidance || []).join(" "), 180) || "Hay friccion de mundo activa.",
+    });
+  }
+  if (weather?.staleByCurrentTime) {
+    sources.push({
+      key: "weather_stale",
+      severity: "low",
+      summary: "El clima requiere refresco antes de viajes o escenas exteriores largas.",
+    });
+  }
+  if (sameRoom.length >= 2) {
+    sources.push({
+      key: "group_presence",
+      severity: "low",
+      summary: "Hay varios NPCs en escena; usar miradas, interrupciones y alianzas pequenas.",
+    });
+  }
+  if (socialSaturatedIds.length > 0) {
+    sources.push({
+      key: "social_repetition",
+      severity: "low",
+      summary: "Hay interacciones sociales repetidas hoy; variar foco sin forzar deltas.",
+    });
+  }
+
+  const highestSeverity = sources.some((source) => source.severity === "high")
+    ? "high"
+    : sources.some((source) => source.severity === "medium")
+      ? "medium"
+      : sources.length
+        ? "low"
+        : "quiet";
+  const primarySource = sources[0] || null;
+  const locationName = currentLocation?.name || gameState?.locationId || "la escena";
+  const groupMode =
+    sameRoom.length >= 3
+      ? "small_group"
+      : sameRoom.length === 2
+        ? "two_npcs_present"
+        : sameRoom.length === 1
+          ? "one_on_one"
+          : sameBuilding.length > 0
+            ? "nearby_offscreen"
+            : "solo_or_transit";
+  const dramaticQuestion = primarySource
+    ? `Que cambia ahora en ${locationName} por ${primarySource.key}?`
+    : `Que detalle vivo de ${locationName} empuja la proxima decision de Lucas?`;
+
+  return {
+    schemaVersion: "dramatic_context_v1",
+    outputContract: {
+      narrativeFirst: true,
+      hudRequired: true,
+      hudPosition: "after_scene",
+      hudPolicy:
+        "Primero escena novelada con dialogo vivo; al final mantener HUD con dia/hora/lugar/vida/saciedad/energia/MP/dinero/evento/NPCs/cambios relevantes.",
+      mechanicsBoundary:
+        "La prosa dramatiza estado confirmado; no inventa rolls, EXP, dinero, loot, dano, curacion, relaciones ni cierre de eventos.",
+    },
+    sceneTension: {
+      level: highestSeverity,
+      sources: sources.slice(0, 7),
+      dramaticQuestion,
+    },
+    styleDirectives: [
+      "Abrir desde sensacion, gesto, interrupcion o presion concreta; evitar resumen plano si hay NPCs o tension.",
+      "Usar microacciones y subtexto: respiracion, manos, miradas, tareas, silencios, objetos y reaccion del entorno.",
+      "La rutina puede ser breve, pero debe dejar una pequena consecuencia emocional, social o fisica si el estado lo permite.",
+      "No convertir todo en exposicion; separar escena dramatica del HUD mecanico final.",
+    ],
+    dialogueDirectives: [
+      "Aplicar dialogueProfile de cada NPC: ritmo, registro por confianza, temperatura emocional, subtexto, limites y movimientos.",
+      "Cada linea de dialogo necesita intencion: medir, cuidar, presionar, ocultar, corregir, negociar, provocar o revelar algo permitido.",
+      "Si hay varios NPCs, alternar respuestas breves, interrupciones y silencios; no hacer que todos esperen turno de forma artificial.",
+      "Respetar npcKnowledgeContext: certeza solo con fuente diegetica; inferencias deben sonar como duda, pregunta o rumor.",
+      "Ningun NPC debe recitar HUD, numeros o reglas del backend salvo interfaz administrativa explicita.",
+    ],
+    groupDynamics: {
+      mode: groupMode,
+      sameRoomNpcIds: visibleNpcIds.slice(0, 8),
+      sameBuildingNpcIds: sameBuilding.map((npc) => npc.npcId).filter(Boolean).slice(0, 8),
+      guidance:
+        groupMode === "solo_or_transit"
+          ? "Sin NPC visible fuerte: usar lugar, clima, cuerpo de Lucas y objetivos abiertos para sostener interes."
+          : "Los NPCs presentes tienen agenda propia; sus reacciones deben nacer de rol, personalidad, confianza y tarea actual.",
+    },
+    npcDialogueProfilesAvailable: toArray(nearbyNpcs).some((npc) => npc?.dialogueProfile?.schemaVersion === "dialogue_profile_v1"),
+  };
+}
+
 function summarizeEvidence(evidence) {
   if (!evidence) return null;
 
@@ -1066,6 +1481,8 @@ module.exports = {
   summarizeGameState,
   summarizeLocation,
   buildNpcVoiceProfile,
+  buildNpcDialogueProfile,
+  buildDramaticContext,
   summarizeNpc,
   summarizeNpcPresenceRef,
   summarizeNpcSocialLedger,

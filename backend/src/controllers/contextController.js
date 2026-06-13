@@ -154,6 +154,19 @@ function slimNpcSummaryForProfile(npc, profile) {
           dialogueGuidance: (npc.voiceProfile.dialogueGuidance || []).slice(0, 2),
         }
       : null,
+    dialogueProfile: npc.dialogueProfile
+      ? {
+          schemaVersion: npc.dialogueProfile.schemaVersion,
+          speechRhythm: npc.dialogueProfile.speechRhythm || "",
+          relationshipRegister: npc.dialogueProfile.relationshipRegister || null,
+          emotionalTemperature: npc.dialogueProfile.emotionalTemperature || null,
+          currentPressure: npc.dialogueProfile.currentPressure || null,
+          subtextSeed: npc.dialogueProfile.subtextSeed || "",
+          dialogueMoves: (npc.dialogueProfile.dialogueMoves || []).slice(0, 3),
+          avoid: (npc.dialogueProfile.avoid || []).slice(0, 3),
+          rule: npc.dialogueProfile.rule || "",
+        }
+      : null,
     relationshipBands: npc.relationshipBands || {},
     relationshipState: npc.relationshipState || null,
     factionLinks: (npc.factionLinks || []).slice(0, 3).map((link) => ({
@@ -1614,6 +1627,25 @@ async function getCompactContext(req, res) {
       gameState,
       limit: narrativeContextLimit,
     });
+    const gameStateSummary = responseShaping.summarizeGameState(gameState);
+    const lucasSummary = responseShaping.summarizeLucasState(gameState, lucas, inventoryItems);
+    const currentLocationSummary = responseShaping.summarizeLocation(currentLocation);
+    const parentLocationSummary = responseShaping.summarizeLocation(parentLocation);
+    const activeCombatEncounterSummaries = activeCombatEncounters.map(responseShaping.summarizeCombatEncounter);
+    const dramaticContext = responseShaping.buildDramaticContext({
+      gameState: gameStateSummary,
+      lucasSummary,
+      currentLocation: currentLocationSummary,
+      npcPresence,
+      nearbyNpcs: nearbyNpcSummariesForResponse,
+      mainEvent: mainEventSummary,
+      missionAgenda,
+      pendingCommitments: pendingCommitmentSummaries,
+      worldFriction,
+      socialRhythm,
+      weather: weatherSummary,
+      activeCombatEncounters: activeCombatEncounterSummaries,
+    });
     const technicalSummary = includeTechnicalSummary
       ? summarizeTechnicalReadiness({
           gameState,
@@ -1643,11 +1675,11 @@ async function getCompactContext(req, res) {
       profile,
       limits,
       context: {
-        gameState: responseShaping.summarizeGameState(gameState),
-        lucas: responseShaping.summarizeLucasState(gameState, lucas, inventoryItems),
+        gameState: gameStateSummary,
+        lucas: lucasSummary,
         scene: {
-          currentLocation: responseShaping.summarizeLocation(currentLocation),
-          parentLocation: responseShaping.summarizeLocation(parentLocation),
+          currentLocation: currentLocationSummary,
+          parentLocation: parentLocationSummary,
           locationScope: locationIds,
           staticVisibleNpcIds: directVisibleNpcIds,
           probableNpcIds,
@@ -1684,10 +1716,11 @@ async function getCompactContext(req, res) {
         pendingBiology: pendingBiologicalAccumulations,
         pendingBiologicalAccumulations,
         narrativeContext,
+        dramaticContext,
         ...(includeTechnicalSummary ? { technicalSummary } : {}),
         weather: weatherSummary,
         jobContract: jobContractSummary,
-        activeCombatEncounters: activeCombatEncounters.map(responseShaping.summarizeCombatEncounter),
+        activeCombatEncounters: activeCombatEncounterSummaries,
         alerts,
       },
     });

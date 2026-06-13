@@ -13,6 +13,18 @@ Usar esta rubrica durante pruebas manuales en GPT Builder Preview. Marcar cada i
 | Estado | Incluye HP/MP/saciedad/energia si hubo cambio o si el usuario lo pidio. |
 | Opciones | Ofrece opciones accionables concretas cuando corresponde, sin forzar una unica ruta. |
 
+## Narracion y dialogo C14
+
+| Criterio | OK esperado |
+|---|---|
+| Escena primero | La respuesta abre con escena novelada, no con lista mecanica, cuando esta en partida. |
+| HUD final | El HUD/estado mecanico queda al final y no reemplaza la narracion. |
+| DramaticContext | Usa tension de escena confirmada: cuerpo de Lucas, eventos, misiones, compromisos, clima, NPCs o combate activo. |
+| DialogueProfile | Los NPCs hablan distinto segun voz, personalidad, relacion, tarea, cansancio y conocimiento. |
+| Intencion de dialogo | Cada linea busca algo: medir, cuidar, presionar, ocultar, corregir, negociar, provocar o revelar. |
+| Grupo vivo | Si hay varios NPCs, hay miradas, interrupciones, silencios o reacciones cruzadas; no turnos artificiales. |
+| No exposicion mecanica | Ningun NPC recita HUD, numeros, reglas o conocimiento sin fuente diegetica. |
+
 ## Tono y separacion tecnica
 
 | Criterio | OK esperado |
@@ -60,4 +72,5 @@ Una sesion de GPT Builder Preview esta aprobada si:
 - Los previews declaran que no aplican cambios reales.
 - El GPT no usa "aprox." para numeros exactos.
 - El GPT no inventa presencia, loot, EXP, romance ni secretos.
+- El GPT mantiene narracion atractiva antes del HUD y usa voces NPC diferenciadas.
 - El estado canon final coincide con el inicial salvo que se haya ejecutado una prueba mutadora con rollback manual externo.
