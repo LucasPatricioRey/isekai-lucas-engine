@@ -34,12 +34,20 @@ const ADVANCED_ACTIONS = [
     notes: "Aplica postura defensiva y reduce riesgo del siguiente intercambio.",
   },
   {
+    actionType: "block",
+    label: "Bloquear",
+    economySlot: "mainAction",
+    targetRequired: false,
+    c4ApplySupported: true,
+    notes: "Aplica guardia de bloqueo; escala con skill_bloqueo y equipo defensivo disponible.",
+  },
+  {
     actionType: "dodge",
     label: "Esquivar",
     economySlot: "reaction",
     targetRequired: false,
-    c4ApplySupported: false,
-    notes: "Reaccion defensiva reservada para ventanas de reaccion futuras.",
+    c4ApplySupported: true,
+    notes: "Aplica postura evasiva; cuesta mas fatiga y escala con skill_esquiva, espacio y terreno.",
   },
   {
     actionType: "observe",
@@ -117,6 +125,9 @@ const ADVANCED_ACTIONS = [
 
 const ACTIONS_BY_TYPE = new Map(ADVANCED_ACTIONS.map((action) => [action.actionType, action]));
 const MANUAL_END_STATUSES = ["escaped", "deescalated", "interrupted", "cancelled"];
+const COMBAT_MODES = new Set(["real", "sparring", "training"]);
+const DEFENSIVE_CONDITIONS = ["defending", "blocking", "dodging"];
+const ACTIONS_WITH_RESOLVED_TARGET = new Set(["attack", "observe", "move", "flee", "intimidate", "protect"]);
 
 function createId(prefix) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -144,6 +155,14 @@ function numberOr(value, fallback = 0) {
 
 function unique(values = []) {
   return Array.from(new Set((values || []).filter(Boolean)));
+}
+
+function normalizeCombatMode(value = "real") {
+  return COMBAT_MODES.has(value) ? value : "real";
+}
+
+function isControlledCombat(encounter) {
+  return ["sparring", "training"].includes(normalizeCombatMode(encounter?.flags?.combatMode || "real"));
 }
 
 function createDeterministicRng(seed) {
@@ -293,35 +312,64 @@ async function getWeaponProfileForCombatant(combatant) {
   return getWeaponFallback("");
 }
 
+function getEnemyDefenseBonus(enemy, defenseTypes = []) {
+  const types = new Set(defenseTypes);
+  return (enemy?.defenses || [])
+    .filter((defense) => types.has(defense.defenseType))
+    .reduce((best, defense) => Math.max(best, numberOr(defense.modifier, 0)), 0);
+}
+
+function getBlockingEquipmentModifier(combatant) {
+  const equippedIds = (combatant?.equippedWeaponIds || []).map((itemId) => String(itemId || "").toLowerCase());
+  if (equippedIds.some((itemId) => itemId.includes("escudo") || itemId.includes("shield"))) return 3;
+  if (equippedIds.some((itemId) => itemId.includes("daga") || itemId.includes("sword") || itemId.includes("espada"))) return 1;
+  return 0;
+}
+
 function getCombatantStats({ combatant, enemy, gameState, weaponProfile = null }) {
   if (combatant.side === "lucas") {
     const strength = getSkillLevel(gameState, ["skill_fuerza"]);
     const agility = getSkillLevel(gameState, ["skill_agilidad"]);
     const perception = getSkillLevel(gameState, ["skill_percepcion"]);
     const resistance = getSkillLevel(gameState, ["skill_resistencia", "skill_vitalidad"]);
+    const dodgeSkill = getSkillLevel(gameState, ["skill_esquiva"]);
+    const blockSkill = getSkillLevel(gameState, ["skill_bloqueo"]);
+    const retreatSkill = getSkillLevel(gameState, ["skill_retirada"]);
+    const tacticsSkill = getSkillLevel(gameState, ["skill_tactica_basica"]);
     const weaponSkill = getSkillLevel(gameState, [weaponProfile?.requiredSkillId, "skill_daga", "skill_pelea_sin_armas"].filter(Boolean));
     return {
-      attack: strength + weaponSkill,
-      defense: resistance,
-      agility,
-      perception,
+      attack: strength + weaponSkill + Math.floor(tacticsSkill / 3),
+      defense: resistance + Math.floor(blockSkill / 2) + Math.floor(tacticsSkill / 3),
+      agility: agility + Math.floor(dodgeSkill / 2),
+      perception: perception + Math.floor(tacticsSkill / 4),
       endurance: resistance,
       morale: numberOr(combatant.morale?.current, 100),
-      speed: agility,
+      speed: agility + Math.floor(retreatSkill / 2),
       weaponSkill,
+      dodgeSkill,
+      blockSkill,
+      retreatSkill,
+      tacticsSkill,
     };
   }
 
   const baseStats = enemy?.baseStats || {};
+  const dodgeBonus = getEnemyDefenseBonus(enemy, ["dodge", "instinct"]);
+  const blockBonus = getEnemyDefenseBonus(enemy, ["block", "armor", "resistance"]);
+  const baseSpeed = numberOr(baseStats.speed, 0) || numberOr(enemy?.movement?.speed, 0) || numberOr(baseStats.agility, 0);
   return {
     attack: numberOr(baseStats.attack, 0),
-    defense: numberOr(baseStats.defense, 0),
-    agility: numberOr(baseStats.agility, 0),
+    defense: numberOr(baseStats.defense, 0) + blockBonus,
+    agility: numberOr(baseStats.agility, 0) + dodgeBonus,
     perception: numberOr(baseStats.perception, 0),
     endurance: numberOr(baseStats.endurance, numberOr(baseStats.defense, 0)),
     morale: numberOr(baseStats.morale, numberOr(combatant.morale?.current, 0)),
-    speed: numberOr(baseStats.speed, numberOr(baseStats.agility, 0)),
+    speed: baseSpeed,
     weaponSkill: 0,
+    dodgeSkill: dodgeBonus,
+    blockSkill: blockBonus,
+    retreatSkill: baseSpeed,
+    tacticsSkill: numberOr(baseStats.awareness, numberOr(baseStats.perception, 0)),
   };
 }
 
@@ -352,13 +400,42 @@ function getFatigueModifier(combatant) {
   return 0;
 }
 
-function getStanceModifier(combatant, mode) {
+function getDodgeTerrainModifier(encounter, combatant) {
+  const terrainTags = encounter?.terrainTags || [];
+  let modifier = 0;
+  if (terrainTags.includes("mud")) modifier -= 2;
+  if (terrainTags.includes("roots")) modifier -= 2;
+  if (terrainTags.includes("uneven_ground")) modifier -= 1;
+  if (terrainTags.includes("narrow_path")) modifier -= 1;
+  if (terrainTags.includes("cover") && combatant.positionState === "covered") modifier += 1;
+  return modifier;
+}
+
+function getStanceModifier(combatant, mode, stats = {}, encounter = null) {
   const conditions = combatant.conditions || [];
-  if (mode === "defense" && conditions.includes("defending")) return 3;
-  if (mode === "attack" && conditions.includes("prepared")) return 2;
-  if (combatant.positionState === "off_balance") return -2;
-  if (combatant.positionState === "prone") return -4;
-  return 0;
+  let modifier = 0;
+
+  if (mode === "defense") {
+    if (conditions.includes("defending")) modifier += 3 + Math.floor(numberOr(stats.tacticsSkill, 0) / 3);
+    if (conditions.includes("blocking")) {
+      modifier += 4 + Math.floor(numberOr(stats.blockSkill, 0) / 2) + getBlockingEquipmentModifier(combatant);
+    }
+    if (conditions.includes("dodging")) {
+      modifier += 5 + Math.floor(numberOr(stats.dodgeSkill, 0) / 2) + getDodgeTerrainModifier(encounter, combatant);
+    }
+    if (conditions.includes("exposed")) modifier -= 2;
+  }
+
+  if (mode === "attack") {
+    if (conditions.includes("prepared")) modifier += 2 + Math.floor(numberOr(stats.tacticsSkill, 0) / 4);
+    if (conditions.includes("focused")) modifier += 1;
+  }
+
+  if (combatant.positionState === "off_balance") modifier -= 2;
+  if (combatant.positionState === "prone") modifier -= 4;
+  if (combatant.positionState === "cornered" && mode === "defense") modifier -= 2;
+
+  return modifier;
 }
 
 function classifyHit(hitMargin) {
@@ -839,6 +916,7 @@ async function previewStartEncounter({
   sourceEventId = "",
   sourceMissionId = "",
   sourceCommitmentId = "",
+  combatMode = "real",
 } = {}) {
   const gameState = await getGameStateOrThrow(gameId);
   const enemy = await getEnemyOrThrow(enemyId);
@@ -871,6 +949,7 @@ async function previewStartEncounter({
       turnOrder: participants.map((entry) => entry.combatantId),
       currentActorId: participants[0]?.combatantId || "",
       reason,
+      combatMode,
     },
     mutation: {
       willMutateGameState: false,
@@ -891,6 +970,7 @@ async function startEncounterAdvanced({
   visibility = "unknown",
   noiseLevel = "unknown",
   surpriseState = "unknown",
+  combatMode = "real",
 } = {}) {
   const gameState = await getGameStateOrThrow(gameId);
   await ensureNoActiveEncounter(gameId);
@@ -969,6 +1049,7 @@ async function startEncounterAdvanced({
       enemyType: enemy.type,
       rewardPolicy: enemy.rewardPolicy,
       c4Resolution: "backend_basic",
+      combatMode: normalizeCombatMode(combatMode),
     },
   });
 
@@ -1070,6 +1151,47 @@ function buildActionAvailability(encounter, action) {
   };
 }
 
+function validateResolvedActionIntent({ encounter, action, actorId, targetIds = [] }) {
+  const blockingReasons = [];
+  const participants = encounter?.participants || [];
+  const actor = participants.find((entry) => entry.combatantId === actorId);
+
+  if (!actorId) {
+    blockingReasons.push("No hay actorId resuelto para la accion.");
+  } else if (!actor) {
+    blockingReasons.push(`No existe actor de combate: ${actorId}.`);
+  } else {
+    if (actorId !== encounter.currentActorId) {
+      blockingReasons.push(`Solo puede actuar el actor actual del encuentro: ${encounter.currentActorId}.`);
+    }
+    if (!["lucas", "ally"].includes(actor.side)) {
+      blockingReasons.push("El actor resuelto no pertenece al lado de Lucas.");
+    }
+    if (actor.isAlive === false || actor.isConscious === false || actor.canAct === false) {
+      blockingReasons.push("El actor resuelto no puede actuar en este momento.");
+    }
+  }
+
+  if (action.targetRequired) {
+    if (!Array.isArray(targetIds) || targetIds.length === 0) {
+      blockingReasons.push("La accion requiere objetivo y no hay targetIds validos.");
+    }
+
+    for (const targetId of targetIds || []) {
+      const target = participants.find((entry) => entry.combatantId === targetId);
+      if (!target) {
+        blockingReasons.push(`No existe targetId de combate: ${targetId}.`);
+      } else if (target.combatantId === actorId) {
+        blockingReasons.push("El actor no puede apuntarse a si mismo con esta accion.");
+      } else if (actor && ["lucas", "ally"].includes(actor.side) && target.side !== "enemy") {
+        blockingReasons.push(`El objetivo ${targetId} no es enemigo valido para ${action.actionType}.`);
+      }
+    }
+  }
+
+  return blockingReasons;
+}
+
 async function listAvailableAdvancedActions({ encounterId } = {}) {
   const encounter = await getEncounterOrThrow(encounterId);
   return {
@@ -1105,9 +1227,14 @@ async function previewAdvancedAction({
   const resolvedActorId = actorId || encounter.currentActorId || "";
   const resolvedTargetIds = Array.isArray(targetIds) ? targetIds : getDefaultTargetIds(encounter, action);
 
-  if (action.targetRequired && resolvedTargetIds.length === 0) {
-    availability.blockingReasons.push("La accion requiere objetivo y no hay targetIds validos.");
-  }
+  availability.blockingReasons.push(
+    ...validateResolvedActionIntent({
+      encounter,
+      action,
+      actorId: resolvedActorId,
+      targetIds: resolvedTargetIds,
+    })
+  );
 
   const canAct = availability.blockingReasons.length === 0;
   const stateHash = getEncounterStateHash(encounter);
@@ -1121,20 +1248,22 @@ async function previewAdvancedAction({
     targetIds: resolvedTargetIds,
   });
 
-  await CombatActionPreview.updateMany(
-    {
-      gameId,
-      encounterId,
-      actorId: resolvedActorId,
-      status: "pending",
-    },
-    {
-      $set: {
-        status: "invalidated",
-        invalidationReason: "Nueva preview creada para el mismo actor.",
+  if (canAct) {
+    await CombatActionPreview.updateMany(
+      {
+        gameId,
+        encounterId,
+        actorId: resolvedActorId,
+        status: "pending",
       },
-    }
-  );
+      {
+        $set: {
+          status: "invalidated",
+          invalidationReason: "Nueva preview creada para el mismo actor.",
+        },
+      }
+    );
+  }
 
   const preview = await CombatActionPreview.create({
     previewId,
@@ -1173,7 +1302,8 @@ async function previewAdvancedAction({
       : [],
     deterministicSeed,
     expiresAt: new Date(Date.now() + 5 * 60 * 1000),
-    status: "pending",
+    status: canAct ? "pending" : "invalidated",
+    invalidationReason: canAct ? "" : availability.blockingReasons.join(" "),
   });
 
   return {
@@ -1206,6 +1336,12 @@ async function validatePendingPreview({ previewId, gameId = "isekai_lucas_main" 
   }
   if (preview.status !== "pending") {
     throw makeError(`El previewId no esta pendiente. Estado actual: ${preview.status}.`, 400);
+  }
+  if (preview.riskSummary?.canAct === false || (preview.riskSummary?.blockingReasons || []).length > 0) {
+    throw makeError("El previewId fue creado con bloqueos y no puede aplicarse.", 400, {
+      previewId,
+      blockingReasons: preview.riskSummary?.blockingReasons || [],
+    });
   }
   if (preview.expiresAt && new Date(preview.expiresAt).getTime() < Date.now()) {
     await CombatActionPreview.updateOne(
@@ -1307,6 +1443,10 @@ function findFirstEnemyTarget(encounter, actor) {
 function getResolvedTarget(encounter, combatantDocs, actor, targetIds = []) {
   const targetId = targetIds[0] || findFirstEnemyTarget(encounter, actor)?.combatantId || "";
   return targetId ? getMutableCombatant(encounter, combatantDocs, targetId) : null;
+}
+
+function shouldResolveTargetForAction(actionType) {
+  return ACTIONS_WITH_RESOLVED_TARGET.has(actionType);
 }
 
 function removeCondition(combatant, condition) {
@@ -1420,6 +1560,9 @@ function resolveAttack({
   const distanceModifier = getDistanceAttackModifier(distanceBand, weaponProfile);
   const terrainAttackModifier = getTerrainModifier(encounter, actor);
   const terrainDefenseModifier = getTerrainModifier(encounter, target);
+  const actorStanceModifier = getStanceModifier(actor, "attack", actorStats, encounter);
+  const targetDefensiveModifier = getStanceModifier(target, "defense", targetStats, encounter);
+  const controlledCombat = isControlledCombat(encounter);
   const attackScore =
     actorStats.agility +
     actorStats.attack +
@@ -1428,7 +1571,7 @@ function resolveAttack({
     distanceModifier +
     terrainAttackModifier +
     getFatigueModifier(actor) +
-    getStanceModifier(actor, "attack") +
+    actorStanceModifier +
     attackRoll;
   const defenseScore =
     targetStats.agility +
@@ -1436,7 +1579,7 @@ function resolveAttack({
     Math.floor(targetStats.perception / 4) +
     terrainDefenseModifier +
     getFatigueModifier(target) +
-    getStanceModifier(target, "defense") +
+    targetDefensiveModifier +
     defenseRoll;
   const hitMargin = attackScore - defenseScore;
   const resultBand = classifyHit(hitMargin);
@@ -1447,19 +1590,25 @@ function resolveAttack({
     ? numberOr(weaponProfile.baseDamage, 1) + statBonus + hitBonus + damageRoll
     : 0;
   const reduction = hit ? Math.floor(targetStats.endurance / 6) + Math.floor(targetStats.defense / 8) : 0;
-  const finalDamage = hit ? Math.max(0, rawDamage - reduction) : 0;
+  let finalDamage = hit ? Math.max(0, rawDamage - reduction) : 0;
+  if (controlledCombat) {
+    const safeDamageCap = Math.max(0, numberOr(target.hp?.current, 0) - 1);
+    finalDamage = Math.min(finalDamage, safeDamageCap, 2);
+  }
   const hpChange = finalDamage > 0 ? adjustResource(target.hp, -finalDamage) : null;
   const moraleDamage = finalDamage > 0 ? Math.max(1, Math.floor(finalDamage / 2) + (["strong_hit", "critical_hit"].includes(resultBand) ? 2 : 0)) : 0;
   const moraleChange = moraleDamage > 0 ? adjustResource(target.morale, -moraleDamage) : null;
-  const injuryResult = maybeCreateInjury({
-    rng,
-    target,
-    resultBand,
-    finalDamage,
-    damageType: weaponProfile.damageType,
-    encounter,
-    actionId,
-  });
+  const injuryResult = controlledCombat
+    ? { injuryRoll: null, injury: null }
+    : maybeCreateInjury({
+        rng,
+        target,
+        resultBand,
+        finalDamage,
+        damageType: weaponProfile.damageType,
+        encounter,
+        actionId,
+      });
   const gameTime = getCombatantGameTime(gameState, encounter);
 
   if (hpChange) target.hp = hpChange.pool;
@@ -1467,7 +1616,8 @@ function resolveAttack({
   applyFatigue(actor, 3 + Math.max(0, numberOr(weaponProfile.fatigueCostModifier, 0)));
   if (finalDamage > 0) applyStress(target, Math.max(1, Math.floor(finalDamage / 2)));
   removeCondition(actor, "prepared");
-  removeCondition(target, "defending");
+  removeCondition(actor, "focused");
+  for (const condition of DEFENSIVE_CONDITIONS) removeCondition(target, condition);
 
   if (injuryResult?.injury) {
     injuryResult.injury.createdDay = gameTime.day;
@@ -1494,7 +1644,10 @@ function resolveAttack({
       terrainDefenseModifier,
       attackFatigueModifier: getFatigueModifier(actor),
       targetFatigueModifier: getFatigueModifier(target),
+      actorStanceModifier,
+      targetDefensiveModifier,
       weapon: weaponProfile.name,
+      controlledCombat,
     },
     result: {
       resultBand,
@@ -1528,7 +1681,7 @@ function resolveAttack({
     ],
     injuriesCreated: injuryResult?.injury ? [injuryResult.injury] : [],
     narrativeSummary: hit
-      ? `${actor.name} impacta a ${target.name} (${resultBand}) por ${finalDamage} de dano.`
+      ? `${actor.name} impacta a ${target.name} (${resultBand}) por ${finalDamage} de dano${controlledCombat ? " controlado" : ""}.`
       : `${actor.name} falla contra ${target.name} (${resultBand}).`,
   };
 }
@@ -1553,6 +1706,64 @@ function resolveDefend({ actor }) {
     fatigueChanges: [{ targetId: actor.combatantId, combatFatigue: actor.combatFatigue }],
     injuriesCreated: [],
     narrativeSummary: `${actor.name} adopta una postura defensiva.`,
+  };
+}
+
+function resolveBlock({ actor, gameState }) {
+  const stats = getCombatantStats({ combatant: actor, gameState });
+  const equipmentModifier = getBlockingEquipmentModifier(actor);
+  addCondition(actor, "blocking");
+  actor.stance = "guarded";
+  applyFatigue(actor, 2);
+
+  return {
+    actionType: "block",
+    actorId: actor.combatantId,
+    targetIds: [],
+    rolls: {},
+    modifiers: {
+      blockSkill: stats.blockSkill || 0,
+      equipmentModifier,
+      expectedDefenseBonus: 4 + Math.floor(numberOr(stats.blockSkill, 0) / 2) + equipmentModifier,
+    },
+    result: {
+      resultBand: "blocking_guard",
+      visibleStates: [buildVisibleState(actor)],
+    },
+    damage: {},
+    moraleChanges: [],
+    fatigueChanges: [{ targetId: actor.combatantId, combatFatigue: actor.combatFatigue }],
+    injuriesCreated: [],
+    narrativeSummary: `${actor.name} levanta una guardia de bloqueo.`,
+  };
+}
+
+function resolveDodge({ actor, encounter, gameState }) {
+  const stats = getCombatantStats({ combatant: actor, gameState });
+  const terrainModifier = getDodgeTerrainModifier(encounter, actor);
+  addCondition(actor, "dodging");
+  actor.stance = "evasive";
+  applyFatigue(actor, terrainModifier < 0 ? 5 : 4);
+
+  return {
+    actionType: "dodge",
+    actorId: actor.combatantId,
+    targetIds: [],
+    rolls: {},
+    modifiers: {
+      dodgeSkill: stats.dodgeSkill || 0,
+      terrainModifier,
+      expectedDefenseBonus: 5 + Math.floor(numberOr(stats.dodgeSkill, 0) / 2) + terrainModifier,
+    },
+    result: {
+      resultBand: "evasive_guard",
+      visibleStates: [buildVisibleState(actor)],
+    },
+    damage: {},
+    moraleChanges: [],
+    fatigueChanges: [{ targetId: actor.combatantId, combatFatigue: actor.combatFatigue }],
+    injuriesCreated: [],
+    narrativeSummary: `${actor.name} se concentra en esquivar y abrir angulo.`,
   };
 }
 
@@ -1621,7 +1832,8 @@ function resolveIntimidate({ rng, actor, target, gameState, enemy }) {
   const targetStats = getCombatantStats({ combatant: target, enemy, gameState });
   const pressureRoll = rollDie(rng, 20);
   const resistRoll = rollDie(rng, 20);
-  const pressureScore = actorStats.perception + Math.floor(actorStats.attack / 2) + pressureRoll + getStanceModifier(actor, "attack");
+  const pressureScore =
+    actorStats.perception + Math.floor(actorStats.attack / 2) + pressureRoll + getStanceModifier(actor, "attack", actorStats);
   const resistScore = targetStats.morale + Math.floor(targetStats.perception / 2) + resistRoll + getFatigueModifier(target);
   const margin = pressureScore - resistScore;
   const moraleDamage = margin > 0 ? clamp(Math.floor(margin / 3) + 1, 1, 10) : 0;
@@ -1677,20 +1889,63 @@ function resolvePrepare({ actor }) {
   };
 }
 
+function getFleeDistanceModifier(distanceBand) {
+  if (distanceBand === "grappled") return -8;
+  if (distanceBand === "engaged") return -4;
+  if (distanceBand === "near") return -1;
+  if (distanceBand === "short") return 2;
+  if (distanceBand === "medium") return 5;
+  if (distanceBand === "far") return 8;
+  if (distanceBand === "out_of_sight") return 12;
+  return 0;
+}
+
+function getEscapeRouteModifier(encounter) {
+  const routes = encounter?.escapeRoutes || [];
+  if (routes.length === 0) return 0;
+  const usableRoutes = routes.filter((route) => !route.blocked);
+  if (usableRoutes.length === 0) return -6;
+  if (usableRoutes.some((route) => route.riskLevel === "safe")) return 3;
+  if (usableRoutes.some((route) => route.riskLevel === "low")) return 2;
+  if (usableRoutes.some((route) => route.riskLevel === "medium")) return 0;
+  if (usableRoutes.some((route) => route.riskLevel === "high")) return -2;
+  return -1;
+}
+
 function resolveFlee({ rng, encounter, actor, target, gameState, enemy }) {
   const actorStats = getCombatantStats({ combatant: actor, enemy, gameState });
   const targetStats = target ? getCombatantStats({ combatant: target, enemy, gameState }) : {};
   const fleeRoll = rollDie(rng, 20);
   const pursuitRoll = target ? rollDie(rng, 20) : 0;
-  const terrainPenalty = (encounter.terrainTags || []).some((tag) => ["mud", "roots", "narrow_path"].includes(tag)) ? -2 : 0;
-  const fleeScore = actorStats.speed + fleeRoll + getFatigueModifier(actor) + terrainPenalty;
-  const pursuitScore = target ? targetStats.speed + pursuitRoll + getFatigueModifier(target) : 0;
+  const distanceBand = target ? getDistance(encounter, actor.combatantId, target.combatantId) : "near";
+  const terrainPenalty = (encounter.terrainTags || []).reduce((total, tag) => {
+    if (["mud", "roots"].includes(tag)) return total - 2;
+    if (["narrow_path", "uneven_ground", "darkness", "poor_visibility"].includes(tag)) return total - 1;
+    return total;
+  }, 0);
+  const distanceModifier = getFleeDistanceModifier(distanceBand);
+  const escapeRouteModifier = getEscapeRouteModifier(encounter);
+  const retreatSkillModifier = Math.floor(numberOr(actorStats.retreatSkill, 0) / 2) + Math.floor(numberOr(actorStats.tacticsSkill, 0) / 4);
+  const fleeScore =
+    actorStats.speed +
+    retreatSkillModifier +
+    fleeRoll +
+    getFatigueModifier(actor) +
+    terrainPenalty +
+    distanceModifier +
+    escapeRouteModifier;
+  const pursuitScore = target
+    ? targetStats.speed + pursuitRoll + getFatigueModifier(target) + (distanceBand === "grappled" ? 4 : 0)
+    : 0;
   const escaped = !target || fleeScore >= pursuitScore + 2;
-  applyFatigue(actor, 4);
+  applyFatigue(actor, 5);
 
   if (!escaped) {
     actor.positionState = "off_balance";
     addCondition(actor, "exposed");
+  } else if (target) {
+    setDistance(encounter, actor.combatantId, target.combatantId, "out_of_sight");
+    addCondition(actor, "fleeing");
   }
 
   return {
@@ -1698,7 +1953,15 @@ function resolveFlee({ rng, encounter, actor, target, gameState, enemy }) {
     actorId: actor.combatantId,
     targetIds: target ? [target.combatantId] : [],
     rolls: { fleeRoll, pursuitRoll },
-    modifiers: { fleeScore, pursuitScore, terrainPenalty },
+    modifiers: {
+      fleeScore,
+      pursuitScore,
+      terrainPenalty,
+      distanceBand,
+      distanceModifier,
+      escapeRouteModifier,
+      retreatSkillModifier,
+    },
     result: {
       resultBand: escaped ? "escaped" : "failed_escape",
       escaped,
@@ -1735,6 +1998,44 @@ function resolveSurrender({ actor }) {
   };
 }
 
+function getEnemyMoraleBreakThreshold(enemy) {
+  const profile = enemy?.moraleProfile || {};
+  return Math.max(numberOr(profile.breaksAt, 0), numberOr(profile.fleesAt, 0));
+}
+
+function isEnemyMoraleBroken(combatant, enemy) {
+  if (!combatant || combatant.side !== "enemy") return false;
+  return numberOr(combatant.morale?.current, 0) <= getEnemyMoraleBreakThreshold(enemy);
+}
+
+function resolveEnemyMoraleBreak({ actor }) {
+  actor.canAct = false;
+  addCondition(actor, "fleeing");
+  addCondition(actor, "morale_broken");
+
+  return {
+    actionType: "flee",
+    actorId: actor.combatantId,
+    targetIds: [],
+    rolls: {},
+    modifiers: {
+      moraleBreak: true,
+      moraleCurrent: numberOr(actor.morale?.current, 0),
+    },
+    result: {
+      resultBand: "morale_break_flee",
+      escaped: true,
+      moraleBreak: true,
+      visibleStates: [buildVisibleState(actor)],
+    },
+    damage: {},
+    moraleChanges: [],
+    fatigueChanges: [],
+    injuriesCreated: [],
+    narrativeSummary: `${actor.name} rompe moral y abandona el combate.`,
+  };
+}
+
 async function finalizeEncounterFatigueIfNeeded({ gameState, encounter }) {
   if (encounter.status === "active") return null;
   if (encounter.flags?.combatFatigueConverted) return null;
@@ -1763,7 +2064,7 @@ async function finalizeEncounterFatigueIfNeeded({ gameState, encounter }) {
   return energyChange;
 }
 
-function applyEndStateFromCombatants({ encounter, actor, target, actionType, resolution }) {
+function applyEndStateFromCombatants({ encounter, actor, target, actionType, resolution, enemy = null }) {
   if (target) {
     markDefeatedIfNeeded(target);
     if (target.side === "enemy") {
@@ -1772,7 +2073,7 @@ function applyEndStateFromCombatants({ encounter, actor, target, actionType, res
         encounter.status = "won";
         encounter.phase = "ending";
         encounter.currentActorId = "";
-      } else if (numberOr(target.morale?.current, 0) <= 0) {
+      } else if (isEnemyMoraleBroken(target, enemy)) {
         encounter.status = "enemy_fled";
         encounter.phase = "ending";
         encounter.currentActorId = "";
@@ -2012,8 +2313,22 @@ async function applyAdvancedAction({ gameId = "isekai_lucas_main", previewId } =
   if (!["player_turn", "reaction_window"].includes(encounter.phase)) {
     throw makeError(`La fase actual no permite accion de Lucas: ${encounter.phase}`, 400);
   }
+  if (preview.actorId !== encounter.currentActorId) {
+    throw makeError("El actor del preview ya no es el actor actual del encuentro.", 409, {
+      previewActorId: preview.actorId,
+      currentActorId: encounter.currentActorId,
+    });
+  }
+  if (!["lucas", "ally"].includes(actor.side)) {
+    throw makeError("El actor del preview no pertenece al lado de Lucas.", 400);
+  }
+  if (actor.isAlive === false || actor.isConscious === false || actor.canAct === false) {
+    throw makeError("El actor del preview no puede actuar.", 400);
+  }
 
-  const target = getResolvedTarget(encounter, combatantDocs, actor, preview.targetIds || []);
+  const target = shouldResolveTargetForAction(preview.actionType)
+    ? getResolvedTarget(encounter, combatantDocs, actor, preview.targetIds || [])
+    : null;
   const rng = createDeterministicRng(preview.deterministicSeed || preview.previewId);
   let resolution;
 
@@ -2032,6 +2347,10 @@ async function applyAdvancedAction({ gameId = "isekai_lucas_main", previewId } =
     });
   } else if (preview.actionType === "defend") {
     resolution = resolveDefend({ actor });
+  } else if (preview.actionType === "block") {
+    resolution = resolveBlock({ actor, gameState });
+  } else if (preview.actionType === "dodge") {
+    resolution = resolveDodge({ actor, encounter, gameState });
   } else if (preview.actionType === "observe") {
     resolution = resolveObserve({ actor, target });
   } else if (preview.actionType === "move") {
@@ -2058,6 +2377,7 @@ async function applyAdvancedAction({ gameId = "isekai_lucas_main", previewId } =
     target,
     actionType: preview.actionType,
     resolution,
+    enemy,
   });
   advanceTurnAfterPlayerAction(encounter);
 
@@ -2112,9 +2432,12 @@ async function resolveNextNpcTurn({ gameId = "isekai_lucas_main", encounterId } 
   let resolution;
   const enemyHpRatio = numberOr(actor.hp?.current, 0) / Math.max(1, numberOr(actor.hp?.max, 1));
   const moraleCurrent = numberOr(actor.morale?.current, 0);
-  const shouldFlee = moraleCurrent <= 0 || (enemyHpRatio < 0.25 && rollDie(rng, 20) >= 12);
+  const moraleBroken = isEnemyMoraleBroken(actor, enemy);
+  const shouldFlee = moraleBroken || moraleCurrent <= 0 || (enemyHpRatio < 0.25 && rollDie(rng, 20) >= 12);
 
-  if (shouldFlee) {
+  if (moraleBroken) {
+    resolution = resolveEnemyMoraleBreak({ actor });
+  } else if (shouldFlee) {
     resolution = resolveFlee({ rng, encounter, actor, target, gameState, enemy });
   } else {
     resolution = resolveAttack({
@@ -2138,6 +2461,7 @@ async function resolveNextNpcTurn({ gameId = "isekai_lucas_main", encounterId } 
     target,
     actionType: resolution.actionType,
     resolution,
+    enemy,
   });
   advanceTurnAfterNpcAction(encounter);
 

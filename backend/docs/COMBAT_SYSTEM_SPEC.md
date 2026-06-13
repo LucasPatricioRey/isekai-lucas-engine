@@ -1,8 +1,8 @@
 # Isekai Lucas - Combat System Spec
 
-Version: C1 design draft
-Status: specification only, no implementation in this phase
-Scope: advanced combat architecture before coding the new system
+Version: C7 hardening draft
+Status: implementation exists through C6; current phase hardens balance, tests and GPT Action contract
+Scope: advanced combat architecture, backend resolution, post-combat consequences and treatment
 
 ---
 

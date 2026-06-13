@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Combat Advanced",
-    "version": "0.3.0",
-    "description": "Tercer bloque de Actions para combate avanzado. Fase C5: crea/lista encuentros, genera previewId, resuelve acciones basicas con backend rolls y agrega consecuencias post-combate controladas: evidencia, loot logico sin inventario automatico y tratamiento basico de heridas."
+    "version": "0.4.0",
+    "description": "Tercer bloque de Actions para combate avanzado. Cubre preview/apply con previewId, backend rolls, ataque, defensa, bloqueo, esquiva, retirada, moral enemiga, fatiga, heridas, evidencia/loot logico sin inventario automatico y tratamiento basico."
   },
   "servers": [
     {
@@ -32,6 +32,11 @@
         "type": "string",
         "default": "isekai_lucas_main"
       },
+      "CombatMode": {
+        "type": "string",
+        "enum": ["real", "sparring", "training"],
+        "default": "real"
+      },
       "PreviewStartEncounterRequest": {
         "type": "object",
         "required": ["enemyId"],
@@ -53,6 +58,9 @@
           },
           "sourceCommitmentId": {
             "type": "string"
+          },
+          "combatMode": {
+            "$ref": "#/components/schemas/CombatMode"
           }
         },
         "additionalProperties": false
@@ -78,6 +86,9 @@
           },
           "sourceCommitmentId": {
             "type": "string"
+          },
+          "combatMode": {
+            "$ref": "#/components/schemas/CombatMode"
           },
           "terrainTags": {
             "type": "array",
@@ -112,7 +123,7 @@
           },
           "actionType": {
             "type": "string",
-            "enum": ["attack", "defend", "dodge", "observe", "move", "flee", "surrender", "use_item", "use_magic", "protect", "intimidate", "prepare"]
+            "enum": ["attack", "defend", "block", "dodge", "observe", "move", "flee", "surrender", "use_item", "use_magic", "protect", "intimidate", "prepare"]
           },
           "actorId": {
             "type": "string"
@@ -199,8 +210,8 @@
     "/api/combat/advanced/actions": {
       "get": {
         "operationId": "combatAdvancedListActions",
-        "summary": "Lista acciones de combate avanzado disponibles en C4.",
-        "description": "Lectura. Devuelve actionTypes, economia de accion y notas. En C4 attack/defend/observe/move/flee/surrender/intimidate/prepare tienen aplicacion basica.",
+        "summary": "Lista acciones de combate avanzado disponibles.",
+        "description": "Lectura. Devuelve actionTypes, economia de accion y notas. attack/defend/block/dodge/observe/move/flee/surrender/intimidate/prepare tienen aplicacion backend basica.",
         "responses": {
           "200": {
             "description": "Acciones.",
@@ -398,7 +409,7 @@
       "post": {
         "operationId": "combatAdvancedApplyAction",
         "summary": "Aplica una accion previsualizada.",
-        "description": "Valida previewId y aplica acciones soportadas por C4. Algunas acciones, como use_item/use_magic/protect, pueden devolver 501 hasta fases posteriores.",
+        "description": "Valida previewId, actor actual y hash de estado antes de resolver. Algunas acciones, como use_item/use_magic/protect, pueden devolver 501 hasta fases posteriores.",
         "requestBody": {
           "required": true,
           "content": {
@@ -411,7 +422,7 @@
         },
         "responses": {
           "200": {
-            "description": "Reservado para C4.",
+            "description": "Accion aplicada.",
             "content": {
               "application/json": {
                 "schema": {
@@ -707,5 +718,5 @@
   },
   "x-action-role": "combat-advanced",
   "x-no-overlap-with": "openapi-gpt-action-compact.json",
-  "x-phase": "C5"
+  "x-phase": "C7-hardening"
 }

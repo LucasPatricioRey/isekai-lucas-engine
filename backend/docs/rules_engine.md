@@ -1133,6 +1133,8 @@ Mal clima fuera del núcleo del pueblo:
 
 Combate narrativo, pero con números visibles y consecuencias reales.
 
+El combate real usa el tercer dominio de Actions de combate avanzado. El narrador interpreta intencion y describe resultados confirmados, pero el backend decide tiradas, acierto, daño, fatiga, heridas, moral, retirada, cierre del combate y consecuencias post-combate. Sin `CombatEncounter` formal no hay daño, victoria, loot ni heridas de combate.
+
 Antes de resolver, revisar:
 
 - vida;
@@ -1169,6 +1171,8 @@ Usar zonas del cuerpo cuando corresponda.
 Armadura reduce daño según cobertura y calidad.
 
 Fatiga, miedo y retirada importan.
+
+Defender, bloquear, esquivar y retirarse son acciones mecanicas distintas. Bloqueo depende de guardia/equipo y `skill_bloqueo`; esquiva depende de espacio, terreno y `skill_esquiva`; retirada depende de distancia, ruta de escape, terreno, fatiga y `skill_retirada`. El GPT no decide si funcionan: debe usar preview/apply de combate.
 
 ### 16.4 Muerte
 

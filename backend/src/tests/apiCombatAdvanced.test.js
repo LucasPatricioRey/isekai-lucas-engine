@@ -6,6 +6,7 @@ const CombatantState = require("../models/CombatantState");
 const CombatLogEntry = require("../models/CombatLogEntry");
 const Evidence = require("../models/Evidence");
 const EventLog = require("../models/EventLog");
+const EnemyTemplate = require("../models/EnemyTemplate");
 const Faction = require("../models/Faction");
 const GameState = require("../models/GameState");
 const InjuryRecord = require("../models/InjuryRecord");
@@ -25,6 +26,7 @@ let tempEventId = "";
 let tempMissionId = "";
 let tempFactionId = "";
 let tempInjuryId = "";
+const tempEnemyIds = [];
 
 async function createTempGameState() {
   tempGameId = `test_combat_advanced_${Date.now()}`;
@@ -57,6 +59,7 @@ async function cleanupTempCombatState() {
     WorldEvent.deleteMany({ gameId: tempGameId }),
     Mission.deleteMany({ missionId: { $in: [tempMissionId].filter(Boolean) } }),
     Faction.deleteMany({ factionId: { $in: [tempFactionId].filter(Boolean) } }),
+    EnemyTemplate.deleteMany({ enemyId: { $in: tempEnemyIds } }),
     EventLog.deleteMany({
       $or: [
         { gameId: tempGameId },
@@ -65,6 +68,63 @@ async function cleanupTempCombatState() {
     }),
     GameState.deleteMany({ gameId: tempGameId }),
   ]);
+}
+
+async function createTempEnemyTemplate(overrides = {}) {
+  const enemyId = overrides.enemyId || `enemy_fixture_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  tempEnemyIds.push(enemyId);
+
+  await EnemyTemplate.create({
+    enemyId,
+    name: overrides.name || "Fixture combat enemy",
+    type: overrides.type || "beast",
+    dangerLevel: overrides.dangerLevel || "low",
+    dangerRank: overrides.dangerRank || overrides.dangerLevel || "low",
+    rankHint: overrides.rankHint || "Porcelana",
+    baseStats: {
+      life: overrides.baseStats?.life ?? 12,
+      hp: overrides.baseStats?.hp ?? overrides.baseStats?.life ?? 12,
+      attack: overrides.baseStats?.attack ?? 2,
+      defense: overrides.baseStats?.defense ?? 1,
+      agility: overrides.baseStats?.agility ?? 0,
+      perception: overrides.baseStats?.perception ?? 1,
+      endurance: overrides.baseStats?.endurance ?? 1,
+      morale: overrides.baseStats?.morale ?? 10,
+      speed: overrides.baseStats?.speed ?? 0,
+      awareness: overrides.baseStats?.awareness ?? 1,
+      instinct: overrides.baseStats?.instinct ?? 1,
+    },
+    attacks: overrides.attacks || [
+      {
+        attackId: `${enemyId}_attack`,
+        name: "Golpe de fixture",
+        damageType: "blunt",
+        baseDamage: 1,
+        accuracyModifier: 0,
+      },
+    ],
+    defenses: overrides.defenses || [],
+    movement: overrides.movement || { speed: overrides.baseStats?.speed ?? 0 },
+    moraleProfile: overrides.moraleProfile || { baseState: "cautious", breaksAt: 0, fleesAt: 0 },
+    behaviorProfile: overrides.behaviorProfile || { archetype: "cowardly", preferredActions: ["flee"] },
+    lootProfile: overrides.lootProfile || { mode: "proof_only" },
+    evidenceProfile: overrides.evidenceProfile || {
+      defaultProofStatus: "unverified",
+      proofItems: [
+        {
+          key: `${enemyId}_trace`,
+          name: "Rastro de fixture",
+          type: "trace",
+          summary: "Prueba fixture de combate.",
+        },
+      ],
+    },
+    retreatLogic: overrides.retreatLogic || "Fixture de pruebas.",
+    rewardPolicy: overrides.rewardPolicy || "No hay recompensa automatica.",
+    tags: ["fixture", ...(overrides.tags || [])],
+  });
+
+  return enemyId;
 }
 
 describe("combat advanced API", () => {
@@ -83,6 +143,8 @@ describe("combat advanced API", () => {
     assert.equal(actions.status, 200);
     assert.equal(actions.data.ok, true);
     assert.ok(actions.data.actions.some((action) => action.actionType === "attack"));
+    assert.ok(actions.data.actions.some((action) => action.actionType === "block" && action.c4ApplySupported));
+    assert.ok(actions.data.actions.some((action) => action.actionType === "dodge" && action.c4ApplySupported));
     assert.ok(actions.data.actions.some((action) => action.actionType === "flee"));
 
     const schema = await get("/docs/openapi-gpt-action-combat.json");
@@ -221,6 +283,288 @@ describe("combat advanced API", () => {
     const activeAfter = await get(`/api/combat/advanced/encounters/active?gameId=${encodeURIComponent(tempGameId)}`);
     assert.equal(activeAfter.status, 200);
     assert.equal(activeAfter.data.encounters.length, 0);
+  });
+
+  it("blocks invalid previews from being applied", async () => {
+    const enemyId = await createTempEnemyTemplate();
+    const started = await post("/api/combat/advanced/encounters/start", {
+      gameId: tempGameId,
+      enemyId,
+      reason: "Fixture: preview invalido.",
+    });
+
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    const encounterId = started.data.encounter.encounterId;
+
+    const invalidPreview = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/actions/preview`, {
+      gameId: tempGameId,
+      actionType: "attack",
+      actorId: "combatant_intruso",
+      targetIds: [],
+    });
+
+    assert.equal(invalidPreview.status, 200, JSON.stringify(invalidPreview.data));
+    assert.equal(invalidPreview.data.preview.canAct, false);
+    assert.equal(invalidPreview.data.preview.preview.status, "invalidated");
+
+    const blockedApply = await post("/api/combat/advanced/actions/apply", {
+      gameId: tempGameId,
+      previewId: invalidPreview.data.preview.preview.previewId,
+    });
+
+    assert.equal(blockedApply.status, 400);
+
+    await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/end`, {
+      gameId: tempGameId,
+      endStatus: "cancelled",
+      reason: "Fixture cleanup.",
+    });
+  });
+
+  it("applies block and dodge as real defensive actions", async () => {
+    const enemyId = await createTempEnemyTemplate({
+      baseStats: {
+        life: 18,
+        hp: 18,
+        attack: 3,
+        defense: 1,
+        agility: 1,
+        perception: 1,
+        endurance: 1,
+        morale: 12,
+        speed: 1,
+      },
+    });
+    const started = await post("/api/combat/advanced/encounters/start", {
+      gameId: tempGameId,
+      enemyId,
+      reason: "Fixture: defensa real.",
+      terrainTags: ["forest"],
+    });
+
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    const encounterId = started.data.encounter.encounterId;
+
+    const blockPreview = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/actions/preview`, {
+      gameId: tempGameId,
+      actionType: "block",
+    });
+
+    assert.equal(blockPreview.status, 200, JSON.stringify(blockPreview.data));
+    assert.equal(blockPreview.data.preview.canAct, true);
+
+    const blockApplied = await post("/api/combat/advanced/actions/apply", {
+      gameId: tempGameId,
+      previewId: blockPreview.data.preview.preview.previewId,
+    });
+
+    assert.equal(blockApplied.status, 200, JSON.stringify(blockApplied.data));
+    assert.equal(blockApplied.data.resolution.actionType, "block");
+    assert.ok(blockApplied.data.resolution.modifiers.expectedDefenseBonus >= 4);
+    assert.equal(blockApplied.data.encounter.phase, "npc_turn");
+
+    const npcTurn = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/npc-turn/resolve`, {
+      gameId: tempGameId,
+    });
+
+    assert.equal(npcTurn.status, 200, JSON.stringify(npcTurn.data));
+    assert.equal(npcTurn.data.resolution.actionType, "attack");
+    assert.ok(npcTurn.data.resolution.modifiers.targetDefensiveModifier >= 4);
+
+    const dodgePreview = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/actions/preview`, {
+      gameId: tempGameId,
+      actionType: "dodge",
+    });
+
+    assert.equal(dodgePreview.status, 200, JSON.stringify(dodgePreview.data));
+    assert.equal(dodgePreview.data.preview.canAct, true);
+
+    const dodgeApplied = await post("/api/combat/advanced/actions/apply", {
+      gameId: tempGameId,
+      previewId: dodgePreview.data.preview.preview.previewId,
+    });
+
+    assert.equal(dodgeApplied.status, 200, JSON.stringify(dodgeApplied.data));
+    assert.equal(dodgeApplied.data.resolution.actionType, "dodge");
+    assert.ok(dodgeApplied.data.resolution.fatigueChanges[0].combatFatigue >= 4);
+
+    await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/end`, {
+      gameId: tempGameId,
+      endStatus: "cancelled",
+      reason: "Fixture cleanup.",
+    });
+  });
+
+  it("lets Lucas retreat through backend resolution", async () => {
+    const enemyId = await createTempEnemyTemplate({
+      baseStats: {
+        life: 10,
+        hp: 10,
+        attack: 1,
+        defense: 0,
+        agility: 0,
+        perception: 1,
+        endurance: 1,
+        morale: 6,
+        speed: 0,
+      },
+    });
+    const started = await post("/api/combat/advanced/encounters/start", {
+      gameId: tempGameId,
+      enemyId,
+      reason: "Fixture: retirada de Lucas.",
+      terrainTags: ["road"],
+    });
+
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    const encounterId = started.data.encounter.encounterId;
+    const lucasId = started.data.encounter.participants.find((entry) => entry.side === "lucas").combatantId;
+    const enemyCombatantId = started.data.encounter.participants.find((entry) => entry.side === "enemy").combatantId;
+
+    const encounter = await CombatEncounter.findOne({ gameId: tempGameId, encounterId });
+    encounter.distanceMap = {
+      [lucasId]: { [enemyCombatantId]: "out_of_sight" },
+      [enemyCombatantId]: { [lucasId]: "out_of_sight" },
+    };
+    encounter.escapeRoutes = [
+      {
+        routeId: "fixture_safe_exit",
+        toLocationId: "loc_fixture_exit",
+        label: "Salida fixture",
+        riskLevel: "safe",
+        blocked: false,
+      },
+    ];
+    encounter.participants = encounter.participants.map((entry) => {
+      if (entry.combatantId !== enemyCombatantId) return entry;
+      const plainEntry = typeof entry.toObject === "function" ? entry.toObject() : entry;
+      return { ...plainEntry, combatFatigue: 40 };
+    });
+    encounter.markModified("distanceMap");
+    encounter.markModified("escapeRoutes");
+    encounter.markModified("participants");
+    await encounter.save();
+
+    const fleePreview = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/actions/preview`, {
+      gameId: tempGameId,
+      actionType: "flee",
+    });
+
+    assert.equal(fleePreview.status, 200, JSON.stringify(fleePreview.data));
+    assert.equal(fleePreview.data.preview.canAct, true);
+
+    const fled = await post("/api/combat/advanced/actions/apply", {
+      gameId: tempGameId,
+      previewId: fleePreview.data.preview.preview.previewId,
+    });
+
+    assert.equal(fled.status, 200, JSON.stringify(fled.data));
+    assert.equal(fled.data.resolution.actionType, "flee");
+    assert.equal(fled.data.resolution.result.escaped, true);
+    assert.equal(fled.data.encounter.status, "escaped");
+  });
+
+  it("resolves enemy morale break without GPT-decided outcome", async () => {
+    const enemyId = await createTempEnemyTemplate({
+      baseStats: {
+        life: 10,
+        hp: 10,
+        attack: 1,
+        defense: 0,
+        agility: 0,
+        perception: 1,
+        endurance: 1,
+        morale: 8,
+        speed: 0,
+      },
+      moraleProfile: {
+        baseState: "afraid",
+        breaksAt: 8,
+        fleesAt: 8,
+        surrenderPossible: false,
+      },
+    });
+    const started = await post("/api/combat/advanced/encounters/start", {
+      gameId: tempGameId,
+      enemyId,
+      reason: "Fixture: huida por moral.",
+    });
+
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    const encounterId = started.data.encounter.encounterId;
+
+    const defendPreview = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/actions/preview`, {
+      gameId: tempGameId,
+      actionType: "defend",
+    });
+    assert.equal(defendPreview.status, 200, JSON.stringify(defendPreview.data));
+
+    const defended = await post("/api/combat/advanced/actions/apply", {
+      gameId: tempGameId,
+      previewId: defendPreview.data.preview.preview.previewId,
+    });
+    assert.equal(defended.status, 200, JSON.stringify(defended.data));
+    assert.equal(defended.data.encounter.phase, "npc_turn");
+
+    const npcTurn = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/npc-turn/resolve`, {
+      gameId: tempGameId,
+    });
+
+    assert.equal(npcTurn.status, 200, JSON.stringify(npcTurn.data));
+    assert.equal(npcTurn.data.resolution.result.moraleBreak, true);
+    assert.equal(npcTurn.data.encounter.status, "enemy_fled");
+  });
+
+  it("supports sparring mode without serious damage or injury records", async () => {
+    const enemyId = await createTempEnemyTemplate({
+      baseStats: {
+        life: 5,
+        hp: 5,
+        attack: 1,
+        defense: 0,
+        agility: 0,
+        perception: 1,
+        endurance: 1,
+        morale: 10,
+        speed: 0,
+      },
+    });
+    const started = await post("/api/combat/advanced/encounters/start", {
+      gameId: tempGameId,
+      enemyId,
+      reason: "Fixture: sparring controlado.",
+      combatMode: "sparring",
+    });
+
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    const encounterId = started.data.encounter.encounterId;
+
+    const attackPreview = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/actions/preview`, {
+      gameId: tempGameId,
+      actionType: "attack",
+    });
+
+    assert.equal(attackPreview.status, 200, JSON.stringify(attackPreview.data));
+    assert.equal(attackPreview.data.preview.canAct, true);
+
+    const attacked = await post("/api/combat/advanced/actions/apply", {
+      gameId: tempGameId,
+      previewId: attackPreview.data.preview.preview.previewId,
+    });
+
+    assert.equal(attacked.status, 200, JSON.stringify(attacked.data));
+    assert.equal(attacked.data.resolution.modifiers.controlledCombat, true);
+    assert.ok(attacked.data.resolution.damage.finalDamage <= 2);
+    assert.equal(attacked.data.resolution.injuriesCreated.length, 0);
+    assert.ok(attacked.data.encounter.participants.find((entry) => entry.side === "enemy").hp.current >= 1);
+
+    if (attacked.data.encounter.status === "active") {
+      await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/end`, {
+        gameId: tempGameId,
+        endStatus: "cancelled",
+        reason: "Fixture cleanup.",
+      });
+    }
   });
 
   it("claims C5 post-combat evidence without creating inventory loot", async () => {

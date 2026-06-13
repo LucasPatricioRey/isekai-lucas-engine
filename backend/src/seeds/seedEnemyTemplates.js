@@ -13,11 +13,76 @@ const enemies = [
     rankHint: "Porcelana",
     baseStats: {
       life: 35,
+      hp: 35,
       attack: 8,
       defense: 3,
       agility: 12,
       perception: 10,
-      morale: 35
+      endurance: 4,
+      morale: 35,
+      speed: 12,
+      awareness: 10,
+      instinct: 11
+    },
+    attacks: [
+      {
+        attackId: "atk_lobo_mordida",
+        name: "Mordida rapida",
+        rangeBand: "engaged",
+        damageType: "bite",
+        baseDamage: 4,
+        accuracyModifier: 1,
+        fatigueCost: 1,
+        traits: ["bite", "fast"]
+      }
+    ],
+    defenses: [
+      {
+        defenseId: "def_lobo_instinto",
+        name: "Instinto evasivo",
+        defenseType: "instinct",
+        modifier: 2,
+        traits: ["animal", "fast"]
+      }
+    ],
+    movement: {
+      speed: 12,
+      preferredDistance: "engaged",
+      terrainAdvantages: ["forest"],
+      terrainDisadvantages: ["crowd"]
+    },
+    moraleProfile: {
+      baseState: "cautious",
+      breaksAt: 6,
+      fleesAt: 10,
+      surrenderPossible: false,
+      modifiers: ["huye si queda herido o pierde ventaja"]
+    },
+    behaviorProfile: {
+      archetype: "predatory",
+      preferredActions: ["attack", "flee"],
+      avoidsActions: ["surrender"],
+      targetPriority: ["isolated", "wounded"],
+      notes: "Prueba debilidad y evita morir por una presa dificil."
+    },
+    lootProfile: {
+      mode: "proof_only",
+      requiresSearchAction: true,
+      notes: "Piel/carne requieren herramientas y catalogo futuro; la fase actual solo crea evidencia."
+    },
+    evidenceProfile: {
+      possibleEvidenceTypes: ["sample", "trace"],
+      proofItems: [
+        {
+          key: "wolf_fur_or_blood_trace",
+          name: "Rastro fisico de lobo",
+          type: "sample",
+          proofStatus: "partial",
+          summary: "Pelo, sangre o marca fisica compatible con lobo de borde."
+        }
+      ],
+      defaultProofStatus: "partial",
+      notes: "Sirve como prueba parcial hasta verificacion del gremio."
     },
     behavior: [
       "evita grupos grandes",
@@ -47,11 +112,75 @@ const enemies = [
     rankHint: "Cobre",
     baseStats: {
       life: 60,
+      hp: 60,
       attack: 14,
       defense: 8,
       agility: 8,
       perception: 7,
-      morale: 55
+      endurance: 11,
+      morale: 55,
+      speed: 9,
+      awareness: 7,
+      instinct: 8
+    },
+    attacks: [
+      {
+        attackId: "atk_jabali_carga",
+        name: "Carga de colmillos",
+        rangeBand: "near",
+        damageType: "pierce",
+        baseDamage: 8,
+        accuracyModifier: -1,
+        fatigueCost: 2,
+        traits: ["charge", "heavy"]
+      }
+    ],
+    defenses: [
+      {
+        defenseId: "def_jabali_cuero",
+        name: "Cuero grueso",
+        defenseType: "resistance",
+        modifier: 2,
+        traits: ["tough"]
+      }
+    ],
+    movement: {
+      speed: 9,
+      preferredDistance: "near",
+      terrainAdvantages: ["forest"],
+      terrainDisadvantages: ["mud", "narrow_path"]
+    },
+    moraleProfile: {
+      baseState: "angered",
+      breaksAt: 8,
+      fleesAt: 12,
+      surrenderPossible: false,
+      modifiers: ["mas peligroso si esta acorralado"]
+    },
+    behaviorProfile: {
+      archetype: "territorial",
+      preferredActions: ["attack", "move"],
+      avoidsActions: ["surrender"],
+      targetPriority: ["closest"],
+      notes: "Carga para abrir espacio; no persigue por maldad."
+    },
+    lootProfile: {
+      mode: "proof_only",
+      requiresSearchAction: true,
+      notes: "Materiales solo con herramientas/catalogo; no inventar carne ni dinero."
+    },
+    evidenceProfile: {
+      possibleEvidenceTypes: ["sample", "trace"],
+      proofItems: [
+        {
+          key: "boar_tusk_mark",
+          name: "Marca de colmillo de jabali",
+          type: "trace",
+          proofStatus: "partial",
+          summary: "Marca o resto fisico compatible con jabali gris."
+        }
+      ],
+      defaultProofStatus: "partial"
     },
     behavior: [
       "territorial",
@@ -80,11 +209,75 @@ const enemies = [
     rankHint: "Porcelana",
     baseStats: {
       life: 20,
+      hp: 20,
       attack: 5,
       defense: 2,
       agility: 10,
       perception: 8,
-      morale: 20
+      endurance: 2,
+      morale: 20,
+      speed: 10,
+      awareness: 8,
+      instinct: 8
+    },
+    attacks: [
+      {
+        attackId: "atk_rata_mordisco",
+        name: "Mordisco bajo",
+        rangeBand: "engaged",
+        damageType: "bite",
+        baseDamage: 3,
+        accuracyModifier: 0,
+        fatigueCost: 1,
+        traits: ["bite", "low"]
+      }
+    ],
+    defenses: [
+      {
+        defenseId: "def_rata_escurridiza",
+        name: "Movimiento escurridizo",
+        defenseType: "dodge",
+        modifier: 1,
+        traits: ["small"]
+      }
+    ],
+    movement: {
+      speed: 10,
+      preferredDistance: "engaged",
+      terrainAdvantages: ["indoors"],
+      terrainDisadvantages: ["open_ground"]
+    },
+    moraleProfile: {
+      baseState: "afraid",
+      breaksAt: 4,
+      fleesAt: 7,
+      surrenderPossible: false,
+      modifiers: ["huye si queda sola o herida"]
+    },
+    behaviorProfile: {
+      archetype: "opportunist",
+      preferredActions: ["attack", "flee"],
+      avoidsActions: ["surrender"],
+      targetPriority: ["food", "isolated"],
+      notes: "Amenaza menor; peligrosa por infeccion o grupo, no por duelo limpio."
+    },
+    lootProfile: {
+      mode: "proof_only",
+      requiresSearchAction: true,
+      notes: "No hay loot valioso automatico."
+    },
+    evidenceProfile: {
+      possibleEvidenceTypes: ["sample", "trace"],
+      proofItems: [
+        {
+          key: "giant_rat_tail_trace",
+          name: "Prueba de rata gigante",
+          type: "sample",
+          proofStatus: "partial",
+          summary: "Rastro fisico que permite reportar presencia de rata gigante."
+        }
+      ],
+      defaultProofStatus: "partial"
     },
     behavior: [
       "ataca en grupo",
@@ -115,11 +308,75 @@ const enemies = [
     rankHint: "Cobre",
     baseStats: {
       life: 45,
+      hp: 45,
       attack: 10,
       defense: 5,
       agility: 9,
       perception: 8,
-      morale: 45
+      endurance: 6,
+      morale: 45,
+      speed: 9,
+      awareness: 8,
+      instinct: 6
+    },
+    attacks: [
+      {
+        attackId: "atk_bandido_cuchillo",
+        name: "Corte de cuchillo",
+        rangeBand: "engaged",
+        damageType: "cut",
+        baseDamage: 5,
+        accuracyModifier: 0,
+        fatigueCost: 1,
+        traits: ["weapon", "human"]
+      }
+    ],
+    defenses: [
+      {
+        defenseId: "def_bandido_guardia",
+        name: "Guardia callejera",
+        defenseType: "block",
+        modifier: 1,
+        traits: ["human", "weapon"]
+      }
+    ],
+    movement: {
+      speed: 9,
+      preferredDistance: "near",
+      terrainAdvantages: ["road", "crowd"],
+      terrainDisadvantages: ["forest"]
+    },
+    moraleProfile: {
+      baseState: "confident",
+      breaksAt: 8,
+      fleesAt: 12,
+      surrenderPossible: true,
+      modifiers: ["testigos y heridas bajan moral"]
+    },
+    behaviorProfile: {
+      archetype: "opportunist",
+      preferredActions: ["intimidate", "attack", "flee"],
+      avoidsActions: [],
+      targetPriority: ["weak", "valuable_items"],
+      notes: "Prefiere intimidar y huir si pierde la ventaja."
+    },
+    lootProfile: {
+      mode: "held_items",
+      requiresSearchAction: true,
+      notes: "Objetos o monedas solo si existen formalmente o quedan bajo custodia; no inventar botin."
+    },
+    evidenceProfile: {
+      possibleEvidenceTypes: ["object", "testimony", "trace"],
+      proofItems: [
+        {
+          key: "bandit_token_or_weapon_trace",
+          name: "Indicio de bandido",
+          type: "object",
+          proofStatus: "partial",
+          summary: "Senal fisica o testimonio vinculable a un asalto."
+        }
+      ],
+      defaultProofStatus: "partial"
     },
     behavior: [
       "prefiere intimidar antes que pelear",
@@ -150,11 +407,76 @@ const enemies = [
     rankHint: "Cobre",
     baseStats: {
       life: 12,
+      hp: 12,
       attack: 7,
       defense: 1,
       agility: 16,
       perception: 9,
-      morale: 30
+      endurance: 1,
+      morale: 30,
+      speed: 16,
+      awareness: 9,
+      instinct: 12
+    },
+    attacks: [
+      {
+        attackId: "atk_avispa_aguijon",
+        name: "Aguijon",
+        rangeBand: "engaged",
+        damageType: "pierce",
+        baseDamage: 3,
+        accuracyModifier: 2,
+        fatigueCost: 1,
+        traits: ["poison", "fast", "flying"]
+      }
+    ],
+    defenses: [
+      {
+        defenseId: "def_avispa_vuelo",
+        name: "Vuelo erratico",
+        defenseType: "dodge",
+        modifier: 3,
+        traits: ["flying", "small"]
+      }
+    ],
+    movement: {
+      speed: 16,
+      preferredDistance: "near",
+      canFly: true,
+      terrainAdvantages: ["forest", "slope"],
+      terrainDisadvantages: ["rain"]
+    },
+    moraleProfile: {
+      baseState: "angered",
+      breaksAt: 5,
+      fleesAt: 8,
+      surrenderPossible: false,
+      modifiers: ["no persigue lejos del nido"]
+    },
+    behaviorProfile: {
+      archetype: "protective",
+      preferredActions: ["attack", "move"],
+      avoidsActions: ["surrender"],
+      targetPriority: ["threat_to_nest"],
+      notes: "Ataca por territorio; fuera del nido no persigue demasiado."
+    },
+    lootProfile: {
+      mode: "proof_only",
+      requiresSearchAction: true,
+      notes: "Aguijon/veneno requiere recoleccion cuidadosa y catalogo."
+    },
+    evidenceProfile: {
+      possibleEvidenceTypes: ["sample", "trace"],
+      proofItems: [
+        {
+          key: "red_wasp_stinger_trace",
+          name: "Rastro de avispa roja",
+          type: "sample",
+          proofStatus: "partial",
+          summary: "Aguijon, ala o marca compatible con avispa roja."
+        }
+      ],
+      defaultProofStatus: "partial"
     },
     behavior: [
       "territorial",

@@ -45,6 +45,7 @@ async function combatAdvancedPreviewStartEncounterController(req, res) {
       sourceEventId: body.sourceEventId || "",
       sourceMissionId: body.sourceMissionId || "",
       sourceCommitmentId: body.sourceCommitmentId || "",
+      combatMode: body.combatMode || "real",
     });
 
     return res.json({
@@ -70,6 +71,7 @@ async function combatAdvancedStartEncounterController(req, res) {
       visibility: body.visibility || "unknown",
       noiseLevel: body.noiseLevel || "unknown",
       surpriseState: body.surpriseState || "unknown",
+      combatMode: body.combatMode || "real",
     });
 
     return res.json({
