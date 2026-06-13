@@ -19,6 +19,7 @@
     "seed:magic-basics": "node src/seeds/seedMagicBasics.js",
     "seed:hoshimori-routes": "node src/seeds/seedHoshimoriRoutes.js",
     "seed:hoshimori-weather": "node src/seeds/seedHoshimoriWeather.js",
+    "seed:documents": "node src/seeds/seedDocuments.js",
     "seed:combat-equipment": "node src/seeds/seedCombatEquipmentProfiles.js",
     "check": "node src/utils/checkProject.js",
     "smoke": "node src/utils/smokeTestRender.js",
