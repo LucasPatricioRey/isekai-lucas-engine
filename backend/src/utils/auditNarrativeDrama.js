@@ -94,6 +94,16 @@ async function main() {
   );
   assertCondition(
     issues,
+    "all NPC summaries expose emotionalProfile schema",
+    npcSummaries.every((npc) => npc.emotionalProfile?.schemaVersion === "emotional_profile_v1")
+  );
+  assertCondition(
+    issues,
+    "all dialogue profiles expose emotional subtext",
+    npcSummaries.every((npc) => npc.dialogueProfile?.emotionalSubtext?.rule)
+  );
+  assertCondition(
+    issues,
     "all dialogue profiles expose anti-HUD dialogue guardrail",
     npcSummaries.every((npc) =>
       (npc.dialogueProfile?.avoid || []).some((line) => /HUD|mecanicas/.test(line))
@@ -113,7 +123,7 @@ async function main() {
   assertCondition(
     issues,
     "dialogue profiles stay compact",
-    maxProfileBytes <= 1800,
+    maxProfileBytes <= 2400,
     `${maxProfileBytes} bytes max`
   );
   assertCondition(
@@ -151,6 +161,11 @@ async function main() {
     issues,
     "dramaticContext points to dialogueProfile",
     (dramaticContext.dialogueDirectives || []).some((line) => /dialogueProfile/.test(line))
+  );
+  assertCondition(
+    issues,
+    "dramaticContext points to emotionalProfile",
+    (dramaticContext.dialogueDirectives || []).some((line) => /emotionalProfile/.test(line))
   );
   assertCondition(
     issues,

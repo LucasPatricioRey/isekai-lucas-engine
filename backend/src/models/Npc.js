@@ -134,6 +134,60 @@ const socialProfileSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const emotionalProfileSchema = new mongoose.Schema(
+  {
+    schemaVersion: {
+      type: String,
+      default: "emotional_profile_v1",
+    },
+    defaultMood: {
+      type: String,
+      default: "",
+    },
+    coreDrives: {
+      type: [String],
+      default: [],
+    },
+    coreFears: {
+      type: [String],
+      default: [],
+    },
+    pride: {
+      type: String,
+      default: "",
+    },
+    softSpots: {
+      type: [String],
+      default: [],
+    },
+    stressors: {
+      type: [String],
+      default: [],
+    },
+    visibleTells: {
+      type: [String],
+      default: [],
+    },
+    copingStyle: {
+      type: String,
+      default: "",
+    },
+    contradiction: {
+      type: String,
+      default: "",
+    },
+    sceneHooks: {
+      type: [String],
+      default: [],
+    },
+    notes: {
+      type: String,
+      default: "",
+    },
+  },
+  { _id: false }
+);
+
 const factionLinkSchema = new mongoose.Schema(
   {
     factionId: {
@@ -278,6 +332,11 @@ const npcSchema = new mongoose.Schema(
 
     socialProfile: {
       type: socialProfileSchema,
+      default: () => ({}),
+    },
+
+    emotionalProfile: {
+      type: emotionalProfileSchema,
       default: () => ({}),
     },
 

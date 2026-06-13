@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const { buildNpcKnowledgeContext } = require("../services/knowledgeService");
-const { summarizeNpc } = require("../utils/responseShaping");
+const { buildSceneRelationshipDynamics, summarizeNpc } = require("../utils/responseShaping");
 
 const mara = {
   npcId: "npc_mara_vell",
@@ -13,6 +13,16 @@ const mara = {
   values: ["registros", "pruebas", "puntualidad"],
   tolerates: ["formularios completos"],
   rejects: ["papeles incompletos", "excusas"],
+  emotionalProfile: {
+    defaultMood: "controlada y seca",
+    coreDrives: ["mantener registros limpios", "separar prueba de rumor"],
+    coreFears: ["errores formales"],
+    pride: "Un archivo que se puede defender.",
+    visibleTells: ["endereza papeles", "baja la voz cuando esta irritada"],
+    copingStyle: "enfria la escena con procedimiento.",
+    contradiction: "Parece fria, pero usa el orden para evitar injusticias.",
+    sceneHooks: ["corrige una palabra antes de sellar"],
+  },
 };
 
 const yara = {
@@ -160,6 +170,48 @@ test("npc summaries expose compact voice guidance for narration variety", () => 
   assert.equal(summary.dialogueProfile.schemaVersion, "dialogue_profile_v1");
   assert.equal(summary.dialogueProfile.relationshipRegister.key, "stranger_public");
   assert.equal(summary.dialogueProfile.emotionalTemperature.key, "neutral");
+  assert.equal(summary.emotionalProfile.schemaVersion, "emotional_profile_v1");
+  assert.deepEqual(summary.emotionalProfile.coreDrives.slice(0, 2), ["mantener registros limpios", "separar prueba de rumor"]);
+  assert.equal(summary.dialogueProfile.emotionalSubtext.defaultMood, "controlada y seca");
+  assert.match(summary.dialogueProfile.emotionalSubtext.rule, /No revelar interioridad privada/);
+  assert.match(summary.dialogueProfile.subtextSeed, /busca mantener registros limpios/);
   assert(summary.dialogueProfile.dialogueMoves.some((line) => /procedimiento|registro/.test(line)));
   assert(summary.dialogueProfile.rule.includes("intencion"));
+});
+
+test("scene relationship dynamics summarize NPC-NPC subtext without granting Lucas private knowledge", () => {
+  const maraSummary = summarizeNpc(mara);
+  const yaraSummary = summarizeNpc(yara);
+
+  const dynamics = buildSceneRelationshipDynamics({
+    relationships: [
+      {
+        relationshipId: "rel_npc_mara_vell_npc_yara_mils",
+        npcAId: "npc_mara_vell",
+        npcBId: "npc_yara_mils",
+        type: "institutional_distance",
+        trust: 30,
+        familiarity: 45,
+        tension: 58,
+        publicSummary: "Mara e Yara se conocen por tramites y recados.",
+        emotionalTone: "cortesia desigual con nervios de aprendiz",
+        publicTensionReason: "Yara teme equivocarse ante alguien formal; Mara no suaviza procedimientos.",
+        privateSubtext: "Yara quiere aprobacion; Mara no quiere volver el tramite personal.",
+        interactionHints: ["Yara contesta rapido de mas", "Mara corrige sin levantar la voz"],
+        boundaries: ["no revelar privateSubtext como dato sabido por Lucas"],
+      },
+    ],
+    nearbyNpcs: [maraSummary, yaraSummary],
+    npcPresence: {
+      visible: [maraSummary, yaraSummary],
+      sameRoom: [maraSummary, yaraSummary],
+      sameBuilding: [],
+    },
+  });
+
+  assert.equal(dynamics.schemaVersion, "scene_relationship_dynamics_v1");
+  assert.equal(dynamics.count, 1);
+  assert.equal(dynamics.pairs[0].pressure.key, "open_tension");
+  assert.equal(dynamics.pairs[0].currentlySharedScene, true);
+  assert.match(dynamics.pairs[0].rule, /No revelar privateSubtext/);
 });

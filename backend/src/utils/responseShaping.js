@@ -670,6 +670,32 @@ function buildNpcVoiceProfile(npc) {
   };
 }
 
+function summarizeNpcEmotionalProfile(npc) {
+  if (!npc) return null;
+  const profile = npc.emotionalProfile || {};
+  const coreDrives = unique(profile.coreDrives || []).slice(0, 3);
+  const coreFears = unique(profile.coreFears || []).slice(0, 3);
+  const softSpots = unique(profile.softSpots || []).slice(0, 3);
+  const stressors = unique(profile.stressors || []).slice(0, 4);
+  const visibleTells = unique(profile.visibleTells || []).slice(0, 4);
+  const sceneHooks = unique(profile.sceneHooks || []).slice(0, 4);
+
+  return {
+    schemaVersion: profile.schemaVersion || "emotional_profile_v1",
+    defaultMood: truncateText(profile.defaultMood || "", 100),
+    coreDrives,
+    coreFears,
+    pride: truncateText(profile.pride || "", 120),
+    softSpots,
+    stressors,
+    visibleTells,
+    copingStyle: truncateText(profile.copingStyle || "", 120),
+    contradiction: truncateText(profile.contradiction || "", 160),
+    sceneHooks,
+    rule: "No revelar interioridad privada; usar solo gestos, ritmo, elecciones y silencios.",
+  };
+}
+
 function relationshipDialogueRegister(relationship = {}, relationshipState = null) {
   const stanceKey = relationshipState?.stance?.key || "";
   const trust = Number(relationship.trust) || 0;
@@ -858,6 +884,7 @@ function buildNpcDialogueProfile(npc, relationshipInput = null) {
   const emotionalTemperature = emotionalTemperatureForDialogue(relationship, npc);
   const pressure = currentDialoguePressure(npc);
   const socialProfile = summarizeNpcSocialProfile(npc);
+  const emotionalProfile = summarizeNpcEmotionalProfile(npc);
 
   return {
     schemaVersion: "dialogue_profile_v1",
@@ -865,10 +892,22 @@ function buildNpcDialogueProfile(npc, relationshipInput = null) {
     relationshipRegister: register,
     emotionalTemperature,
     currentPressure: pressure,
+    emotionalSubtext: emotionalProfile
+      ? {
+          defaultMood: emotionalProfile.defaultMood,
+          coreDrives: emotionalProfile.coreDrives.slice(0, 2),
+          coreFears: emotionalProfile.coreFears.slice(0, 2),
+          visibleTells: emotionalProfile.visibleTells.slice(0, 3),
+          contradiction: emotionalProfile.contradiction,
+          rule: emotionalProfile.rule,
+        }
+      : null,
     subtextSeed: truncateText(
       [
         socialProfile.values?.length ? `valora ${socialProfile.values.slice(0, 3).join(", ")}` : "",
         socialProfile.rejects?.length ? `rechaza ${socialProfile.rejects.slice(0, 3).join(", ")}` : "",
+        emotionalProfile?.coreDrives?.length ? `busca ${emotionalProfile.coreDrives.slice(0, 2).join(", ")}` : "",
+        emotionalProfile?.coreFears?.length ? `teme ${emotionalProfile.coreFears.slice(0, 2).join(", ")}` : "",
         relationshipState?.stance?.summary || "",
       ]
         .filter(Boolean)
@@ -894,6 +933,7 @@ function summarizeNpc(npc) {
     availability: npc.availability || {},
     persistenceLevel: npc.persistenceLevel || "",
     socialProfile: summarizeNpcSocialProfile(npc),
+    emotionalProfile: summarizeNpcEmotionalProfile(npc),
     voiceProfile: buildNpcVoiceProfile(npc),
     dialogueProfile: buildNpcDialogueProfile(npc, relationship),
     relationshipWithLucas: relationship,
@@ -926,6 +966,104 @@ function summarizeNpcPresenceRef(npc) {
       status: availability.status || "",
       reason: truncateText(availability.reason || "", 160),
     },
+  };
+}
+
+function relationshipPressureForScene(relationship = {}) {
+  const trust = Number(relationship.trust) || 0;
+  const familiarity = Number(relationship.familiarity) || 0;
+  const tension = Number(relationship.tension) || 0;
+
+  if (tension >= 55) {
+    return {
+      key: "open_tension",
+      label: "tension visible",
+      guidance: "Puede haber silencios tensos, respuestas cortantes o terceros notando incomodidad.",
+    };
+  }
+  if (trust >= 65 && familiarity >= 60 && tension <= 20) {
+    return {
+      key: "easy_coordination",
+      label: "coordinacion fluida",
+      guidance: "Pueden completarse frases, repartirse tareas o corregirse sin dramatismo.",
+    };
+  }
+  if (familiarity >= 55 && tension >= 25) {
+    return {
+      key: "familiar_friction",
+      label: "roce familiar",
+      guidance: "Se conocen lo suficiente para pincharse o anticipar defectos sin romper la escena.",
+    };
+  }
+  if (trust >= 45) {
+    return {
+      key: "functional_trust",
+      label: "confianza funcional",
+      guidance: "Pueden apoyarse en tareas practicas aunque no compartan intimidad.",
+    };
+  }
+  return {
+    key: "loose_acquaintance",
+    label: "trato suelto",
+    guidance: "Usar cordialidad publica o distancia; no asumir complicidad fuerte.",
+  };
+}
+
+function summarizeNpcRelationship(relationship, npcById = new Map()) {
+  if (!relationship) return null;
+  const pressure = relationshipPressureForScene(relationship);
+  const left = npcById.get(relationship.npcAId);
+  const right = npcById.get(relationship.npcBId);
+
+  return {
+    relationshipId: relationship.relationshipId,
+    npcIds: [relationship.npcAId, relationship.npcBId].filter(Boolean),
+    npcNames: [left?.name || relationship.npcAId, right?.name || relationship.npcBId].filter(Boolean),
+    type: relationship.type || "",
+    trustBand: relationshipBand(relationship.trust),
+    familiarityBand: relationshipBand(relationship.familiarity),
+    tensionBand: relationshipBand(relationship.tension),
+    pressure,
+    emotionalTone: truncateText(relationship.emotionalTone || "", 90),
+    publicSummary: truncateText(relationship.publicSummary || "", 150),
+    publicTensionReason: truncateText(relationship.publicTensionReason || "", 120),
+    privateSubtext: truncateText(relationship.privateSubtext || "", 120),
+    interactionHints: unique(relationship.interactionHints || []).slice(0, 3),
+    boundaries: unique(relationship.boundaries || []).slice(0, 2),
+    knownToLucas: Boolean(relationship.knownToLucas),
+    rule: "No revelar privateSubtext como dato sabido por Lucas; usarlo solo como gesto, pausa o decision.",
+  };
+}
+
+function buildSceneRelationshipDynamics({ relationships = [], nearbyNpcs = [], npcPresence = null } = {}) {
+  const npcById = new Map(toArray(nearbyNpcs).map((npc) => [npc.npcId, npc]));
+  const nearbyIds = new Set(npcById.keys());
+  const sameRoomIds = new Set(toArray(npcPresence?.sameRoom || npcPresence?.visible).map((npc) => npc.npcId));
+  const summarized = toArray(relationships)
+    .filter((relationship) => nearbyIds.has(relationship.npcAId) && nearbyIds.has(relationship.npcBId))
+    .map((relationship) => {
+      const summary = summarizeNpcRelationship(relationship, npcById);
+      const bothSameRoom = summary?.npcIds.every((npcId) => sameRoomIds.has(npcId));
+      return {
+        ...summary,
+        currentlySharedScene: Boolean(bothSameRoom),
+      };
+    })
+    .sort((left, right) => {
+      if (left.currentlySharedScene !== right.currentlySharedScene) return left.currentlySharedScene ? -1 : 1;
+      const leftTension = Number(relationships.find((rel) => rel.relationshipId === left.relationshipId)?.tension || 0);
+      const rightTension = Number(relationships.find((rel) => rel.relationshipId === right.relationshipId)?.tension || 0);
+      return rightTension - leftTension;
+    })
+    .slice(0, 8);
+
+  return {
+    schemaVersion: "scene_relationship_dynamics_v1",
+    count: summarized.length,
+    pairs: summarized,
+    guidance: summarized.length
+      ? "Usar estas relaciones para que los NPCs reaccionen entre ellos, no solo a Lucas."
+      : "Sin relaciones NPC-NPC relevantes en escena compacta.",
   };
 }
 
@@ -1249,6 +1387,7 @@ function buildDramaticContext({
   currentLocation = null,
   npcPresence = null,
   nearbyNpcs = [],
+  relationshipDynamics = null,
   mainEvent = null,
   missionAgenda = null,
   pendingCommitments = [],
@@ -1353,6 +1492,13 @@ function buildDramaticContext({
       summary: "Hay varios NPCs en escena; usar miradas, interrupciones y alianzas pequenas.",
     });
   }
+  if (relationshipDynamics?.count > 0) {
+    sources.push({
+      key: "npc_relationship_dynamics",
+      severity: "low",
+      summary: "Hay relaciones NPC-NPC relevantes; los presentes deben reaccionar tambien entre ellos.",
+    });
+  }
   if (socialSaturatedIds.length > 0) {
     sources.push({
       key: "social_repetition",
@@ -1407,9 +1553,10 @@ function buildDramaticContext({
       "No convertir todo en exposicion; separar escena dramatica del HUD mecanico final.",
     ],
     dialogueDirectives: [
-      "Aplicar dialogueProfile de cada NPC: ritmo, registro por confianza, temperatura emocional, subtexto, limites y movimientos.",
+      "Aplicar dialogueProfile y emotionalProfile de cada NPC: ritmo, registro por confianza, temperatura emocional, subtexto visible, limites y movimientos.",
       "Cada linea de dialogo necesita intencion: medir, cuidar, presionar, ocultar, corregir, negociar, provocar o revelar algo permitido.",
       "Si hay varios NPCs, alternar respuestas breves, interrupciones y silencios; no hacer que todos esperen turno de forma artificial.",
+      "Si scene.relationshipDynamics trae pares relevantes, usar roces, alianzas, bromas o silencios entre NPCs sin revelar privateSubtext como conocimiento de Lucas.",
       "Respetar npcKnowledgeContext: certeza solo con fuente diegetica; inferencias deben sonar como duda, pregunta o rumor.",
       "Ningun NPC debe recitar HUD, numeros o reglas del backend salvo interfaz administrativa explicita.",
     ],
@@ -1417,6 +1564,8 @@ function buildDramaticContext({
       mode: groupMode,
       sameRoomNpcIds: visibleNpcIds.slice(0, 8),
       sameBuildingNpcIds: sameBuilding.map((npc) => npc.npcId).filter(Boolean).slice(0, 8),
+      relationshipDynamicsAvailable: Boolean(relationshipDynamics?.count),
+      relationshipPairCount: Number(relationshipDynamics?.count) || 0,
       guidance:
         groupMode === "solo_or_transit"
           ? "Sin NPC visible fuerte: usar lugar, clima, cuerpo de Lucas y objetivos abiertos para sostener interes."
@@ -1482,6 +1631,9 @@ module.exports = {
   summarizeLocation,
   buildNpcVoiceProfile,
   buildNpcDialogueProfile,
+  summarizeNpcEmotionalProfile,
+  summarizeNpcRelationship,
+  buildSceneRelationshipDynamics,
   buildDramaticContext,
   summarizeNpc,
   summarizeNpcPresenceRef,

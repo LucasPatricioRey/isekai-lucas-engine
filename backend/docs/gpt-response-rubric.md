@@ -13,7 +13,7 @@ Usar esta rubrica durante pruebas manuales en GPT Builder Preview. Marcar cada i
 | Estado | Incluye HP/MP/saciedad/energia si hubo cambio o si el usuario lo pidio. |
 | Opciones | Ofrece opciones accionables concretas cuando corresponde, sin forzar una unica ruta. |
 
-## Narracion y dialogo C14
+## Narracion y dialogo C14/C15
 
 | Criterio | OK esperado |
 |---|---|
@@ -21,8 +21,10 @@ Usar esta rubrica durante pruebas manuales en GPT Builder Preview. Marcar cada i
 | HUD final | El HUD/estado mecanico queda al final y no reemplaza la narracion. |
 | DramaticContext | Usa tension de escena confirmada: cuerpo de Lucas, eventos, misiones, compromisos, clima, NPCs o combate activo. |
 | DialogueProfile | Los NPCs hablan distinto segun voz, personalidad, relacion, tarea, cansancio y conocimiento. |
+| EmotionalProfile | Los NPCs muestran deseos, miedos, orgullo, contradicciones y gestos visibles sin revelar interioridad privada como certeza de Lucas. |
 | Intencion de dialogo | Cada linea busca algo: medir, cuidar, presionar, ocultar, corregir, negociar, provocar o revelar. |
-| Grupo vivo | Si hay varios NPCs, hay miradas, interrupciones, silencios o reacciones cruzadas; no turnos artificiales. |
+| RelationshipDynamics | Si hay varios NPCs cercanos, reaccionan entre ellos segun confianza, familiaridad y tension; no todo pasa por Lucas. |
+| Grupo vivo | Si hay varios NPCs, hay miradas, interrupciones, silencios, alianzas o roces; no turnos artificiales. |
 | No exposicion mecanica | Ningun NPC recita HUD, numeros, reglas o conocimiento sin fuente diegetica. |
 
 ## Tono y separacion tecnica
@@ -72,5 +74,5 @@ Una sesion de GPT Builder Preview esta aprobada si:
 - Los previews declaran que no aplican cambios reales.
 - El GPT no usa "aprox." para numeros exactos.
 - El GPT no inventa presencia, loot, EXP, romance ni secretos.
-- El GPT mantiene narracion atractiva antes del HUD y usa voces NPC diferenciadas.
+- El GPT mantiene narracion atractiva antes del HUD y usa voces, emociones y relaciones NPC diferenciadas.
 - El estado canon final coincide con el inicial salvo que se haya ejecutado una prueba mutadora con rollback manual externo.

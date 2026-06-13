@@ -230,6 +230,28 @@ async function checkCompactEndpoints(issues) {
       (npc) => npc.dialogueProfile?.schemaVersion === "dialogue_profile_v1"
     )
   );
+  assertCondition(
+    issues,
+    "context/compact exposes NPC emotional profiles",
+    (context.context?.scene?.nearbyNpcs || []).some(
+      (npc) => npc.emotionalProfile?.schemaVersion === "emotional_profile_v1"
+    )
+  );
+  assertCondition(
+    issues,
+    "context/compact exposes NPC emotional subtext in dialogue profiles",
+    (context.context?.scene?.nearbyNpcs || []).some((npc) => npc.dialogueProfile?.emotionalSubtext?.rule)
+  );
+  assertCondition(
+    issues,
+    "context/compact exposes scene relationship dynamics",
+    context.context?.scene?.relationshipDynamics?.schemaVersion === "scene_relationship_dynamics_v1"
+  );
+  assertCondition(
+    issues,
+    "dramaticContext points to emotionalProfile",
+    (context.context?.dramaticContext?.dialogueDirectives || []).some((line) => /emotionalProfile/.test(line))
+  );
   assertCondition(issues, "character state has HP", Boolean(characterState.state?.life?.max));
   assertCondition(issues, "character state has MP", Boolean(characterState.state?.mp?.max));
   assertCondition(issues, "search/db returns Fern", (fern.results?.npcs || []).length > 0);

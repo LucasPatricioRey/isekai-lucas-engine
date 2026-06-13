@@ -1,6 +1,6 @@
 # rules_engine.md — Motor Isekai Lucas
 
-Versión: Fase C14 v0.9 — narracion dramatica, dialogo vivo y HUD obligatorio
+Versión: Fase C15 v1.0 — narracion dramatica, perfiles emocionales NPC y HUD obligatorio
 Estado: versión validada por Lucas mediante revisión guiada  
 Fuente de migración: Enciclopedia V2 Isekai Lucas + decisiones confirmadas por Lucas durante Fase 1 + validación guiada Fase 2  
 Propósito: este archivo define **cómo se resuelve el juego**. No contiene el save vivo completo ni el lore mundial extenso; eso vive en MongoDB y `world_bible.md`.
@@ -12,6 +12,7 @@ Actualización C11: agrega `audit:combat-balance`, suaviza el escalado de críti
 Actualización C12: agrega tipos formales de encuentro (`encounterType`), `encounterPolicy`, decision NPC persistida y `audit:combat-behavior` para validar que bandidos, depredadores, criaturas territoriales y sparring actuen por backend.
 Actualizacion C13: agrega recuperacion formal de heridas (`combatAdvancedPreviewRecovery`/`combatAdvancedApplyRecovery`), progreso en `InjuryRecord`, bloqueo por sangrado activo y `audit:combat-recovery`.
 Actualizacion C14: agrega `dramaticContext` y `dialogueProfile` en contexto compacto para guiar escena novelada, subtexto, voz por NPC, dinamica de grupo y contrato de HUD final sin inventar mecanicas.
+Actualizacion C15: agrega `Npc.emotionalProfile`, subtexto emocional en `dialogueProfile`, `scene.relationshipDynamics` para relaciones NPC-NPC cercanas y `audit:npc-emotions`.
 
 ---
 
@@ -1642,7 +1643,7 @@ Si `narrativeHints.scenePlan` pide escena comprimida, resumir la rutina y elegir
 
 Cuando el GPT use `applyTurn` debe enviar `actionFamily` si la accion tiene familia clara (`investigation`, `report`, `travel`, `social`, `physical_training`, `magic_practice`, `mission`, etc.). Este campo solo guia `narrativeHints`: no crea mecanicas ni reemplaza tags, pero evita que reportes, investigaciones o viajes se clasifiquen como compra/entrenamiento por inferencia.
 
-### 19.10 Narracion dramatica y dialogo vivo C14
+### 19.10 Narracion dramatica y dialogo vivo C14/C15
 
 `getCompactContext` debe exponer `dramaticContext` para cada escena jugable. Este bloque no cambia estado ni autoriza resultados; solo guia estilo:
 
@@ -1658,9 +1659,14 @@ Cada `scene.nearbyNpcs[]` debe exponer `dialogueProfile` compacto:
 - `relationshipRegister`: como cambia el trato por confianza, respeto, sospecha, miedo o familiaridad;
 - `emotionalTemperature`: que emocion domina la respuesta;
 - `currentPressure`: si el NPC esta libre, trabajando, ocupado o ausente;
+- `emotionalSubtext`: deseos, miedos, contradicciones y gestos visibles del NPC;
 - `subtextSeed`: valores, rechazos y postura social resumidos;
 - `dialogueMoves`: recursos de dialogo permitidos para ese NPC;
 - `avoid`: limites para no hacerlo generico, omnisciente o mecanico.
+
+Cada `scene.nearbyNpcs[]` tambien puede exponer `emotionalProfile`: `defaultMood`, `coreDrives`, `coreFears`, `pride`, `softSpots`, `stressors`, `visibleTells`, `copingStyle`, `contradiction` y `sceneHooks`. Es guia de subtexto visible, no telepatia. El GPT puede convertirlo en gestos, tono, pausas, silencios, decisiones y dialogo, pero no debe decir que Lucas conoce deseos o miedos privados si no hay fuente diegetica.
+
+`scene.relationshipDynamics` resume pares NPC-NPC cercanos. Usarlo para que los NPCs reaccionen entre ellos, no solo a Lucas: alianzas, roces, bromas, correcciones, coordinacion, silencios o interrupciones segun confianza/familiaridad/tension. `privateSubtext` puede inspirar gesto o pausa, pero nunca revelarse como informacion sabida por Lucas.
 
 Reglas de uso:
 

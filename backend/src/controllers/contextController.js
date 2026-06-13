@@ -90,7 +90,7 @@ function compactProfileDefaults(profile) {
   }
 
   return {
-    npcLimit: 6,
+    npcLimit: 5,
     memoryLimit: 3,
     rumorLimit: 3,
     missionLimit: 5,
@@ -145,6 +145,17 @@ function slimNpcSummaryForProfile(npc, profile) {
           trustBreakers: (npc.socialProfile.trustBreakers || []).slice(0, 3),
         }
       : null,
+    emotionalProfile: npc.emotionalProfile
+      ? {
+          schemaVersion: npc.emotionalProfile.schemaVersion || "emotional_profile_v1",
+          defaultMood: responseShaping.truncateText(npc.emotionalProfile.defaultMood || "", 90),
+          coreDrives: (npc.emotionalProfile.coreDrives || []).slice(0, 2),
+          coreFears: (npc.emotionalProfile.coreFears || []).slice(0, 1),
+          visibleTells: (npc.emotionalProfile.visibleTells || []).slice(0, 2),
+          contradiction: responseShaping.truncateText(npc.emotionalProfile.contradiction || "", 120),
+          sceneHooks: (npc.emotionalProfile.sceneHooks || []).slice(0, 2),
+        }
+      : null,
     voiceProfile: npc.voiceProfile
       ? {
           speechStyle: npc.voiceProfile.speechStyle || "",
@@ -161,14 +172,35 @@ function slimNpcSummaryForProfile(npc, profile) {
           relationshipRegister: npc.dialogueProfile.relationshipRegister || null,
           emotionalTemperature: npc.dialogueProfile.emotionalTemperature || null,
           currentPressure: npc.dialogueProfile.currentPressure || null,
+          emotionalSubtext: npc.dialogueProfile.emotionalSubtext || null,
           subtextSeed: npc.dialogueProfile.subtextSeed || "",
           dialogueMoves: (npc.dialogueProfile.dialogueMoves || []).slice(0, 3),
           avoid: (npc.dialogueProfile.avoid || []).slice(0, 3),
           rule: npc.dialogueProfile.rule || "",
         }
       : null,
-    relationshipBands: npc.relationshipBands || {},
-    relationshipState: npc.relationshipState || null,
+    relationshipBands: npc.relationshipBands
+      ? Object.fromEntries(
+          Object.entries(npc.relationshipBands).map(([key, band]) => [
+            key,
+            {
+              key: band?.key || "",
+              label: band?.label || "",
+            },
+          ])
+        )
+      : {},
+    relationshipState: npc.relationshipState
+      ? {
+          schemaVersion: npc.relationshipState.schemaVersion,
+          accessScore: npc.relationshipState.accessScore,
+          stance: npc.relationshipState.stance || null,
+          narrativeGuidance: (npc.relationshipState.narrativeGuidance || []).slice(0, 2),
+          nextThresholds: (npc.relationshipState.nextThresholds || []).slice(0, 2),
+          blockers: (npc.relationshipState.blockers || []).slice(0, 2),
+          opportunities: (npc.relationshipState.opportunities || []).slice(0, 2),
+        }
+      : null,
     factionLinks: (npc.factionLinks || []).slice(0, 3).map((link) => ({
       factionId: link.factionId,
       role: link.role || "",
@@ -1093,6 +1125,7 @@ async function getCompactContext(req, res) {
       availableMissions,
       recentEventLogs,
       routineOverrides,
+      nearbyNpcRelationships,
       activeCombatEncounters,
       weather,
       jobContract,
@@ -1198,6 +1231,16 @@ async function getCompactContext(req, res) {
           })
             .sort({ timeStart: 1 })
             .limit(10)
+            .lean()
+        : Promise.resolve([]),
+
+      nearbyNpcIds.length >= 2
+        ? NpcRelationship.find({
+            npcAId: { $in: nearbyNpcIds },
+            npcBId: { $in: nearbyNpcIds },
+          })
+            .sort({ tension: -1, familiarity: -1, trust: -1 })
+            .limit(24)
             .lean()
         : Promise.resolve([]),
 
@@ -1357,6 +1400,11 @@ async function getCompactContext(req, res) {
         npcPresence.staticVisibleButNotHere.push(npcPresenceRef);
       }
     }
+    const sceneRelationshipDynamics = responseShaping.buildSceneRelationshipDynamics({
+      relationships: nearbyNpcRelationships,
+      nearbyNpcs: nearbyNpcSummariesForResponse,
+      npcPresence,
+    });
     const npcById = new Map(nearbyNpcs.map((npc) => [npc.npcId, npc]));
     const alerts = [];
 
@@ -1638,6 +1686,7 @@ async function getCompactContext(req, res) {
       currentLocation: currentLocationSummary,
       npcPresence,
       nearbyNpcs: nearbyNpcSummariesForResponse,
+      relationshipDynamics: sceneRelationshipDynamics,
       mainEvent: mainEventSummary,
       missionAgenda,
       pendingCommitments: pendingCommitmentSummaries,
@@ -1686,6 +1735,7 @@ async function getCompactContext(req, res) {
           npcsPresent: npcPresence.visible,
           nearbyNpcs: nearbyNpcSummariesForResponse,
           npcPresence,
+          relationshipDynamics: sceneRelationshipDynamics,
           routineOverrides,
           recentEventSummaries: recentEventLogs.map((log) => responseShaping.summarizeEventLog(log)),
         },

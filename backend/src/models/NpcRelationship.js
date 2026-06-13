@@ -62,6 +62,31 @@ const npcRelationshipSchema = new mongoose.Schema(
       default: "",
     },
 
+    emotionalTone: {
+      type: String,
+      default: "",
+    },
+
+    publicTensionReason: {
+      type: String,
+      default: "",
+    },
+
+    privateSubtext: {
+      type: String,
+      default: "",
+    },
+
+    interactionHints: {
+      type: [String],
+      default: [],
+    },
+
+    boundaries: {
+      type: [String],
+      default: [],
+    },
+
     knownToLucas: {
       type: Boolean,
       default: false,
