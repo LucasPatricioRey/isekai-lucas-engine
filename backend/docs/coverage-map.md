@@ -6,6 +6,8 @@ Modo G1 original: solo lectura. Actualizaciones posteriores G2/G3/G4/G5/G6/G7/G8
 
 Actualizacion C10: `src/utils/auditCombatPlaytest.js` agrega una auditoria mutante controlada de combate avanzado. Clona el `GameState` vivo a un `gameId` temporal, crea fixtures marcadas como test, ejecuta escenarios reales de sparring, amenaza menor, bloqueo, esquiva, moral enemiga, retirada, tratamiento de herida y evidencia post-combate, y borra todos los documentos temporales al finalizar.
 
+Actualizacion C11: `src/utils/auditCombatBalance.js` agrega matriz temporal de balance con rata, lobo, bandido, jabali y sparring. El servicio aplica `WeaponProfile.defenseModifier/speedModifier/fatigueCostModifier`, reduccion simple por armadura equipada, criticos suavizados, y nuevos equipos comunes limitados: `item_chaleco_cuero_ligero` y `item_escudo_madera_simple`.
+
 ## Resumen ejecutivo
 
 G1 compara tres niveles:
@@ -723,7 +725,7 @@ Justificacion: hoy G1 puede inferir huecos por busqueda y endpoints profundos, p
 
 ## Proximas acciones recomendadas
 
-1. Usar `npm test`, `npm run audit:gpt-readiness`, `npm run audit:hoshimori-core`, `npm run audit:hoshimori-social`, `npm run audit:hoshimori-rumors`, `npm run audit:hoshimori-economy`, `npm run audit:hoshimori-missions`, `npm run audit:hoshimori-jobs`, `npm run audit:biological-clock`, `npm run audit:skill-progression`, `npm run audit:magic-basics`, `npm run audit:combat-advanced`, `npm run audit:combat-playtest`, `npm run audit:hoshimori-routes`, `npm run audit:hoshimori-weather`, `npm run audit:world-tick` y `npm run audit:openapi` como regresiones.
+1. Usar `npm test`, `npm run audit:gpt-readiness`, `npm run audit:hoshimori-core`, `npm run audit:hoshimori-social`, `npm run audit:hoshimori-rumors`, `npm run audit:hoshimori-economy`, `npm run audit:hoshimori-missions`, `npm run audit:hoshimori-jobs`, `npm run audit:biological-clock`, `npm run audit:skill-progression`, `npm run audit:magic-basics`, `npm run audit:combat-advanced`, `npm run audit:combat-playtest`, `npm run audit:combat-balance`, `npm run audit:hoshimori-routes`, `npm run audit:hoshimori-weather`, `npm run audit:world-tick` y `npm run audit:openapi` como regresiones.
 2. Implementar completar turnos reales solo con validadores de horario, pago, comida, ausencia, EventLog y pruebas con rollback/checkpoint.
 3. Extender el acumulador biologico persistente a viaje real, turnos reales y world tick apply cuando existan esos mutadores, manteniendo procesamiento solo en horas exactas `:00`.
 4. Agregar anti-farmeo real de habilidades con historial diario y enlazar practica magica mutadora solo cuando tenga prerequisitos/efectos formalizados.

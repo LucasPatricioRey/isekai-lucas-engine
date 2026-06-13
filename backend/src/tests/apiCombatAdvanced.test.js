@@ -409,6 +409,88 @@ describe("combat advanced API", () => {
     });
   });
 
+  it("applies equipped light armor reduction to backend damage resolution", async () => {
+    const gameState = await GameState.findOne({ gameId: tempGameId });
+    gameState.inventory = [
+      ...(gameState.inventory || [])
+        .filter((entry) => entry.itemId !== "item_chaleco_cuero_ligero")
+        .map((entry) => ({
+          ...(typeof entry.toObject === "function" ? entry.toObject() : entry),
+          equipped: false,
+        })),
+      {
+        itemId: "item_chaleco_cuero_ligero",
+        quantity: 1,
+        condition: "normal",
+        equipped: true,
+        notes: "Fixture C11 armor.",
+      },
+    ];
+    await gameState.save();
+
+    const enemyId = await createTempEnemyTemplate({
+      baseStats: {
+        life: 20,
+        hp: 20,
+        attack: 30,
+        defense: 1,
+        agility: 15,
+        perception: 12,
+        endurance: 1,
+        morale: 20,
+        speed: 10,
+      },
+      attacks: [
+        {
+          attackId: "fixture_c11_heavy_hit",
+          name: "Golpe fixture C11",
+          damageType: "cut",
+          baseDamage: 6,
+          accuracyModifier: 8,
+        },
+      ],
+    });
+    const started = await post("/api/combat/advanced/encounters/start", {
+      gameId: tempGameId,
+      enemyId,
+      reason: "Fixture C11: armadura ligera.",
+      terrainTags: ["road"],
+    });
+
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    const encounterId = started.data.encounter.encounterId;
+    const lucas = started.data.encounter.participants.find((entry) => entry.side === "lucas");
+    assert.equal(lucas.armorProfileId, "item_chaleco_cuero_ligero");
+
+    const defendPreview = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/actions/preview`, {
+      gameId: tempGameId,
+      actionType: "defend",
+    });
+    assert.equal(defendPreview.status, 200, JSON.stringify(defendPreview.data));
+
+    const defended = await post("/api/combat/advanced/actions/apply", {
+      gameId: tempGameId,
+      previewId: defendPreview.data.preview.preview.previewId,
+    });
+    assert.equal(defended.status, 200, JSON.stringify(defended.data));
+
+    const npcTurn = await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/npc-turn/resolve`, {
+      gameId: tempGameId,
+    });
+    assert.equal(npcTurn.status, 200, JSON.stringify(npcTurn.data));
+    assert.equal(npcTurn.data.resolution.actionType, "attack");
+    assert.equal(npcTurn.data.resolution.modifiers.targetArmorProfileId, "item_chaleco_cuero_ligero");
+    assert.equal(npcTurn.data.resolution.modifiers.targetArmorReduction, 2);
+
+    if (npcTurn.data.encounter.status === "active") {
+      await post(`/api/combat/advanced/encounters/${encodeURIComponent(encounterId)}/end`, {
+        gameId: tempGameId,
+        endStatus: "cancelled",
+        reason: "Fixture cleanup.",
+      });
+    }
+  });
+
   it("lets Lucas retreat through backend resolution", async () => {
     const enemyId = await createTempEnemyTemplate({
       baseStats: {

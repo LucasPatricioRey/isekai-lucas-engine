@@ -300,7 +300,14 @@ function getWeaponFallback(itemId = "") {
 }
 
 async function getWeaponProfileForCombatant(combatant) {
-  const equippedWeaponId = combatant?.equippedWeaponIds?.[0] || "";
+  const equippedWeaponIds = combatant?.equippedWeaponIds || [];
+  const equippedWeaponId =
+    equippedWeaponIds.find((itemId) => {
+      const normalized = String(itemId || "").toLowerCase();
+      return !normalized.includes("escudo") && !normalized.includes("shield");
+    }) ||
+    equippedWeaponIds[0] ||
+    "";
   if (!equippedWeaponId) return getWeaponFallback("");
 
   const [profile, item] = await Promise.all([
@@ -325,6 +332,88 @@ function getBlockingEquipmentModifier(combatant) {
   if (equippedIds.some((itemId) => itemId.includes("escudo") || itemId.includes("shield"))) return 3;
   if (equippedIds.some((itemId) => itemId.includes("daga") || itemId.includes("sword") || itemId.includes("espada"))) return 1;
   return 0;
+}
+
+function getArmorProfile(armorProfileId = "") {
+  const normalized = String(armorProfileId || "").toLowerCase();
+  if (!normalized) {
+    return {
+      armorProfileId: "",
+      defenseModifier: 0,
+      damageReduction: 0,
+      dodgeModifier: 0,
+      speedModifier: 0,
+      fatiguePenalty: 0,
+    };
+  }
+  if (normalized.includes("escudo") || normalized.includes("shield")) {
+    return {
+      armorProfileId,
+      defenseModifier: 2,
+      damageReduction: 1,
+      dodgeModifier: -1,
+      speedModifier: -1,
+      fatiguePenalty: 1,
+    };
+  }
+  if (normalized.includes("cuero") || normalized.includes("leather") || normalized.includes("piel")) {
+    return {
+      armorProfileId,
+      defenseModifier: 1,
+      damageReduction: 2,
+      dodgeModifier: -1,
+      speedModifier: -1,
+      fatiguePenalty: 1,
+    };
+  }
+  if (normalized.includes("armadura") || normalized.includes("armor") || normalized.includes("mail")) {
+    return {
+      armorProfileId,
+      defenseModifier: 2,
+      damageReduction: 3,
+      dodgeModifier: -2,
+      speedModifier: -2,
+      fatiguePenalty: 2,
+    };
+  }
+  if (normalized.includes("ropa") || normalized.includes("clothes") || normalized.includes("capa")) {
+    return {
+      armorProfileId,
+      defenseModifier: 0,
+      damageReduction: 0,
+      dodgeModifier: 0,
+      speedModifier: 0,
+      fatiguePenalty: 0,
+    };
+  }
+  if (normalized.includes("botas") || normalized.includes("boots")) {
+    return {
+      armorProfileId,
+      defenseModifier: 0,
+      damageReduction: 0,
+      dodgeModifier: 0,
+      speedModifier: 0,
+      fatiguePenalty: 0,
+    };
+  }
+  return {
+    armorProfileId,
+    defenseModifier: 0,
+    damageReduction: 0,
+    dodgeModifier: 0,
+    speedModifier: 0,
+    fatiguePenalty: 0,
+  };
+}
+
+function chooseBestArmorProfileId(equippedItemIds = []) {
+  return equippedItemIds
+    .map((itemId) => getArmorProfile(itemId))
+    .sort((left, right) => {
+      const leftScore = left.damageReduction * 3 + left.defenseModifier - left.fatiguePenalty;
+      const rightScore = right.damageReduction * 3 + right.defenseModifier - right.fatiguePenalty;
+      return rightScore - leftScore;
+    })[0]?.armorProfileId || "";
 }
 
 function getInventoryEntry(gameState, itemId) {
@@ -538,25 +627,35 @@ function getCombatantStats({ combatant, enemy, gameState, weaponProfile = null }
     const retreatSkill = getSkillLevel(gameState, ["skill_retirada"]);
     const tacticsSkill = getSkillLevel(gameState, ["skill_tactica_basica"]);
     const weaponSkill = getSkillLevel(gameState, [weaponProfile?.requiredSkillId, "skill_daga", "skill_pelea_sin_armas"].filter(Boolean));
+    const armorProfile = getArmorProfile(combatant.armorProfileId);
+    const weaponDefenseModifier = numberOr(weaponProfile?.defenseModifier, 0);
+    const weaponSpeedModifier = numberOr(weaponProfile?.speedModifier, 0);
     return {
       attack: strength + weaponSkill + Math.floor(tacticsSkill / 3),
-      defense: resistance + Math.floor(blockSkill / 2) + Math.floor(tacticsSkill / 3),
-      agility: agility + Math.floor(dodgeSkill / 2),
+      defense: resistance + Math.floor(blockSkill / 2) + Math.floor(tacticsSkill / 3) + weaponDefenseModifier + armorProfile.defenseModifier,
+      agility: agility + Math.floor(dodgeSkill / 2) + weaponSpeedModifier + armorProfile.dodgeModifier,
       perception: perception + Math.floor(tacticsSkill / 4),
       endurance: resistance,
       morale: numberOr(combatant.morale?.current, 100),
-      speed: agility + Math.floor(retreatSkill / 2),
+      speed: agility + Math.floor(retreatSkill / 2) + weaponSpeedModifier + armorProfile.speedModifier,
       weaponSkill,
       dodgeSkill,
       blockSkill,
       retreatSkill,
       tacticsSkill,
+      weaponDefenseModifier,
+      weaponSpeedModifier,
+      armorProfileId: armorProfile.armorProfileId,
+      armorDefenseModifier: armorProfile.defenseModifier,
+      armorDamageReduction: armorProfile.damageReduction,
+      armorFatiguePenalty: armorProfile.fatiguePenalty,
     };
   }
 
   const baseStats = enemy?.baseStats || {};
   const dodgeBonus = getEnemyDefenseBonus(enemy, ["dodge", "instinct"]);
   const blockBonus = getEnemyDefenseBonus(enemy, ["block", "armor", "resistance"]);
+  const armorReduction = Math.floor(getEnemyDefenseBonus(enemy, ["armor", "resistance"]) / 2);
   const baseSpeed = numberOr(baseStats.speed, 0) || numberOr(enemy?.movement?.speed, 0) || numberOr(baseStats.agility, 0);
   return {
     attack: numberOr(baseStats.attack, 0),
@@ -571,6 +670,10 @@ function getCombatantStats({ combatant, enemy, gameState, weaponProfile = null }
     blockSkill: blockBonus,
     retreatSkill: baseSpeed,
     tacticsSkill: numberOr(baseStats.awareness, numberOr(baseStats.perception, 0)),
+    armorProfileId: "",
+    armorDefenseModifier: blockBonus,
+    armorDamageReduction: armorReduction,
+    armorFatiguePenalty: 0,
   };
 }
 
@@ -649,10 +752,11 @@ function classifyHit(hitMargin) {
 }
 
 function getDamageBonusFromHit(resultBand, hitMargin) {
+  const margin = Math.max(0, numberOr(hitMargin, 0));
   if (resultBand === "glancing_hit") return 0;
-  if (resultBand === "clean_hit") return Math.floor(Math.max(0, hitMargin) / 3);
-  if (resultBand === "strong_hit") return 4 + Math.floor(hitMargin / 4);
-  if (resultBand === "critical_hit") return 8 + Math.floor(hitMargin / 3);
+  if (resultBand === "clean_hit") return clamp(Math.floor(margin / 4), 0, 3);
+  if (resultBand === "strong_hit") return clamp(3 + Math.floor(Math.max(0, margin - 12) / 5), 3, 6);
+  if (resultBand === "critical_hit") return clamp(6 + Math.floor(Math.max(0, margin - 19) / 6), 6, 10);
   return 0;
 }
 
@@ -771,10 +875,37 @@ function getEnemyMorale(enemy) {
   return Number(enemy?.baseStats?.morale || 1);
 }
 
+function isWeaponLikeItemId(itemId = "") {
+  const normalized = String(itemId || "").toLowerCase();
+  return [
+    "daga",
+    "cuchillo",
+    "baston",
+    "garrote",
+    "espada",
+    "arco",
+    "escudo",
+    "sword",
+    "dagger",
+    "knife",
+    "staff",
+    "club",
+    "bow",
+    "shield",
+  ].some((token) => normalized.includes(token));
+}
+
 function getLucasEquippedWeaponIds(gameState) {
   return (gameState.inventory || [])
+    .filter((entry) => entry.equipped && isWeaponLikeItemId(entry.itemId))
+    .map((entry) => entry.itemId);
+}
+
+function getLucasArmorProfileId(gameState) {
+  const equippedIds = (gameState.inventory || [])
     .filter((entry) => entry.equipped)
     .map((entry) => entry.itemId);
+  return chooseBestArmorProfileId(equippedIds);
 }
 
 function buildCombatantIds(encounterId, enemyId) {
@@ -813,6 +944,7 @@ function buildInitialParticipants({ encounterId, gameState, enemy }) {
         max: 100,
       },
       equippedWeaponIds: getLucasEquippedWeaponIds(gameState),
+      armorProfileId: getLucasArmorProfileId(gameState),
     },
     {
       combatantId: ids.enemy,
@@ -1844,7 +1976,8 @@ function resolveAttack({
   const rawDamage = hit
     ? numberOr(weaponProfile.baseDamage, 1) + statBonus + hitBonus + damageRoll
     : 0;
-  const reduction = hit ? Math.floor(targetStats.endurance / 6) + Math.floor(targetStats.defense / 8) : 0;
+  const armorReduction = hit ? numberOr(targetStats.armorDamageReduction, 0) : 0;
+  const reduction = hit ? Math.floor(targetStats.endurance / 6) + Math.floor(targetStats.defense / 8) + armorReduction : 0;
   let finalDamage = hit ? Math.max(0, rawDamage - reduction) : 0;
   if (controlledCombat) {
     const safeDamageCap = Math.max(0, numberOr(target.hp?.current, 0) - 1);
@@ -1868,7 +2001,12 @@ function resolveAttack({
 
   if (hpChange) target.hp = hpChange.pool;
   if (moraleChange) target.morale = moraleChange.pool;
-  applyFatigue(actor, 3 + Math.max(0, numberOr(weaponProfile.fatigueCostModifier, 0)));
+  applyFatigue(
+    actor,
+    3 +
+      Math.max(0, numberOr(weaponProfile.fatigueCostModifier, 0)) +
+      Math.max(0, numberOr(actorStats.armorFatiguePenalty, 0))
+  );
   if (finalDamage > 0) applyStress(target, Math.max(1, Math.floor(finalDamage / 2)));
   removeCondition(actor, "prepared");
   removeCondition(actor, "focused");
@@ -1901,6 +2039,11 @@ function resolveAttack({
       targetFatigueModifier: getFatigueModifier(target),
       actorStanceModifier,
       targetDefensiveModifier,
+      actorWeaponDefenseModifier: actorStats.weaponDefenseModifier || 0,
+      actorWeaponSpeedModifier: actorStats.weaponSpeedModifier || 0,
+      actorArmorProfileId: actorStats.armorProfileId || "",
+      targetArmorProfileId: targetStats.armorProfileId || "",
+      targetArmorReduction: armorReduction,
       weapon: weaponProfile.name,
       controlledCombat,
     },

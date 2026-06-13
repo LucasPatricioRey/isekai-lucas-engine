@@ -1,6 +1,6 @@
 # rules_engine.md — Motor Isekai Lucas
 
-Versión: Fase C10 v0.5 — combate avanzado playtest, balance inicial y auditoria controlada
+Versión: Fase C11 v0.6 — balance fino de combate, equipo defensivo y matriz de auditoria
 Estado: versión validada por Lucas mediante revisión guiada  
 Fuente de migración: Enciclopedia V2 Isekai Lucas + decisiones confirmadas por Lucas durante Fase 1 + validación guiada Fase 2  
 Propósito: este archivo define **cómo se resuelve el juego**. No contiene el save vivo completo ni el lore mundial extenso; eso vive en MongoDB y `world_bible.md`.
@@ -8,6 +8,7 @@ Propósito: este archivo define **cómo se resuelve el juego**. No contiene el s
 Actualización v0.3: agrega sistema social ampliado, formato obligatorio de diálogo NPC y libertad creativa controlada para NPCs según personalidad, memoria y conocimiento.
 Actualización C9: el contexto compacto normal usa perfiles de proyección, oculta fixtures `testSuite` del canon, expone auditoría read-only `auditState` para modo técnico y formaliza que los archivos de conocimiento del GPT son guía estable, no save vivo.
 Actualización C10: agrega auditoria mutante controlada `audit:combat-playtest` sobre `GameState` temporal para verificar sparring, amenaza menor, bloqueo/esquiva, moral enemiga, retirada de Lucas, herida leve/tratamiento y evidencia post-combate sin loot inventado.
+Actualización C11: agrega `audit:combat-balance`, suaviza el escalado de críticos, aplica modificadores de arma/equipo defensivo y formaliza chaleco de cuero ligero/escudo simple como equipo común limitado.
 
 ---
 
@@ -1198,11 +1199,27 @@ Escenarios C10 minimos:
 
 Si alguno falla, el narrador no debe resolver ese caso por texto libre. Hay que ajustar backend/schema/tests antes de continuar.
 
-### 16.5 Muerte
+### 16.5 Balance C11
+
+El combate real debe sentirse peligroso pero no explosivo por defecto. Un crítico sigue siendo fuerte, pero el margen alto no debe convertir toda amenaza menor en muerte automática. La armadura ligera reduce daño poco pero consistentemente; el escudo ayuda a bloquear y penaliza movilidad/fatiga. Armas con `WeaponProfile` aplican daño base, precisión, defensa, velocidad y coste de fatiga.
+
+Antes de introducir enemigos nuevos, equipo nuevo o cambios de fórmula, ejecutar `npm run audit:combat-balance`. El audit usa un `GameState` temporal y mide:
+
+- daño máximo y promedio de Lucas;
+- daño máximo y promedio de NPC;
+- reducción real por armadura;
+- heridas creadas;
+- estado final del encuentro;
+- retirada bajo presión;
+- sparring con daño capado y sin heridas.
+
+La retirada no es éxito narrativo automático. Aunque exista ruta buena, el backend compara distancia, ruta, velocidad, fatiga, terreno y rolls. El GPT debe narrar el resultado devuelto: escape, intento fallido, exposición o continuación del combate.
+
+### 16.6 Muerte
 
 Muerte posible y permanente si la situación lo justifica. No matar NPCs importantes de forma barata, pero no usar plot armor si la situación fue letal.
 
-### 16.6 Recompensas
+### 16.7 Recompensas
 
 Matar enemigo no da loot automático. Sin contrato/prueba, no hay recompensa de gremio automática.
 

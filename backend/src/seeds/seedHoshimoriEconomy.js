@@ -298,6 +298,16 @@ const items = [
     durability: { max: 45, defaultCurrent: 30 },
     tags: ["clothing", "boots", "used", "travel"],
   }),
+  item("item_chaleco_cuero_ligero", {
+    name: "Chaleco de cuero ligero",
+    type: "armor",
+    subtype: "light_leather",
+    description: "Proteccion comun de cuero curtido. Reduce cortes y mordidas leves, pero no detiene golpes pesados.",
+    stackable: false,
+    basePriceCopper: 280,
+    durability: { max: 55, defaultCurrent: 55 },
+    tags: ["armor", "leather", "light_armor", "tannery"],
+  }),
   item("item_mochila_basica", {
     name: "Mochila basica",
     type: "tool",
@@ -338,6 +348,17 @@ const items = [
     basePriceCopper: 120,
     durability: { max: 45, defaultCurrent: 45 },
     tags: ["weapon", "tool", "knife"],
+  }),
+  item("item_escudo_madera_simple", {
+    name: "Escudo de madera simple",
+    type: "weapon",
+    subtype: "shield",
+    description: "Escudo pequeno de madera comun. Ayuda a bloquear, pero estorba al moverse.",
+    stackable: false,
+    basePriceCopper: 180,
+    durability: { max: 50, defaultCurrent: 50 },
+    legalStatus: "restricted",
+    tags: ["weapon", "shield", "defense", "wood"],
   }),
   item("item_baston_simple", {
     name: "Baston simple",
@@ -600,6 +621,11 @@ const stocks = [
     restockRule: { type: "weekly", amount: 1, condition: "fabricacion local limitada" },
     tags: ["weapon", "dagger"],
   }),
+  stock("shop_borin_smithy", "item_escudo_madera_simple", 1, {
+    basePriceCopper: 180,
+    restockRule: { type: "manual", amount: 0, condition: "stock defensivo ocasional" },
+    tags: ["weapon", "shield", "defense", "low_stock"],
+  }),
   stock("shop_borin_smithy", "item_baston_simple", 3, {
     basePriceCopper: 30,
     restockRule: { type: "weekly", amount: 2, condition: "madera comun disponible" },
@@ -702,6 +728,11 @@ const stocks = [
     basePriceCopper: 70,
     restockRule: { type: "weekly", amount: 2, condition: "curtido lento" },
     tags: ["material", "hide"],
+  }),
+  stock("shop_merek_tannery", "item_chaleco_cuero_ligero", 1, {
+    basePriceCopper: 280,
+    restockRule: { type: "manual", amount: 0, condition: "pieza armada solo cuando hay cuero y tiempo" },
+    tags: ["armor", "leather", "low_stock"],
   }),
   stock("shop_hoshimori_guild_services", "item_servicio_registro_gremio", 5, {
     basePriceCopper: 10,
