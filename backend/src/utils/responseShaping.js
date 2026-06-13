@@ -654,7 +654,7 @@ function buildNpcVoiceProfile(npc) {
     dialogueGuidance: [
       speechStyle ? `Voz: ${speechStyle}.` : "",
       isDry
-        ? "Seco no significa identico ni sin emociones: variar con silencios, gestos practicos, correcciones, humor breve o distancia profesional."
+        ? "Seco no significa pobre ni identico: frases compactas con subtexto, imagen concreta del peligro, silencios, gestos practicos o humor breve."
         : "",
       isWarm ? "La calidez debe sentirse en pequenos gestos y no solo en agradecimientos repetidos." : "",
       isInstitutional
@@ -794,7 +794,7 @@ function buildDialogueMovesForNpc(npc = {}, relationship = {}) {
   const moves = [];
 
   if (textHasAny(text, ["seco", "aspero", "frontal", "directo", "grunon"])) {
-    moves.push("Usar frases cortas con filo practico; el gesto o la pausa puede decir mas que una explicacion.");
+    moves.push("Usar frases compactas con filo practico, pero no lineas vacias: incluir causa, imagen concreta del peligro o subtexto visible.");
   }
   if (textHasAny(text, ["formal", "institucional", "ordenada", "precisa", "burocratica", "procedimiento"])) {
     moves.push("Hablar desde procedimiento, registro o responsabilidad; separar hecho confirmado de inferencia.");
@@ -818,6 +818,9 @@ function buildDialogueMovesForNpc(npc = {}, relationship = {}) {
     moves.push("Con poca confianza, el NPC debe pedir contexto o mantenerse practico antes de mostrar interes fuerte.");
   } else if ((Number(relationship.trust) || 0) >= 50) {
     moves.push("Con confianza alta, puede usar memoria compartida o una broma privada suave si encaja.");
+  }
+  if (npc.emotionalProfile?.contradiction || (npc.emotionalProfile?.visibleTells || []).length > 0) {
+    moves.push("En escenas importantes, acompanar el dialogo con un gesto o decision que revele el subtexto sin explicarlo.");
   }
 
   return unique(moves).slice(0, 5);
@@ -1555,6 +1558,7 @@ function buildDramaticContext({
     dialogueDirectives: [
       "Aplicar dialogueProfile y emotionalProfile de cada NPC: ritmo, registro por confianza, temperatura emocional, subtexto visible, limites y movimientos.",
       "Cada linea de dialogo necesita intencion: medir, cuidar, presionar, ocultar, corregir, negociar, provocar o revelar algo permitido.",
+      "En pedidos directos de Lucas, entrenamiento, conflicto o decision social, evitar resolver al NPC con una sola frase minima; usar 2-4 beats de dialogo/gesto si la escena lo permite.",
       "Si hay varios NPCs, alternar respuestas breves, interrupciones y silencios; no hacer que todos esperen turno de forma artificial.",
       "Si scene.relationshipDynamics trae pares relevantes, usar roces, alianzas, bromas o silencios entre NPCs sin revelar privateSubtext como conocimiento de Lucas.",
       "Respetar npcKnowledgeContext: certeza solo con fuente diegetica; inferencias deben sonar como duda, pregunta o rumor.",

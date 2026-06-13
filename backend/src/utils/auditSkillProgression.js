@@ -153,11 +153,31 @@ async function main() {
     currentEnergy: 25,
     currentPhase: "Principiante",
   });
+  const guidedDagger = validateSkillPatch({
+    skillId: "skill_daga",
+    expDelta: 3,
+    category: "fundamentos_30min",
+    modifiers: { hasMaster: true, newTechnique: true },
+    currentEnergy: 45,
+    currentPhase: "Principiante",
+    durationMinutes: 30,
+  });
+  const underpoweredDagger = validateSkillPatch({
+    skillId: "skill_daga",
+    expDelta: 1,
+    category: "fundamentos_30min",
+    modifiers: { hasMaster: true, newTechnique: true },
+    currentEnergy: 45,
+    currentPhase: "Principiante",
+    durationMinutes: 30,
+  });
 
   assertEqual(issues, "Aqua physical effective EXP", aquaPhysical.effectiveExpDelta, 50);
   assertTrue(issues, "Aqua physical is noted as not applied", aquaPhysical.multiplierParts.some((part) => part.id === "aqua" && part.applied === false));
   assertEqual(issues, "Aqua magic effective EXP", aquaMagic.effectiveExpDelta, 40);
   assertEqual(issues, "low energy effective EXP", lowEnergy.effectiveExpDelta, 30);
+  assertEqual(issues, "guided beginner dagger fundamentals effective EXP", guidedDagger.effectiveExpDelta, 27);
+  assertTrue(issues, "underpowered dagger fundamentals rejected", underpoweredDagger.ok === false, underpoweredDagger.issues.join("; "));
 
   const servicePreview = previewSkillProgression({
     skill: {

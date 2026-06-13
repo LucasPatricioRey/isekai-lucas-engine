@@ -16,6 +16,8 @@ Actualizacion C14: `context/compact` expone `dramaticContext` y `scene.nearbyNpc
 
 Actualizacion C15: `Npc` agrega `emotionalProfile`; `NpcRelationship` agrega tono emocional, tension publica, subtexto privado, hints y limites. `context/compact` expone `scene.nearbyNpcs[].emotionalProfile`, `dialogueProfile.emotionalSubtext` y `scene.relationshipDynamics` para escenas grupales donde los NPCs reaccionan entre ellos. `src/seeds/seedHoshimoriNpcEmotions.js` y `src/utils/auditNpcEmotions.js` cubren los 25 NPCs base y 12 pares NPC-NPC de Hoshimori.
 
+Actualizacion C15.1: se endurece la regla de dialogo seco para evitar frases minimas pobres y se suben los rangos base de fundamentos tecnicos de combate de 30 min (`skill_daga`, bloqueo, esquiva, retirada, pelea sin armas y tactica basica) de 1-4 a 3-6 EXP base por bloque.
+
 ## Resumen ejecutivo
 
 G1 compara tres niveles:

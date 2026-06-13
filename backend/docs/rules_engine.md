@@ -13,6 +13,7 @@ Actualización C12: agrega tipos formales de encuentro (`encounterType`), `encou
 Actualizacion C13: agrega recuperacion formal de heridas (`combatAdvancedPreviewRecovery`/`combatAdvancedApplyRecovery`), progreso en `InjuryRecord`, bloqueo por sangrado activo y `audit:combat-recovery`.
 Actualizacion C14: agrega `dramaticContext` y `dialogueProfile` en contexto compacto para guiar escena novelada, subtexto, voz por NPC, dinamica de grupo y contrato de HUD final sin inventar mecanicas.
 Actualizacion C15: agrega `Npc.emotionalProfile`, subtexto emocional en `dialogueProfile`, `scene.relationshipDynamics` para relaciones NPC-NPC cercanas y `audit:npc-emotions`.
+Actualizacion C15.1: endurece dialogo NPC para evitar frases minimas pobres y sube rangos base de fundamentos tecnicos de combate de 30 min en habilidades principiantes.
 
 ---
 
@@ -1671,7 +1672,8 @@ Cada `scene.nearbyNpcs[]` tambien puede exponer `emotionalProfile`: `defaultMood
 Reglas de uso:
 
 - cada linea de dialogo debe tener intencion: medir, cuidar, presionar, ocultar, corregir, negociar, provocar o revelar algo permitido;
-- un NPC seco no significa NPC plano: puede variar con pausas, gestos, humor breve, correccion practica o distancia profesional;
+- un NPC seco no significa NPC plano ni pobre: en escenas de pedido directo, entrenamiento, conflicto o decision social, debe haber 2-4 beats de dialogo/gesto si la escena lo permite; evitar una sola frase minima como respuesta completa;
+- las frases compactas deben tener contenido: causa, imagen concreta del peligro, condicion practica, subtexto visible o consecuencia;
 - un NPC calido no debe repetir gratitud generica: debe mostrar cuidado mediante acciones concretas, preguntas pequenas o atencion a la escena;
 - en grupos, no hacer turnos artificiales: usar miradas, interrupciones, silencio, alianzas pequenas y reacciones cruzadas;
 - respetar `npcKnowledgeContext`: certeza solo con fuente diegetica, inferencias como duda/pregunta/rumor;

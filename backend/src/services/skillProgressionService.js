@@ -91,33 +91,33 @@ const SKILL_ACTIVITY_RANGES = {
     terreno_dificil: { min: 3, max: 8, unit: "hour" },
   },
   skill_esquiva: {
-    entrenamiento_guardia_distancia_30min: { min: 1, max: 4, unit: "block" },
-    retirada_controlada_30min: { min: 1, max: 4, unit: "block" },
+    entrenamiento_guardia_distancia_30min: { min: 3, max: 6, unit: "block" },
+    retirada_controlada_30min: { min: 3, max: 6, unit: "block" },
     combate_esquivas: { min: 4, max: 12, unit: "scene" },
   },
   skill_bloqueo: {
-    entrenamiento_guardia_distancia_30min: { min: 1, max: 4, unit: "block" },
+    entrenamiento_guardia_distancia_30min: { min: 3, max: 6, unit: "block" },
     practica_guiada_1h: { min: 4, max: 10, unit: "hour" },
     combate_bloqueos: { min: 3, max: 10, unit: "scene" },
   },
   skill_retirada: {
-    retirada_controlada_30min: { min: 1, max: 4, unit: "block" },
-    entrenamiento_guardia_distancia_30min: { min: 1, max: 4, unit: "block" },
+    retirada_controlada_30min: { min: 3, max: 6, unit: "block" },
+    entrenamiento_guardia_distancia_30min: { min: 3, max: 6, unit: "block" },
     huida_controlada: { min: 3, max: 10, unit: "scene" },
   },
   skill_pelea_sin_armas: {
-    fundamentos_30min: { min: 1, max: 4, unit: "block" },
+    fundamentos_30min: { min: 3, max: 6, unit: "block" },
     practica_guiada_1h: { min: 4, max: 10, unit: "hour" },
     combate: { min: 3, max: 12, unit: "scene" },
   },
   skill_daga: {
-    fundamentos_30min: { min: 1, max: 4, unit: "block" },
+    fundamentos_30min: { min: 3, max: 6, unit: "block" },
     practica_guiada_1h: { min: 4, max: 10, unit: "hour" },
     combate: { min: 3, max: 12, unit: "scene" },
   },
   skill_tactica_basica: {
-    lectura_distancia_30min: { min: 1, max: 4, unit: "block" },
-    analizar_combate_30min: { min: 1, max: 4, unit: "block" },
+    lectura_distancia_30min: { min: 3, max: 6, unit: "block" },
+    analizar_combate_30min: { min: 3, max: 6, unit: "block" },
     combate: { min: 2, max: 8, unit: "scene" },
   },
   skill_percepcion: {

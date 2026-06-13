@@ -23,6 +23,7 @@ Usar esta rubrica durante pruebas manuales en GPT Builder Preview. Marcar cada i
 | DialogueProfile | Los NPCs hablan distinto segun voz, personalidad, relacion, tarea, cansancio y conocimiento. |
 | EmotionalProfile | Los NPCs muestran deseos, miedos, orgullo, contradicciones y gestos visibles sin revelar interioridad privada como certeza de Lucas. |
 | Intencion de dialogo | Cada linea busca algo: medir, cuidar, presionar, ocultar, corregir, negociar, provocar o revelar. |
+| Dialogo seco con contenido | Un NPC aspero puede ser breve, pero no pobre: en pedido, entrenamiento o conflicto debe haber gesto, causa, consecuencia o subtexto; no una unica frase minima. |
 | RelationshipDynamics | Si hay varios NPCs cercanos, reaccionan entre ellos segun confianza, familiaridad y tension; no todo pasa por Lucas. |
 | Grupo vivo | Si hay varios NPCs, hay miradas, interrupciones, silencios, alianzas o roces; no turnos artificiales. |
 | No exposicion mecanica | Ningun NPC recita HUD, numeros, reglas o conocimiento sin fuente diegetica. |

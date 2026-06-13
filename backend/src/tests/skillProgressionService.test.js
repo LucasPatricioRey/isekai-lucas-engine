@@ -16,6 +16,15 @@ const baseAgility = {
   expToNext: 100,
 };
 
+const baseDagger = {
+  skillId: "skill_daga",
+  name: "Daga",
+  phase: "Principiante",
+  level: 1,
+  exp: 0,
+  expToNext: 100,
+};
+
 test("prorates hourly skill EXP by duration before multipliers", () => {
   const preview = previewSkillProgression({
     skill: baseAgility,
@@ -82,4 +91,36 @@ test("anti-farming can exhaust empty repetition", () => {
 
   assert.equal(exhausted.multiplier, 0);
   assert.equal(exhausted.applied, true);
+});
+
+test("guided beginner combat fundamentals give visible early progress", () => {
+  const preview = previewSkillProgression({
+    skill: baseDagger,
+    expDelta: 3,
+    category: "fundamentos_30min",
+    reason: "Fundamentos de daga guiados por instructor durante treinta minutos.",
+    modifiers: { hasMaster: true, newTechnique: true },
+    currentEnergy: 45,
+    durationMinutes: 30,
+  });
+
+  assert.equal(preview.validation.ok, true);
+  assert.equal(preview.validation.recommendedRange.min, 3);
+  assert.equal(preview.validation.effectiveExpDelta, 27);
+});
+
+test("underpowered combat fundamentals are rejected for technical skills", () => {
+  const validation = validateSkillPatch({
+    skillId: "skill_daga",
+    expDelta: 1,
+    category: "fundamentos_30min",
+    reason: "Fundamentos de daga guiados por instructor durante treinta minutos.",
+    modifiers: { hasMaster: true, newTechnique: true },
+    currentEnergy: 45,
+    currentPhase: "Principiante",
+    durationMinutes: 30,
+  });
+
+  assert.equal(validation.ok, false);
+  assert.match(validation.issues.join(" "), /debajo del rango base recomendado 3-6/);
 });

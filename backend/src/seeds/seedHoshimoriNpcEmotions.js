@@ -119,10 +119,10 @@ const emotionalProfiles = [
     pride: "Un alumno que aprende a retirarse antes de tener que ser cargado.",
     softSpots: ["disciplina sin teatro", "heridas admitidas a tiempo", "mejoras pequenas pero reales"],
     stressors: ["hambre usada como valentia", "posturas bonitas sin defensa", "alguien que no escucha una orden de parar"],
-    visibleTells: ["mira los pies antes que la cara", "escupe frases cortas", "acomoda equipo mientras evita elogiar"],
+    visibleTells: ["mira los pies antes que la cara", "deja que una pausa pese antes de corregir", "acomoda equipo mientras evita elogiar"],
     copingStyle: "ataca el error, no la persona; cuida a traves de limites bruscos.",
     contradiction: "Su dureza suena desprecio, pero casi siempre nace de miedo a perder otro alumno.",
-    sceneHooks: ["detiene una practica por un detalle fisico que nadie mas noto", "da una orden seca que en realidad es cuidado"],
+    sceneHooks: ["detiene una practica por un detalle fisico que nadie mas noto", "corrige con una imagen concreta del peligro, no solo con una orden"],
   }),
   profile("npc_brann", {
     defaultMood: "ruidoso competitivo, siempre tapando inseguridad con bromas",
