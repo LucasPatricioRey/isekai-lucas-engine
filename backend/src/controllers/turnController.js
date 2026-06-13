@@ -16,6 +16,7 @@ const Faction = require("../models/Faction");
 const CharacterMagicKnowledge = require("../models/CharacterMagicKnowledge");
 const MagicDiscipline = require("../models/MagicDiscipline");
 const MagicTechnique = require("../models/MagicTechnique");
+const InjuryRecord = require("../models/InjuryRecord");
 const { syncNpcRoutines } = require("../services/routineService");
 const { calculateActivityCost, normalizeCategory } = require("../services/biologicalClockService");
 const { reconcileDailyEventsForGameState } = require("../services/dailyEventSchedulerService");
@@ -125,6 +126,9 @@ const MAGIC_SKILL_NAMES = {
   skill_magia_mental: "Magia mental",
   skill_magia_invocacion: "Magia de invocacion",
 };
+const MAGIC_STABILIZATION_ALLOWED_SEVERITIES = new Set(["scratch", "minor", "moderate"]);
+const MAGIC_STABILIZATION_BLOCKED_TYPES = new Set(["poison", "fracture"]);
+const MAGIC_PREPARABLE_EFFECT_TYPES = new Set(["defense", "resistance"]);
 
 function validationError(message, details = {}) {
   const error = new Error(message);
@@ -349,6 +353,9 @@ function buildApplyTurnAutoCheckpointPlan(changes = {}) {
   const injuryCount =
     (Array.isArray(changes.lucasStatus?.addInjuries) ? changes.lucasStatus.addInjuries.length : 0) +
     (Array.isArray(changes.lucasStatus?.addConditions) ? changes.lucasStatus.addConditions.length : 0);
+  const magicPracticeEffects = Array.isArray(changes.magicPractice)
+    ? changes.magicPractice.map((practice) => practice.mechanicalEffect).filter(Boolean)
+    : [];
   const lifeDelta = Number(changes.lucasStatus?.life?.delta) || 0;
 
   if (changes.time?.crossesMidnight) {
@@ -356,6 +363,10 @@ function buildApplyTurnAutoCheckpointPlan(changes = {}) {
   }
 
   if (injuryCount > 0 || lifeDelta < 0) {
+    addAutoCheckpointTrigger(triggers, "injury", "herida o condición física importante");
+  }
+
+  if (magicPracticeEffects.some((effect) => effect.effectType === "healing" && effect.applied)) {
     addAutoCheckpointTrigger(triggers, "injury", "herida o condición física importante");
   }
 
@@ -405,6 +416,10 @@ function buildApplyTurnAutoCheckpointPlan(changes = {}) {
 
   if (Array.isArray(changes.magic) && changes.magic.length > 0) {
     addAutoCheckpointTrigger(triggers, "magic", "desbloqueo o conocimiento magico formal");
+  }
+
+  if (magicPracticeEffects.some((effect) => effect.applied || effect.requiresCombatResolver || effect.futureResolverRequired)) {
+    addAutoCheckpointTrigger(triggers, "magic", "efecto magico formal aplicado o preparado");
   }
 
   if (moneyDelta >= 100 || changes.inventory || changes.shopStocks) {
@@ -548,6 +563,289 @@ function syncKnownSpellFlag(gameState, technique, status) {
     after,
     changed: before.join("|") !== after.join("|"),
   };
+}
+
+function normalizeMagicPracticeTarget(target = null) {
+  if (!target || typeof target !== "object" || Array.isArray(target)) return {};
+  return {
+    targetType: String(target.targetType || "").trim(),
+    injuryId: String(target.injuryId || "").trim(),
+    mode: String(target.mode || "").trim(),
+  };
+}
+
+function summarizeMagicInjury(injury) {
+  return {
+    injuryId: injury.injuryId,
+    status: injury.status,
+    severity: injury.severity,
+    injuryType: injury.injuryType,
+    bleeding: injury.bleeding,
+    pain: injury.pain,
+    requiresTreatment: injury.requiresTreatment,
+    treated: injury.treated,
+    treatmentQuality: injury.treatmentQuality,
+    untreatedRisk: injury.untreatedRisk,
+    healingProgress: injury.healingProgress,
+    recoveryHoursRemaining: injury.recoveryHoursRemaining,
+  };
+}
+
+function treatmentQualityRank(quality = "none") {
+  return ["none", "poor", "basic", "good", "excellent"].indexOf(quality);
+}
+
+function keepBestTreatmentQuality(before = "none", candidate = "basic") {
+  return treatmentQualityRank(candidate) > treatmentQualityRank(before) ? candidate : before;
+}
+
+function syncLegacyLucasInjuryMagicStabilization(gameState, injury, effect) {
+  const injuries = gameState.lucasStatus?.injuries || [];
+  const legacy = injuries.find((entry) => entry.injuryId === injury.injuryId);
+  if (!legacy) return null;
+
+  legacy.status = injury.status;
+  legacy.treated = true;
+  legacy.healingProgress = injury.healingProgress;
+  legacy.recoveryHoursRemaining = injury.recoveryHoursRemaining;
+  legacy.effects = unique([
+    ...(legacy.effects || []),
+    "magia_estabilizada",
+    "tratada:magia_basica",
+    effect.bleeding.after === 0 ? "sangrado_estabilizado" : "",
+    effect.pain.delta < 0 ? "dolor_aliviado_leve" : "",
+  ]);
+  return legacy;
+}
+
+async function applyHealingMagicPracticeEffect({ gameState, technique, patch, session = null }) {
+  const target = normalizeMagicPracticeTarget(patch.target);
+
+  if (!target.injuryId) {
+    throw validationError("magicPractice.target.injuryId es obligatorio para magia curativa real.", {
+      techniqueId: technique.techniqueId,
+      effectType: "healing",
+    });
+  }
+
+  const injury = await InjuryRecord.findOne({ gameId: gameState.gameId, injuryId: target.injuryId }).session(session);
+  if (!injury) {
+    throw validationError("No existe InjuryRecord para aplicar magia curativa.", {
+      gameId: gameState.gameId,
+      injuryId: target.injuryId,
+    });
+  }
+
+  if (injury.targetType !== "character" || injury.targetId !== "char_lucas") {
+    throw validationError("La estabilizacion magica C20 solo soporta heridas reales de Lucas.", {
+      injuryId: injury.injuryId,
+      targetType: injury.targetType,
+      targetId: injury.targetId,
+    });
+  }
+
+  if (["healed", "permanent"].includes(injury.status)) {
+    throw validationError("La herida no admite estabilizacion menor en su estado actual.", {
+      injuryId: injury.injuryId,
+      status: injury.status,
+    });
+  }
+
+  if (!MAGIC_STABILIZATION_ALLOWED_SEVERITIES.has(injury.severity)) {
+    throw validationError("Estabilizacion menor no puede resolver heridas graves o criticas.", {
+      injuryId: injury.injuryId,
+      severity: injury.severity,
+    });
+  }
+
+  if (MAGIC_STABILIZATION_BLOCKED_TYPES.has(injury.injuryType)) {
+    throw validationError("Estabilizacion menor no resuelve venenos ni fracturas.", {
+      injuryId: injury.injuryId,
+      injuryType: injury.injuryType,
+    });
+  }
+
+  const before = summarizeMagicInjury(injury);
+  const bleedingBefore = Number(injury.bleeding || 0);
+  const painBefore = Number(injury.pain || 0);
+  if (bleedingBefore <= 0 && painBefore <= 0 && !injury.requiresTreatment) {
+    throw validationError("La herida no necesita estabilizacion magica menor.", {
+      injuryId: injury.injuryId,
+      status: injury.status,
+    });
+  }
+
+  const bleedingAfter = Math.max(0, bleedingBefore - 1);
+  const painAfter = Math.max(0, painBefore - 1);
+  const requiresTreatmentAfter = bleedingAfter > 0;
+  const statusAfter = requiresTreatmentAfter ? "treated" : "healing";
+
+  injury.bleeding = bleedingAfter;
+  injury.pain = painAfter;
+  injury.requiresTreatment = requiresTreatmentAfter;
+  injury.treated = true;
+  injury.treatmentQuality = keepBestTreatmentQuality(injury.treatmentQuality, "basic");
+  injury.untreatedRisk = requiresTreatmentAfter ? "low" : "none";
+  injury.status = statusAfter;
+  injury.healingProgress = Math.max(Number(injury.healingProgress || 0), statusAfter === "healing" ? 1 : 0);
+  injury.flags = {
+    ...(injury.flags || {}),
+    magicStabilizations: [
+      ...(injury.flags?.magicStabilizations || []),
+      {
+        day: gameState.currentDay,
+        time: gameState.time,
+        techniqueId: technique.techniqueId,
+        source: "applyTurn.magicPractice",
+        restoredLife: false,
+      },
+    ],
+  };
+  injury.markModified("flags");
+
+  const effect = {
+    applied: true,
+    effectType: "healing",
+    techniqueId: technique.techniqueId,
+    techniqueName: technique.name,
+    target: {
+      targetType: "injury",
+      injuryId: injury.injuryId,
+    },
+    injury: {
+      before,
+      after: summarizeMagicInjury(injury),
+    },
+    bleeding: {
+      before: bleedingBefore,
+      delta: bleedingAfter - bleedingBefore,
+      after: bleedingAfter,
+    },
+    pain: {
+      before: painBefore,
+      delta: painAfter - painBefore,
+      after: painAfter,
+    },
+    restoredLife: false,
+    policy: [
+      "No restaura vida.",
+      "No cura instantaneamente.",
+      "No resuelve venenos, fracturas ni heridas graves.",
+    ],
+  };
+
+  const legacyInjury = syncLegacyLucasInjuryMagicStabilization(gameState, injury, effect);
+  if (legacyInjury) gameState.markModified("lucasStatus.injuries");
+  await injury.save({ session });
+
+  return {
+    ...effect,
+    legacyInjury: legacyInjury ? toPlain(legacyInjury) : null,
+  };
+}
+
+function applyPreparedMagicPracticeEffect({ gameState, technique, patch, effectType }) {
+  const target = normalizeMagicPracticeTarget(patch.target);
+  const allowedModes =
+    effectType === "defense"
+      ? new Set(["", "self", "prepare_defense"])
+      : new Set(["", "self", "prepare_resistance"]);
+
+  if (target.injuryId || !allowedModes.has(target.mode)) {
+    throw validationError("El objetivo de esta magia preparada debe ser Lucas mismo.", {
+      techniqueId: technique.techniqueId,
+      effectType,
+      target,
+    });
+  }
+
+  const flags = getGameStateFlags(gameState);
+  const existing = Array.isArray(flags.magicPreparedEffects) ? flags.magicPreparedEffects : [];
+  const effectId = createId(`magic_effect_${effectType}`);
+  const entry = {
+    effectId,
+    techniqueId: technique.techniqueId,
+    techniqueName: technique.name,
+    effectType,
+    targetType: "self",
+    status: "prepared",
+    day: gameState.currentDay,
+    time: gameState.time,
+    durationMinutes: Number(patch.minutes || technique.defaultMinutes || 10),
+    appliesCombatMitigation: false,
+    requiresCombatResolver: true,
+    source: "applyTurn.magicPractice",
+    notes: "Preparacion formal guardada; no mitiga dano hasta que combate tenga resolver especifico.",
+  };
+
+  flags.magicPreparedEffects = [...existing, entry].slice(-12);
+  setGameStateFlags(gameState, flags);
+
+  return {
+    applied: true,
+    effectType,
+    techniqueId: technique.techniqueId,
+    techniqueName: technique.name,
+    target: {
+      targetType: "self",
+    },
+    preparedEffect: entry,
+    appliesCombatMitigation: false,
+    requiresCombatResolver: true,
+    restoredLife: false,
+    policy: [
+      "Efecto preparado para continuidad.",
+      "No reduce dano ni anula magia hasta que un resolver de combate lo aplique.",
+    ],
+  };
+}
+
+async function applyMagicPracticeMechanicalEffect({ gameState, patch, preview, session = null }) {
+  const technique = preview.technique || {};
+  const effectType = technique.effectProfile?.effectType || "none";
+  const canProduceVisibleEffect = Boolean(preview.selfTrainingGuidance?.canProduceVisibleEffect);
+
+  if (!canProduceVisibleEffect) return null;
+
+  if (effectType === "healing") {
+    return applyHealingMagicPracticeEffect({ gameState, technique, patch, session });
+  }
+
+  if (MAGIC_PREPARABLE_EFFECT_TYPES.has(effectType)) {
+    return applyPreparedMagicPracticeEffect({ gameState, technique, patch, effectType });
+  }
+
+  if (effectType === "offense") {
+    return {
+      applied: false,
+      effectType,
+      techniqueId: technique.techniqueId,
+      techniqueName: technique.name,
+      requiresCombatResolver: true,
+      restoredLife: false,
+      policy: [
+        "La practica fuera de combate no aplica dano.",
+        "Usar combate avanzado use_magic para acierto, dano, moral y heridas.",
+      ],
+    };
+  }
+
+  if (["mental", "summoning"].includes(effectType)) {
+    return {
+      applied: false,
+      effectType,
+      techniqueId: technique.techniqueId,
+      techniqueName: technique.name,
+      futureResolverRequired: true,
+      restoredLife: false,
+      policy: [
+        "Catalogado pero sin resolver mecanico en C20.",
+        "No leer pensamientos, forzar decisiones, invocar aliados ni crear objetos por narracion.",
+      ],
+    };
+  }
+
+  return null;
 }
 
 function validateMagicRequirements({ gameState, skillRequirements = [], knownTechniqueIds = [], knownTechniqueSet = new Set() }) {
@@ -2964,6 +3262,12 @@ async function applyMagicPracticePatches({
           after: mpBefore,
           labelAfter: gameState.lucasStatus?.mp?.label || "",
         };
+    const mechanicalEffect = await applyMagicPracticeMechanicalEffect({
+      gameState,
+      patch,
+      preview,
+      session,
+    });
 
     const appliedSkills = [];
     for (const skillPreview of preview.skillPreviews || []) {
@@ -3035,6 +3339,7 @@ async function applyMagicPracticePatches({
       publicUseRisk: preview.technique.publicUseRisk || "low",
       canProduceVisibleEffect: Boolean(preview.selfTrainingGuidance?.canProduceVisibleEffect),
       shouldLearnSpell: false,
+      ...(mechanicalEffect ? { mechanicalEffect } : {}),
       unlocks: preview.unlocks,
       skills: appliedSkills,
       narrativeBoundaries: [

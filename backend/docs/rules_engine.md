@@ -1,6 +1,6 @@
 # rules_engine.md — Motor Isekai Lucas
 
-Versión: Fase C19 v1.0 — catálogo técnico de magia documentada
+Versión: Fase C20 v1.0 — magia no ofensiva conocida con target formal
 Estado: versión validada por Lucas mediante revisión guiada  
 Fuente de migración: Enciclopedia V2 Isekai Lucas + decisiones confirmadas por Lucas durante Fase 1 + validación guiada Fase 2  
 Propósito: este archivo define **cómo se resuelve el juego**. No contiene el save vivo completo ni el lore mundial extenso; eso vive en MongoDB y `world_bible.md`.
@@ -18,6 +18,7 @@ Actualizacion C16: agrega direccion emocional de escena (`dramaticContext.emotio
 Actualizacion C17: agrega `audit:narrative-scene-playtest` para validar, sin mutar canon, entrenamiento con Eddan, escena grupal en La Grulla Azul, tramite/reporte en gremio y escena solitaria de cansancio; las anclas sensoriales distinguen patio, gremio administrativo y habitacion privada.
 Actualizacion C18: agrega `applyTurn.magicPractice` para practica magica real con tiempo/coste/MP/EXP validados y permite `use_magic` en combate solo con hechizos conocidos formalmente.
 Actualizacion C19: convierte las ramas magicas documentadas en catalogo tecnico de disciplinas, teorias/ejercicios y plantillas `locked_template`; las plantillas existen para validar requisitos, no son hechizos conocidos por Lucas.
+Actualizacion C20: agrega `learningSources` al catalogo magico y permite `applyTurn.magicPractice[].target` para efectos no ofensivos conocidos: curacion menor estabiliza `InjuryRecord` real sin restaurar vida; defensa/resistencia se guardan como preparadas sin mitigar dano hasta un resolver de combate.
 
 ---
 
@@ -1102,8 +1103,11 @@ Catalogo tecnico C19:
 - `MagicTechnique` contiene ejercicios/teorias seguros y plantillas de hechizo. Que una plantilla exista no significa que Lucas la conozca.
 - Las plantillas de hechizo real quedan como `status:"locked_template"` hasta `magicPatches.set_technique`.
 - Cada plantilla debe declarar `effectProfile`: tipo de efecto, objetivo, rango, politica de combate y limites narrativos.
-- `use_magic` de combate solo acepta hechizos reales conocidos con `effectProfile.combatUse:"offensive_simple"`; defensa, curacion, mental, invocacion y resistencia quedan para resolvers futuros.
-- Magia curativa no restaura vida gratis; debe estabilizar/tratar solo cuando un resolver de heridas lo permita.
+- `MagicTechnique.learningSources` declara si una tecnica puede salir de autopractica, instructor, libro o institucion. Es guia de origen, no desbloqueo automatico.
+- `use_magic` de combate solo acepta hechizos reales conocidos con `effectProfile.combatUse:"offensive_simple"`; defensa, curacion, mental, invocacion y resistencia no se resuelven como dano ofensivo.
+- `applyTurn.magicPractice[].target` permite efectos no ofensivos solo si el hechizo ya es conocido y `canProduceVisibleEffect:true`.
+- Magia curativa C20 solo soporta estabilizacion menor sobre `InjuryRecord` real de Lucas con `injuryId`; baja sangrado/dolor leve, marca tratamiento basico y nunca restaura `life.current`.
+- Defensa/resistencia C20 se guardan en `flags.magicPreparedEffects` con `appliesCombatMitigation:false`; no bloquean ataques ni anulan magia hasta que combate tenga resolver especifico.
 - Magia mental no lee secretos ni fuerza emociones/decisiones por narracion.
 - Invocacion no crea aliados, objetos ni portales sin origen, costo, pacto/cierre y backend.
 - Resistencia magica no da inmunidad ni anula hechizos sin resolucion backend.

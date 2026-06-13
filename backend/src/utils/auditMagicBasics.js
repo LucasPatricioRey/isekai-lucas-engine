@@ -238,6 +238,11 @@ async function main() {
 
   const apiDisciplineIds = new Set((disciplinesEndpoint.disciplines || []).map((entry) => entry.disciplineId));
   const apiTechniqueIds = new Set((techniquesEndpoint.techniques || []).map((entry) => entry.techniqueId));
+  const apiTechniqueById = new Map((techniquesEndpoint.techniques || []).map((entry) => [entry.techniqueId, entry]));
+  const apiExpectedTechniques = EXPECTED_TECHNIQUES.map((entry) => apiTechniqueById.get(entry.techniqueId)).filter(Boolean);
+  const apiTechniquesWithoutLearningSources = apiExpectedTechniques.filter(
+    (entry) => !Array.isArray(entry.learningSources) || entry.learningSources.length === 0
+  );
 
   assertTrue(
     issues,
@@ -264,6 +269,7 @@ async function main() {
     "all locked spell template ids exposed",
     LOCKED_SPELL_TEMPLATE_IDS.every((techniqueId) => apiTechniqueIds.has(techniqueId))
   );
+  assertEqual(issues, "API expected techniques without learningSources", apiTechniquesWithoutLearningSources.length, 0);
 
   section("Practice Preview Checks");
   const manaSkillPreview = (manaPreview.preview?.skillPreviews || []).find((entry) => entry.skillId === "skill_mana");
@@ -370,6 +376,14 @@ async function main() {
   const spellTemplatesWithoutEffectProfile = lockedSpellTemplates.filter(
     (entry) => !entry.effectProfile?.effectType || !entry.effectProfile?.combatUse
   );
+  const techniquesWithoutLearningSources = liveTechniques.filter(
+    (entry) => !Array.isArray(entry.learningSources) || entry.learningSources.length === 0
+  );
+  const learningSourcesWithoutAvailability = liveTechniques.flatMap((entry) =>
+    (entry.learningSources || [])
+      .filter((source) => !source.sourceType || !source.availability)
+      .map((source) => `${entry.techniqueId}:${source.sourceType || "missing"}`)
+  );
   const nonOffensiveCombatLeaks = lockedSpellTemplates.filter(
     (entry) => !entry.isOffensive && entry.effectProfile?.combatUse === "offensive_simple"
   );
@@ -381,6 +395,8 @@ async function main() {
   assertEqual(issues, "locked spell template count", lockedSpellTemplates.length, LOCKED_SPELL_TEMPLATE_IDS.length);
   assertEqual(issues, "missing spell-template discipline coverage", missingSpellTemplateDisciplines.length, 0);
   assertEqual(issues, "spell templates without effectProfile", spellTemplatesWithoutEffectProfile.length, 0);
+  assertEqual(issues, "techniques without learningSources", techniquesWithoutLearningSources.length, 0);
+  assertEqual(issues, "learningSources without sourceType/availability", learningSourcesWithoutAvailability.length, 0);
   assertEqual(issues, "non-offensive spell combat leaks", nonOffensiveCombatLeaks.length, 0);
   assertEqual(issues, "offensive spell templates without offensive_simple policy", offensiveCombatMissingPolicy.length, 0);
 

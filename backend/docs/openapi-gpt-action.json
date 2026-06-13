@@ -207,6 +207,32 @@
             "type": "object",
             "description": "Modificadores validos de progresion: newTechnique, increasedDifficulty, newGoal, newContext, realRisk, hasMaster.",
             "additionalProperties": true
+          },
+          "target": {
+            "type": "object",
+            "description": "Objetivo formal para efectos no ofensivos conocidos. Curacion requiere injuryId real; defensa/resistencia usan self.",
+            "properties": {
+              "targetType": {
+                "type": "string",
+                "enum": [
+                  "self",
+                  "injury"
+                ]
+              },
+              "injuryId": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "self",
+                  "stabilize_injury",
+                  "prepare_defense",
+                  "prepare_resistance"
+                ]
+              }
+            },
+            "additionalProperties": false
           }
         },
         "required": [

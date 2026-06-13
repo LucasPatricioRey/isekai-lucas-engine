@@ -17,6 +17,98 @@ function skill(skillId, minLevel = 1, minPhase = "Principiante") {
   return { skillId, minPhase, minLevel };
 }
 
+function learningSource(sourceType, name, data = {}) {
+  return {
+    sourceType,
+    sourceId: data.sourceId || "",
+    name,
+    availability: data.availability || "conditional",
+    notes: data.notes || "",
+    requiredTrust: Number.isFinite(Number(data.requiredTrust)) ? Number(data.requiredTrust) : null,
+    publicRisk: data.publicRisk || "low",
+  };
+}
+
+function defaultLearningSources(data = {}) {
+  const disciplineId = data.disciplineId || "";
+  const publicRisk = data.publicUseRisk || "low";
+  const entryKind = data.kind || "";
+  const lockedSpell = entryKind === "spell" || data.status === "locked_template" || data.isRealSpell;
+
+  if (!lockedSpell) {
+    if (["discipline_healing_magic", "discipline_mental_magic", "discipline_summoning_magic"].includes(disciplineId)) {
+      return [
+        learningSource("book", "Texto regulado o apuntes confiables", {
+          availability: "restricted",
+          notes: "Sirve para teoria prudente; no autoriza efectos reales ni reemplaza requisitos.",
+          publicRisk,
+        }),
+        learningSource("institution", "Tutor o institucion competente", {
+          availability: disciplineId === "discipline_summoning_magic" ? "future" : "restricted",
+          notes: "Recomendado antes de practica real por riesgo medico, mental o ritual.",
+          publicRisk,
+        }),
+      ];
+    }
+
+    return [
+      learningSource("self_study", "Autopractica segura", {
+        availability: "available",
+        notes: "Permitida solo como teoria, percepcion o control interno; no crea hechizos por si misma.",
+        publicRisk,
+      }),
+    ];
+  }
+
+  if (disciplineId === "discipline_healing_magic") {
+    return [
+      learningSource("institution", "Curandero, templo o sanador autorizado", {
+        availability: "restricted",
+        notes: "La curacion real requiere herida existente, responsabilidad medica y resolver backend.",
+        publicRisk: "high",
+      }),
+      learningSource("book", "Manual medico-magico autorizado", {
+        availability: "restricted",
+        notes: "Puede apoyar teoria; no permite curar ni saltar seguridad por lectura aislada.",
+        publicRisk: "medium",
+      }),
+    ];
+  }
+
+  if (disciplineId === "discipline_mental_magic") {
+    return [
+      learningSource("institution", "Tutor etico de magia mental", {
+        availability: "restricted",
+        notes: "Requiere consentimiento, supervision y consecuencias sociales claras.",
+        publicRisk: "high",
+      }),
+    ];
+  }
+
+  if (disciplineId === "discipline_summoning_magic") {
+    return [
+      learningSource("institution", "Circulo o academia de invocacion", {
+        availability: "future",
+        notes: "Rama avanzada: exige origen, pacto/costo, ancla y cierre antes de cualquier invocacion.",
+        publicRisk: "high",
+      }),
+    ];
+  }
+
+  return [
+    learningSource("self_study", "Breakthrough autodidacta validado", {
+      availability: "conditional",
+      notes: "Requiere requisitos vivos, magicPatches.set_technique, breakthrough:true y safetyConfirmed:true.",
+      publicRisk,
+    }),
+    learningSource("instructor", "Instructor o testigo competente", {
+      availability: "conditional",
+      notes: "Ayuda a validar seguridad; no reemplaza requisitos mecanicos ni conocimiento formal.",
+      publicRisk,
+    }),
+  ];
+}
+
 function discipline(disciplineId, data) {
   return {
     disciplineId,
@@ -62,6 +154,7 @@ function technique(techniqueId, data) {
       mechanicalNotes: [],
       narrationLimits: [],
     },
+    learningSources: data.learningSources || defaultLearningSources(data),
     safetyNotes: data.safetyNotes || [],
     source: SOURCE,
     tags: tags(data.tags || []),

@@ -480,7 +480,8 @@ async function main() {
     Boolean(compact.components?.schemas?.MagicPracticeApplyItem) &&
       ["techniqueId", "minutes", "reason"].every((field) =>
         compact.components?.schemas?.MagicPracticeApplyItem?.required?.includes(field)
-      )
+      ) &&
+      Boolean(compact.components?.schemas?.MagicPracticeApplyItem?.properties?.target)
   );
   assertCondition(
     issues,

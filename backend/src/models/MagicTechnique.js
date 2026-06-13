@@ -114,6 +114,43 @@ const effectProfileSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const learningSourceSchema = new mongoose.Schema(
+  {
+    sourceType: {
+      type: String,
+      enum: ["self_study", "instructor", "book", "institution", "ritual", "field_observation"],
+      default: "self_study",
+    },
+    sourceId: {
+      type: String,
+      default: "",
+    },
+    name: {
+      type: String,
+      default: "",
+    },
+    availability: {
+      type: String,
+      enum: ["available", "conditional", "restricted", "future"],
+      default: "conditional",
+    },
+    notes: {
+      type: String,
+      default: "",
+    },
+    requiredTrust: {
+      type: Number,
+      default: null,
+    },
+    publicRisk: {
+      type: String,
+      enum: ["none", "low", "medium", "high"],
+      default: "low",
+    },
+  },
+  { _id: false }
+);
+
 const magicTechniqueSchema = new mongoose.Schema(
   {
     techniqueId: {
@@ -221,6 +258,10 @@ const magicTechniqueSchema = new mongoose.Schema(
     effectProfile: {
       type: effectProfileSchema,
       default: () => ({}),
+    },
+    learningSources: {
+      type: [learningSourceSchema],
+      default: [],
     },
     safetyNotes: {
       type: [String],

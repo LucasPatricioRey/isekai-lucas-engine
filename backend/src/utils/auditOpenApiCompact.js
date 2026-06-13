@@ -338,6 +338,11 @@ function main() {
   }
   assertCondition(
     issues,
+    "compact MagicPracticeApplyItem supports target",
+    Boolean(compact.components?.schemas?.MagicPracticeApplyItem?.properties?.target)
+  );
+  assertCondition(
+    issues,
     "compact magic practice preview has request body",
     Boolean(
       compactOps.get("POST /api/magic/practice/preview")?.requestBody?.content?.["application/json"]?.schema

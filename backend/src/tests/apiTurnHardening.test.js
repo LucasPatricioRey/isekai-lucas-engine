@@ -7,6 +7,7 @@ const Evidence = require("../models/Evidence");
 const EventLog = require("../models/EventLog");
 const Faction = require("../models/Faction");
 const GameState = require("../models/GameState");
+const InjuryRecord = require("../models/InjuryRecord");
 const JobContract = require("../models/JobContract");
 const CharacterMagicKnowledge = require("../models/CharacterMagicKnowledge");
 const Mission = require("../models/Mission");
@@ -277,6 +278,7 @@ async function cleanupIsolatedState() {
   if (tempGameId) await CombatEncounter.deleteMany({ gameId: tempGameId });
   if (tempGameId) await Commitment.deleteMany({ gameId: tempGameId });
   if (tempGameId) await Evidence.deleteMany({ gameId: tempGameId });
+  if (tempGameId) await InjuryRecord.deleteMany({ gameId: tempGameId });
   if (tempGameId) await WorldEvent.deleteMany({ gameId: tempGameId });
   await Mission.deleteMany({
     missionId: {
@@ -2035,6 +2037,225 @@ describe("turn hardening coverage", () => {
     assert.equal(afterPracticeState.lucasStatus.mp.current, 185);
 
     await GameState.updateOne({ gameId: tempGameId }, { $set: { characterId: originalCharacterId } });
+  });
+
+  it("applies C20 known non-offensive magic effects with formal targets", async () => {
+    await CharacterMagicKnowledge.deleteMany({ characterId: tempMagicCharacterId });
+    const injuryId = `injury_magic_c20_${Date.now()}`;
+    const fixtureState = await GameState.findOne({ gameId: tempGameId });
+    const originalCharacterId = fixtureState.characterId || "char_lucas";
+    const lifeBefore = fixtureState.lucasStatus.life.current;
+
+    function upsertSkill(skillId, name, level) {
+      const existing = fixtureState.skills.find((skill) => skill.skillId === skillId);
+      if (existing) {
+        existing.name = name;
+        existing.phase = "Principiante";
+        existing.level = level;
+        existing.exp = 0;
+        existing.expToNext = 100;
+        return;
+      }
+
+      fixtureState.skills.push({
+        skillId,
+        name,
+        phase: "Principiante",
+        level,
+        exp: 0,
+        expToNext: 100,
+      });
+    }
+
+    fixtureState.currentDay = 10;
+    fixtureState.time = "12:00";
+    fixtureState.block = "Tarde";
+    fixtureState.characterId = tempMagicCharacterId;
+    fixtureState.lucasStatus.mp.current = 200;
+    fixtureState.lucasStatus.energy.current = 80;
+    fixtureState.lucasStatus.energy.label = "rendimiento normal";
+    fixtureState.flags = {
+      ...(fixtureState.flags || {}),
+      knownSpells: [],
+      magicPreparedEffects: [],
+    };
+    fixtureState.biologicalClock = {
+      lastProcessedTime: "12:00",
+      currentHourBlock: "12:00-13:00",
+      pendingAccumulation: [],
+      pendingAccumulations: [],
+    };
+    upsertSkill("skill_mana", "Mana", 5);
+    upsertSkill("skill_magia", "Magia", 5);
+    upsertSkill("skill_magia_curativa", "Magia curativa", 1);
+    upsertSkill("skill_magia_defensiva", "Magia defensiva", 1);
+    fixtureState.lucasStatus.injuries = [
+      ...(fixtureState.lucasStatus.injuries || []).filter((entry) => entry.injuryId !== injuryId),
+      {
+        injuryId,
+        location: "left_arm",
+        severity: "leve",
+        description: "Fixture C20 magic stabilization wound.",
+        effects: ["sangrado 1", "dolor 3"],
+        status: "active",
+        treated: false,
+        healingProgress: 0,
+        recoveryHoursRemaining: 18,
+        createdDay: 10,
+        createdTime: "12:00",
+      },
+    ];
+    fixtureState.markModified("skills");
+    fixtureState.markModified("flags");
+    fixtureState.markModified("lucasStatus.injuries");
+    await fixtureState.save();
+
+    await InjuryRecord.create({
+      injuryId,
+      gameId: tempGameId,
+      encounterId: "",
+      targetType: "character",
+      targetId: "char_lucas",
+      bodyPart: "left_arm",
+      injuryType: "cut",
+      severity: "minor",
+      bleeding: 1,
+      pain: 3,
+      mobilityPenalty: 0,
+      actionPenalty: -1,
+      concentrationPenalty: -1,
+      untreatedRisk: "low",
+      requiresTreatment: true,
+      treated: false,
+      createdDay: 10,
+      createdTime: "12:00",
+      recoveryHoursRemaining: 18,
+      notes: "Fixture C20 magic stabilization wound.",
+    });
+
+    try {
+      const learnedSupportMagic = await post("/api/turn/apply", {
+        gameId: tempGameId,
+        actionSummary: "Test controlado: aprendizaje formal de magia no ofensiva conocida.",
+        magicPatches: [
+          {
+            op: "set_technique",
+            characterId: tempMagicCharacterId,
+            techniqueId: "technique_locked_minor_stabilization",
+            status: "known",
+            source: "supervised_breakthrough",
+            reason: "Lucas valida una estabilizacion menor repetible sobre una herida de prueba controlada.",
+            breakthrough: true,
+            safetyConfirmed: true,
+            tags: ["test_turn_hardening"],
+          },
+          {
+            op: "set_technique",
+            characterId: tempMagicCharacterId,
+            techniqueId: "technique_locked_minor_ward",
+            status: "known",
+            source: "supervised_breakthrough",
+            reason: "Lucas valida un resguardo menor contenido sin asumir mitigacion de combate.",
+            breakthrough: true,
+            safetyConfirmed: true,
+            tags: ["test_turn_hardening"],
+          },
+        ],
+      });
+
+      assert.equal(learnedSupportMagic.status, 200, JSON.stringify(learnedSupportMagic.data));
+      assert.equal(learnedSupportMagic.data.changes.magic.length, 2);
+
+      const healed = await post("/api/turn/apply", {
+        gameId: tempGameId,
+        actionSummary: "Test controlado: estabilizacion menor conocida sobre herida real.",
+        timeAdvance: {
+          from: "12:00",
+          to: "12:10",
+        },
+        activityCost: {
+          category: "actividad_normal",
+          minutes: 10,
+          reason: "Aplicacion magica breve y controlada sobre herida real.",
+        },
+        magicPractice: [
+          {
+            characterId: tempMagicCharacterId,
+            techniqueId: "technique_locked_minor_stabilization",
+            minutes: 10,
+            reason: "Lucas aplica estabilizacion menor conocida sobre una herida real de prueba.",
+            target: {
+              targetType: "injury",
+              injuryId,
+              mode: "stabilize_injury",
+            },
+            modifiers: { realRisk: true },
+          },
+        ],
+      });
+
+      assert.equal(healed.status, 200, JSON.stringify(healed.data));
+      const healingEffect = healed.data.changes.magicPractice[0].mechanicalEffect;
+      assert.equal(healingEffect.applied, true);
+      assert.equal(healingEffect.effectType, "healing");
+      assert.equal(healingEffect.restoredLife, false);
+      assert.equal(healingEffect.bleeding.after, 0);
+      assert.equal(healingEffect.pain.after, 2);
+
+      const afterHealingState = await GameState.findOne({ gameId: tempGameId }).lean();
+      assert.equal(afterHealingState.lucasStatus.life.current, lifeBefore);
+      assert.equal(afterHealingState.lucasStatus.mp.current, 160);
+      const afterHealingInjury = await InjuryRecord.findOne({ gameId: tempGameId, injuryId }).lean();
+      assert.equal(afterHealingInjury.bleeding, 0);
+      assert.equal(afterHealingInjury.status, "healing");
+      assert.equal(afterHealingInjury.treated, true);
+      const legacy = afterHealingState.lucasStatus.injuries.find((entry) => entry.injuryId === injuryId);
+      assert.ok(legacy.effects.includes("magia_estabilizada"));
+      assert.ok(legacy.effects.includes("sangrado_estabilizado"));
+
+      const prepared = await post("/api/turn/apply", {
+        gameId: tempGameId,
+        actionSummary: "Test controlado: preparar resguardo menor conocido.",
+        timeAdvance: {
+          from: "12:10",
+          to: "12:20",
+        },
+        activityCost: {
+          category: "actividad_normal",
+          minutes: 10,
+          reason: "Preparacion magica defensiva breve y contenida.",
+        },
+        magicPractice: [
+          {
+            characterId: tempMagicCharacterId,
+            techniqueId: "technique_locked_minor_ward",
+            minutes: 10,
+            reason: "Lucas prepara un resguardo menor conocido sin resolver mitigacion de combate.",
+            target: {
+              targetType: "self",
+              mode: "prepare_defense",
+            },
+            modifiers: { newContext: true },
+          },
+        ],
+      });
+
+      assert.equal(prepared.status, 200, JSON.stringify(prepared.data));
+      const preparedEffect = prepared.data.changes.magicPractice[0].mechanicalEffect;
+      assert.equal(preparedEffect.applied, true);
+      assert.equal(preparedEffect.effectType, "defense");
+      assert.equal(preparedEffect.appliesCombatMitigation, false);
+      assert.equal(preparedEffect.requiresCombatResolver, true);
+
+      const afterPreparedState = await GameState.findOne({ gameId: tempGameId }).lean();
+      assert.equal(afterPreparedState.lucasStatus.life.current, lifeBefore);
+      assert.equal(afterPreparedState.lucasStatus.mp.current, 130);
+      assert.equal((afterPreparedState.flags.magicPreparedEffects || []).length, 1);
+      assert.equal(afterPreparedState.flags.magicPreparedEffects[0].techniqueId, "technique_locked_minor_ward");
+      assert.equal(afterPreparedState.flags.magicPreparedEffects[0].appliesCombatMitigation, false);
+    } finally {
+      await GameState.updateOne({ gameId: tempGameId }, { $set: { characterId: originalCharacterId } });
+    }
   });
 
   it("applies npc relationship patches through applyTurn", async () => {
