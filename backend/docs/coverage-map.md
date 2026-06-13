@@ -18,6 +18,8 @@ Actualizacion C15: `Npc` agrega `emotionalProfile`; `NpcRelationship` agrega ton
 
 Actualizacion C15.1: se endurece la regla de dialogo seco para evitar frases minimas pobres y se suben los rangos base de fundamentos tecnicos de combate de 30 min (`skill_daga`, bloqueo, esquiva, retirada, pelea sin armas y tactica basica) de 1-4 a 3-6 EXP base por bloque.
 
+Actualizacion C16: `context/compact` expone `dramaticContext.emotionalScene` y `scene.nearbyNpcs[].dialogueProfile.dramaticRole`. El GPT recibe una arquitectura de escena emocional: anzuelo, mascara publica, presion, grieta visible, objeto/ancla sensorial y salida, manteniendo HUD y limites mecanicos.
+
 ## Resumen ejecutivo
 
 G1 compara tres niveles:

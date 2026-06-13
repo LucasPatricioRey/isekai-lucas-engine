@@ -31,6 +31,15 @@ describe("read-only API coverage", () => {
     );
     assert.equal(compact.data.context.dramaticContext?.schemaVersion, "dramatic_context_v1");
     assert.equal(compact.data.context.dramaticContext?.outputContract?.hudRequired, true);
+    assert.equal(
+      compact.data.context.dramaticContext?.emotionalScene?.schemaVersion,
+      "emotional_scene_director_v1"
+    );
+    assert.ok(
+      (compact.data.context.dramaticContext?.emotionalScene?.beatEngine || []).some((line) =>
+        /Mascara/.test(line)
+      )
+    );
     assert.ok(
       (compact.data.context.dramaticContext?.dialogueDirectives || []).some((line) =>
         /dialogueProfile/.test(line)
@@ -49,6 +58,11 @@ describe("read-only API coverage", () => {
     assert.ok(
       (compact.data.context.scene.nearbyNpcs || []).some(
         (npc) => npc.dialogueProfile?.emotionalSubtext?.rule
+      )
+    );
+    assert.ok(
+      (compact.data.context.scene.nearbyNpcs || []).some(
+        (npc) => npc.dialogueProfile?.dramaticRole?.schemaVersion === "npc_dramatic_role_v1"
       )
     );
     assert.equal(

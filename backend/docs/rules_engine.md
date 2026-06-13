@@ -14,6 +14,7 @@ Actualizacion C13: agrega recuperacion formal de heridas (`combatAdvancedPreview
 Actualizacion C14: agrega `dramaticContext` y `dialogueProfile` en contexto compacto para guiar escena novelada, subtexto, voz por NPC, dinamica de grupo y contrato de HUD final sin inventar mecanicas.
 Actualizacion C15: agrega `Npc.emotionalProfile`, subtexto emocional en `dialogueProfile`, `scene.relationshipDynamics` para relaciones NPC-NPC cercanas y `audit:npc-emotions`.
 Actualizacion C15.1: endurece dialogo NPC para evitar frases minimas pobres y sube rangos base de fundamentos tecnicos de combate de 30 min en habilidades principiantes.
+Actualizacion C16: agrega direccion emocional de escena (`dramaticContext.emotionalScene`) y rol dramatico por NPC (`dialogueProfile.dramaticRole`) para sostener anzuelo, mascara, presion, grieta visible y salida sin inventar mecanicas.
 
 ---
 
@@ -1644,7 +1645,7 @@ Si `narrativeHints.scenePlan` pide escena comprimida, resumir la rutina y elegir
 
 Cuando el GPT use `applyTurn` debe enviar `actionFamily` si la accion tiene familia clara (`investigation`, `report`, `travel`, `social`, `physical_training`, `magic_practice`, `mission`, etc.). Este campo solo guia `narrativeHints`: no crea mecanicas ni reemplaza tags, pero evita que reportes, investigaciones o viajes se clasifiquen como compra/entrenamiento por inferencia.
 
-### 19.10 Narracion dramatica y dialogo vivo C14/C15
+### 19.10 Narracion dramatica y dialogo vivo C14/C15/C16
 
 `getCompactContext` debe exponer `dramaticContext` para cada escena jugable. Este bloque no cambia estado ni autoriza resultados; solo guia estilo:
 
@@ -1654,16 +1655,46 @@ Cuando el GPT use `applyTurn` debe enviar `actionFamily` si la accion tiene fami
 - la prosa puede dramatizar sensaciones, gestos, silencios, interrupciones, tareas y entorno, pero no crea dano, curacion, loot, EXP, dinero, relaciones ni resoluciones;
 - si no hay tension fuerte, el lugar, el cuerpo de Lucas y las agendas abiertas deben sostener una escena breve pero viva.
 
+`dramaticContext.emotionalScene` dirige la arquitectura emocional de la respuesta:
+
+- `sceneMode` y `paragraphTarget`: indican si conviene escena dramatizada o escena breve viva;
+- `emotionalQuestion`: pregunta dramatica concreta de la escena actual;
+- `beatEngine`: anzuelo, mascara, presion, grieta visible y salida;
+- `sensoryAnchors`: cuerpo, lugar y presion social que deben sostener emocion sin explicar todo;
+- `dialogueShape`: densidad esperada de dialogo y prohibicion de respuestas planas;
+- `slowBurnRule`: confianza, miedo, respeto, perdon e intimidad avanzan por microcambios, no por salto brusco;
+- `boundary`: no inventar resultados mecanicos, conocimiento secreto ni pensamientos privados como certeza.
+
+Uso esperado:
+
+- abrir con un objeto, gesto, sonido, cuerpo o interrupcion concreta;
+- dejar que el NPC primero proteja su mascara publica, tarea, orgullo o limite;
+- mostrar como la accion de Lucas mueve algo visible: pausa, mirada, objeto, distancia, tono o decision;
+- mostrar una grieta o cambio pequeno sin convertirlo en confesion total;
+- cerrar con proxima decision clara y despues HUD mecanico.
+
 Cada `scene.nearbyNpcs[]` debe exponer `dialogueProfile` compacto:
 
 - `speechRhythm`: como suena el NPC;
 - `relationshipRegister`: como cambia el trato por confianza, respeto, sospecha, miedo o familiaridad;
 - `emotionalTemperature`: que emocion domina la respuesta;
 - `currentPressure`: si el NPC esta libre, trabajando, ocupado o ausente;
+- `dramaticRole`: mascara publica, deseo visible, presion oculta como gesto, resistencia, ancla de objeto, escalera de beats y limite por relacion;
 - `emotionalSubtext`: deseos, miedos, contradicciones y gestos visibles del NPC;
 - `subtextSeed`: valores, rechazos y postura social resumidos;
 - `dialogueMoves`: recursos de dialogo permitidos para ese NPC;
 - `avoid`: limites para no hacerlo generico, omnisciente o mecanico.
+
+`dialogueProfile.dramaticRole` no permite leer la mente del NPC. Es una guia de puesta en escena:
+
+- `publicMask`: como se protege el NPC ante Lucas o ante el publico;
+- `sceneWant`: que intenta sostener en la escena desde rol/tarea/valor;
+- `hiddenPressure`: miedo o presion que solo puede aparecer en gesto, limite o cambio de tono;
+- `resistanceMove`: como se resiste antes de ceder, ayudar, negar o negociar;
+- `vulnerabilityTell`: gesto visible que revela una grieta sin explicar interioridad;
+- `objectAnchor`: objeto, herramienta, mueble, ruido o detalle fisico que carga subtexto sin volverse item mecanico;
+- `beatLadder`: mascara, friccion, grieta y giro;
+- `relationshipGate`: limite por confianza, sospecha, respeto, miedo o familiaridad.
 
 Cada `scene.nearbyNpcs[]` tambien puede exponer `emotionalProfile`: `defaultMood`, `coreDrives`, `coreFears`, `pride`, `softSpots`, `stressors`, `visibleTells`, `copingStyle`, `contradiction` y `sceneHooks`. Es guia de subtexto visible, no telepatia. El GPT puede convertirlo en gestos, tono, pausas, silencios, decisiones y dialogo, pero no debe decir que Lucas conoce deseos o miedos privados si no hay fuente diegetica.
 

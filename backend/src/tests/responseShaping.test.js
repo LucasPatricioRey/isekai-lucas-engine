@@ -2,6 +2,8 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
+  buildDramaticContext,
+  buildNpcDialogueProfile,
   buildWorldFrictionSummary,
   missionActionState,
   summarizeMission,
@@ -189,4 +191,76 @@ test("summarizes calm world friction without pressure", () => {
   assert.equal(summary.travel.hasPressure, false);
   assert.equal(summary.weather.exteriorTravelTimeMultiplier, 1);
   assert.deepEqual(summary.guidance, []);
+});
+
+test("builds NPC dramatic role for emotional scene direction", () => {
+  const profile = buildNpcDialogueProfile(
+    {
+      npcId: "npc_eddan_test",
+      name: "Eddan Rusk",
+      role: "Instructor del gremio",
+      currentTask: "corrige fundamentos de daga en el patio",
+      availability: { status: "busy" },
+      personality: ["aspero", "frontal", "practico"],
+      speechStyle: "frases secas con subtexto de cuidado",
+      values: ["supervivencia", "disciplina"],
+      emotionalProfile: {
+        schemaVersion: "emotional_profile_v1",
+        coreDrives: ["que los novatos sobrevivan"],
+        coreFears: ["ver a alguien joven morir por orgullo"],
+        softSpots: ["disciplina sin teatro"],
+        visibleTells: ["mira los pies antes que la cara"],
+        sceneHooks: ["corrige con una imagen concreta del peligro"],
+      },
+    },
+    { trust: 12, respect: 20, familiarity: 8 }
+  );
+
+  assert.equal(profile.dramaticRole.schemaVersion, "npc_dramatic_role_v1");
+  assert.match(profile.dramaticRole.publicMask, /dureza practica/);
+  assert.match(profile.dramaticRole.sceneWant, /corrige fundamentos/);
+  assert.match(profile.dramaticRole.hiddenPressure, /gesto/);
+  assert.match(profile.dramaticRole.beatLadder.join(" "), /Mascara/);
+  assert.match(profile.dramaticRole.rule, /No narrar pensamiento privado/);
+});
+
+test("dramatic context exposes emotional scene director", () => {
+  const context = buildDramaticContext({
+    gameState: {
+      currentDay: 17,
+      time: "09:40",
+      locationId: "loc_hoshimori_guild_patio",
+    },
+    lucasSummary: {
+      life: { current: 100, max: 100 },
+      satiety: { current: 79, max: 100 },
+      energy: { current: 45, max: 100 },
+      injuries: [],
+      conditions: [],
+    },
+    currentLocation: {
+      locationId: "loc_hoshimori_guild_patio",
+      name: "Patio del gremio",
+      type: "training_yard",
+      tags: ["guild", "training"],
+    },
+    npcPresence: {
+      sameRoom: [{ npcId: "npc_eddan_rusk", name: "Eddan Rusk" }],
+      visible: [{ npcId: "npc_eddan_rusk", name: "Eddan Rusk" }],
+      sameBuilding: [],
+    },
+    nearbyNpcs: [
+      {
+        npcId: "npc_eddan_rusk",
+        dialogueProfile: { schemaVersion: "dialogue_profile_v1" },
+      },
+    ],
+  });
+
+  assert.equal(context.emotionalScene.schemaVersion, "emotional_scene_director_v1");
+  assert.equal(context.emotionalScene.sceneMode, "dramatized_scene");
+  assert.match(context.emotionalScene.beatEngine.join(" "), /Mascara/);
+  assert.match(context.emotionalScene.sensoryAnchors.place, /polvo|madera|cuero/);
+  assert.match(context.emotionalScene.dialogueShape.noFlatReply, /una sola frase minima/);
+  assert.match(context.styleDirectives.join(" "), /grieta visible/);
 });

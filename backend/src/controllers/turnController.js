@@ -3579,7 +3579,7 @@ async function applyTurn(req, res) {
       }
 
       if (changes.time && gameId === "isekai_lucas_main") {
-        const weatherChanges = await ensureCurrentWeatherForGameState(gameState, { session });
+        const weatherChanges = await ensureCurrentWeatherForGameState(updatedGameState, { session });
         if (weatherChanges.changed) {
           changes.weather = {
             before: weatherChanges.before

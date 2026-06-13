@@ -225,6 +225,16 @@ async function checkCompactEndpoints(issues) {
   );
   assertCondition(
     issues,
+    "context/compact exposes emotional scene director",
+    context.context?.dramaticContext?.emotionalScene?.schemaVersion === "emotional_scene_director_v1"
+  );
+  assertCondition(
+    issues,
+    "emotional scene director exposes beat engine",
+    (context.context?.dramaticContext?.emotionalScene?.beatEngine || []).some((line) => /Mascara/.test(line))
+  );
+  assertCondition(
+    issues,
     "context/compact exposes NPC dialogue profiles",
     (context.context?.scene?.nearbyNpcs || []).some(
       (npc) => npc.dialogueProfile?.schemaVersion === "dialogue_profile_v1"
@@ -241,6 +251,13 @@ async function checkCompactEndpoints(issues) {
     issues,
     "context/compact exposes NPC emotional subtext in dialogue profiles",
     (context.context?.scene?.nearbyNpcs || []).some((npc) => npc.dialogueProfile?.emotionalSubtext?.rule)
+  );
+  assertCondition(
+    issues,
+    "context/compact exposes NPC dramatic roles",
+    (context.context?.scene?.nearbyNpcs || []).some(
+      (npc) => npc.dialogueProfile?.dramaticRole?.schemaVersion === "npc_dramatic_role_v1"
+    )
   );
   assertCondition(
     issues,

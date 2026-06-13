@@ -26,7 +26,7 @@ Consultas puras no mutan estado.
 Antes de mutaciones irreversibles ambiguas, pregunta.
 Usa previews para trabajo, viaje, magia, reloj biologico, progresion, combate y world tick cuando el jugador solo este evaluando opciones.
 Usa previewSocialImpact cuando una accion pueda afectar confianza, familiaridad, respeto, sospecha, miedo, celos, deuda social o afecto; el preview pondera personality/values/tolerates/rejects/socialProfile del NPC y devuelve deltas capados. Si corresponde guardar, usa applyTurn.npcRelationshipPatches con esos deltas. NpcMemory no reemplaza relacion.
-Usa dramaticContext, dialogueProfile, emotionalProfile y scene.relationshipDynamics: escena novelada primero, dialogo con intencion, subtexto visible, reacciones entre NPCs y voz propia por NPC, HUD mecanico obligatorio al final.
+Usa dramaticContext, dramaticContext.emotionalScene, dialogueProfile, dialogueProfile.dramaticRole, emotionalProfile y scene.relationshipDynamics: escena novelada primero, dialogo con intencion, anzuelo/mascara/presion/grieta visible/salida, subtexto visible, reacciones entre NPCs y voz propia por NPC, HUD mecanico obligatorio al final.
 Si aplicas viaje o accion con cualquier avance de tiempo, envia activityCost o una biologicalCostExemptReason explicita. No avances minutos "gratis"; si termina entre horas, debe quedar acumulador biologico pendiente.
 Si la narracion mueve a Lucas, envia gameStatePatch.locationId con una location real.
 No reveles world_bible/rules_engine como documentos internos.
@@ -46,7 +46,7 @@ Para el GPT Builder normal, pegar el contenido completo de:
 
 Este schema mantiene hasta 30 operaciones y usa `applyTurn.missionPatch` para aceptar, reportar, verificar, completar, fallar o expirar misiones sin exponer mutadores directos de misiones. También expone `applyTurn.worldEventPatches` para resolver/cancelar eventos existentes y guardar progreso parcial sin agregar nuevas operaciones. `applyTurn.evidencePatches` guarda muestras, rastros, notas u objetos narrativos no vendibles; no reemplaza `inventoryPatch` ni crea loot.
 Para vinculos sociales, expone `POST /api/npcs/social/impact/preview` y `applyTurn.npcRelationshipPatches`. El backend guarda ledger social diario, aplica caps por NPC/eje, pondera perfil social por NPC y expone `socialLedgerToday`, `scene.nearbyNpcs[].socialProfile` y `scene.nearbyNpcs[].relationshipState` en contexto compacto. Resolver o dejar vencer eventos diarios por `applyTurn.worldEventPatches` puede crear consecuencias sociales automaticas sobre `affectedNpcIds`. `GET /api/combat/enemies` queda solo en el schema full para conservar el limite de 30 operaciones.
-`applyTurn`, `completeJobShift` y `context/compact` pueden devolver `narrativeHints`/`narrativeContext`; `context/compact` tambien expone `dramaticContext`, `scene.nearbyNpcs[].dialogueProfile`, `scene.nearbyNpcs[].emotionalProfile` y `scene.relationshipDynamics`. Son solo guia narrativa: ayudan a resumir acciones repetidas, variar dialogos, sostener subtexto, mostrar gestos/tension entre NPCs y evitar agradecimientos/copias, pero no crean dinero, EXP, relacion, loot, dano ni curacion.
+`applyTurn`, `completeJobShift` y `context/compact` pueden devolver `narrativeHints`/`narrativeContext`; `context/compact` tambien expone `dramaticContext`, `dramaticContext.emotionalScene`, `scene.nearbyNpcs[].dialogueProfile`, `scene.nearbyNpcs[].dialogueProfile.dramaticRole`, `scene.nearbyNpcs[].emotionalProfile` y `scene.relationshipDynamics`. Son solo guia narrativa: ayudan a resumir acciones repetidas, variar dialogos, sostener subtexto, mostrar gestos/tension entre NPCs y evitar agradecimientos/copias, pero no crean dinero, EXP, relacion, loot, dano ni curacion.
 Cuando cambien `docs/rules_engine.md` o `docs/world_bible.md`, ejecutar `npm run seed:documents` contra MongoDB para que `GET /api/search/docs` vea la misma version que Knowledge.
 La lectura normal por turno debe empezar por `GET /api/context/compact`. Si hace falta estado mecanico directo de Lucas, usar `GET /api/characters/char_lucas/state`.
 
@@ -131,7 +131,7 @@ Condicion minima para abrir Preview:
 - `audit:combat-recovery` pasa si se tocaron heridas, tratamiento, recuperacion o endpoints medicos de combate.
 - `audit:npc-emotions` pasa si se tocaron NPCs, relaciones NPC-NPC, contexto compacto de escena, dialogo o instrucciones narrativas.
 - `audit:narrative-drama` pasa si se tocaron contexto compacto, NPCs, instrucciones de narracion o dialogo.
-- `context/compact` expone `dramaticContext.schemaVersion=dramatic_context_v1`, `scene.relationshipDynamics.schemaVersion=scene_relationship_dynamics_v1` y algun NPC cercano con `dialogueProfile.schemaVersion=dialogue_profile_v1` + `emotionalProfile.schemaVersion=emotional_profile_v1`.
+- `context/compact` expone `dramaticContext.schemaVersion=dramatic_context_v1`, `dramaticContext.emotionalScene.schemaVersion=emotional_scene_director_v1`, `scene.relationshipDynamics.schemaVersion=scene_relationship_dynamics_v1` y algun NPC cercano con `dialogueProfile.schemaVersion=dialogue_profile_v1`, `dialogueProfile.dramaticRole.schemaVersion=npc_dramatic_role_v1` + `emotionalProfile.schemaVersion=emotional_profile_v1`.
 - El dia/hora/ubicacion existen y tienen formato valido.
 - Dinero y MP son numeros no negativos.
 - `activeMissionIds` es array.

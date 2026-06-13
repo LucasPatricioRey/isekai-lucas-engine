@@ -13,14 +13,16 @@ Usar esta rubrica durante pruebas manuales en GPT Builder Preview. Marcar cada i
 | Estado | Incluye HP/MP/saciedad/energia si hubo cambio o si el usuario lo pidio. |
 | Opciones | Ofrece opciones accionables concretas cuando corresponde, sin forzar una unica ruta. |
 
-## Narracion y dialogo C14/C15
+## Narracion y dialogo C14/C15/C16
 
 | Criterio | OK esperado |
 |---|---|
 | Escena primero | La respuesta abre con escena novelada, no con lista mecanica, cuando esta en partida. |
 | HUD final | El HUD/estado mecanico queda al final y no reemplaza la narracion. |
 | DramaticContext | Usa tension de escena confirmada: cuerpo de Lucas, eventos, misiones, compromisos, clima, NPCs o combate activo. |
+| EmotionalScene | Usa anzuelo, mascara, presion, grieta visible y salida cuando hay NPC, tension o decision. |
 | DialogueProfile | Los NPCs hablan distinto segun voz, personalidad, relacion, tarea, cansancio y conocimiento. |
+| DramaticRole NPC | El NPC protege una mascara publica, resiste segun rol/confianza y revela subtexto con gesto/objeto, no con telepatia. |
 | EmotionalProfile | Los NPCs muestran deseos, miedos, orgullo, contradicciones y gestos visibles sin revelar interioridad privada como certeza de Lucas. |
 | Intencion de dialogo | Cada linea busca algo: medir, cuidar, presionar, ocultar, corregir, negociar, provocar o revelar. |
 | Dialogo seco con contenido | Un NPC aspero puede ser breve, pero no pobre: en pedido, entrenamiento o conflicto debe haber gesto, causa, consecuencia o subtexto; no una unica frase minima. |

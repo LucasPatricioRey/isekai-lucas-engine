@@ -826,6 +826,123 @@ function buildDialogueMovesForNpc(npc = {}, relationship = {}) {
   return unique(moves).slice(0, 5);
 }
 
+function publicMaskForNpc(npc = {}) {
+  const text = `${(npc.personality || []).join(" ")} ${npc.speechStyle || ""} ${(npc.values || []).join(" ")} ${npc.role || ""}`;
+
+  if (textHasAny(text, ["formal", "institucional", "ordenada", "burocratica", "procedimiento"])) {
+    return "se protege con procedimiento, precision y distancia institucional";
+  }
+  if (textHasAny(text, ["seco", "aspero", "frontal", "directo", "grunon"])) {
+    return "se protege con dureza practica, ordenes cortantes y correcciones concretas";
+  }
+  if (textHasAny(text, ["amable", "gentil", "compasivo", "maternal", "calida", "suave"])) {
+    return "se protege cuidando lo practico antes de mostrar preocupacion directa";
+  }
+  if (textHasAny(text, ["nerviosa", "timida", "reservada", "inseguro"])) {
+    return "se protege bajando la mirada, ocupando las manos o contestando demasiado rapido";
+  }
+  if (textHasAny(text, ["charlatan", "dramatica", "vendedor", "energetica", "cuenta historias"])) {
+    return "se protege con ruido social, humor, venta o energia antes de admitir tension";
+  }
+  if (textHasAny(text, ["misteriosa", "intuitiva", "reflexivo", "pausado"])) {
+    return "se protege con pausas, preguntas laterales y verdades incompletas";
+  }
+  if (textHasAny(text, ["competitivo", "ambiciosa", "quiere demostrar", "reconocimiento"])) {
+    return "se protege convirtiendo la escena en desafio, comparacion o prueba de valor";
+  }
+
+  return "se protege con su rol, su tarea actual y una distancia social razonable";
+}
+
+function resistanceMoveForNpc(npc = {}, relationship = {}, pressure = null) {
+  const text = `${(npc.personality || []).join(" ")} ${npc.speechStyle || ""} ${(npc.values || []).join(" ")} ${npc.role || ""}`;
+  const suspicion = Number(relationship.suspicion) || 0;
+  const fear = Number(relationship.fear) || 0;
+
+  if (fear >= 25) return "mantener distancia fisica y pedir senales claras de seguridad";
+  if (suspicion >= 25) return "medir contradicciones antes de conceder informacion o ayuda";
+  if (["busy", "on_task"].includes(pressure?.key)) return "defender su tiempo, tarea o responsabilidad antes de responder de lleno";
+  if (textHasAny(text, ["formal", "institucional", "procedimiento"])) return "pedir datos, fuente o procedimiento antes de dejarse arrastrar por emocion";
+  if (textHasAny(text, ["seco", "aspero", "frontal", "directo", "grunon"])) return "corregir el error visible antes de aceptar la intencion de Lucas";
+  if (textHasAny(text, ["amable", "gentil", "calida", "suave"])) return "cuidar con un gesto pequeno sin entregar intimidad de golpe";
+  if (textHasAny(text, ["nerviosa", "timida", "reservada", "inseguro"])) return "dudar, acomodarse o pedir permiso antes de decir lo que realmente piensa";
+  if (textHasAny(text, ["charlatan", "dramatica", "vendedor", "energetica"])) return "desviar con humor, oferta o exageracion antes de tocar el punto sensible";
+  if (textHasAny(text, ["competitivo", "ambiciosa", "reconocimiento"])) return "convertir la respuesta en reto, condicion o pequena competencia";
+
+  return "poner una condicion practica antes de avanzar la escena";
+}
+
+function objectAnchorForNpc(npc = {}) {
+  const text = `${npc.role || ""} ${npc.currentTask || ""} ${(npc.personality || []).join(" ")}`;
+
+  if (textHasAny(text, ["gremio", "registro", "mostrador", "documento", "procedimiento"])) {
+    return "papeles, sello, mostrador, carpetas o el peso de una pausa institucional";
+  }
+  if (textHasAny(text, ["instructor", "guardia", "combate", "entren", "arma", "patrulla"])) {
+    return "pies, funda, vara, correa, polvo del patio o distancia entre cuerpos";
+  }
+  if (textHasAny(text, ["posada", "taberna", "cocina", "mesera", "dueno", "trabaja"])) {
+    return "bandeja, taza, trapo, mesa, monedas, delantal o ruido de cocina";
+  }
+  if (textHasAny(text, ["mercader", "mercado", "tienda", "stock", "vende"])) {
+    return "bolsa, balanza, caja, genero, moneda o mercancia que cambia de manos";
+  }
+  if (textHasAny(text, ["templo", "sanador", "cura", "oracion"])) {
+    return "agua, cuentas, banco, vendas, lampara o silencio de templo";
+  }
+  if (textHasAny(text, ["herrero", "forja", "hierro", "yunque"])) {
+    return "martillo, ceniza, metal caliente, cuero o herramienta que no se suelta";
+  }
+
+  return "manos, ropa, herramienta de tarea, mueble cercano o ruido del lugar; no convertirlo en item mecanico";
+}
+
+function buildNpcDramaticRole(npc = {}, relationshipInput = null) {
+  if (!npc) return null;
+  const relationship = normalizeRelationship(relationshipInput || npc.relationshipWithLucas || {});
+  const relationshipState = evaluateSocialRelationshipState(relationship);
+  const register = relationshipDialogueRegister(relationship, relationshipState);
+  const pressure = currentDialoguePressure(npc);
+  const emotionalProfile = summarizeNpcEmotionalProfile(npc);
+  const coreDrive = emotionalProfile?.coreDrives?.[0] || "";
+  const coreFear = emotionalProfile?.coreFears?.[0] || "";
+  const visibleTell = emotionalProfile?.visibleTells?.[0] || "una pausa, mirada o decision visible cambia el peso de la escena";
+  const softSpot = emotionalProfile?.softSpots?.[0] || emotionalProfile?.pride || "algo que respeta";
+  const sceneHook = emotionalProfile?.sceneHooks?.[0] || "";
+  const mask = publicMaskForNpc(npc);
+  const resistance = resistanceMoveForNpc(npc, relationship, pressure);
+
+  return {
+    schemaVersion: "npc_dramatic_role_v1",
+    publicMask: truncateText(mask, 130),
+    sceneWant: truncateText(
+      pressure?.key && pressure.key !== "available"
+        ? `${pressure.summary} Quiere sostener eso antes de girar hacia Lucas.`
+        : coreDrive
+          ? `Quiere ${coreDrive}.`
+          : "Quiere proteger su rol, su tiempo o su imagen publica.",
+      170
+    ),
+    hiddenPressure: truncateText(
+      coreFear
+        ? `La escena puede rozar su miedo a ${coreFear}; mostrarlo solo como gesto, limite o cambio de tono.`
+        : "La escena debe insinuar presion sin explicar pensamientos privados.",
+      180
+    ),
+    resistanceMove: truncateText(resistance, 150),
+    vulnerabilityTell: truncateText(visibleTell, 120),
+    objectAnchor: truncateText(objectAnchorForNpc(npc), 150),
+    beatLadder: [
+      "1) Mascara: responder desde rol, tarea o defensa publica.",
+      `2) Friccion: si Lucas insiste, ${resistance}.`,
+      `3) Grieta: si toca ${softSpot}, mostrar un gesto o decision mas honesta sin confesion total.`,
+      sceneHook ? `4) Giro: ${sceneHook}.` : "4) Giro: ofrecer limite, condicion, pregunta o pequena apertura.",
+    ].slice(0, 4),
+    relationshipGate: truncateText(register.guidance, 150),
+    rule: "No narrar pensamiento privado como hecho: convertir deseo, miedo o contradiccion en gesto, silencio, objeto, decision o dialogo permitido.",
+  };
+}
+
 function buildDialogueAvoidForNpc(npc = {}, relationship = {}) {
   const avoids = [
     "no sonar intercambiable con otros NPCs",
@@ -895,6 +1012,7 @@ function buildNpcDialogueProfile(npc, relationshipInput = null) {
     relationshipRegister: register,
     emotionalTemperature,
     currentPressure: pressure,
+    dramaticRole: buildNpcDramaticRole(npc, relationship),
     emotionalSubtext: emotionalProfile
       ? {
           defaultMood: emotionalProfile.defaultMood,
@@ -1384,6 +1502,92 @@ function statPercent(stat) {
   return Math.round((current / max) * 100);
 }
 
+function buildBodyAnchor({ satietyPercent = null, energyPercent = null, lifePercent = null, injuries = [] } = {}) {
+  if (lifePercent !== null && lifePercent < 75) return "dolor, proteccion del cuerpo y respiracion medida";
+  if (toArray(injuries).length > 0) return "heridas, rigidez o cuidado involuntario de la zona lastimada";
+  if (satietyPercent !== null && satietyPercent <= 45) return "hambre en paciencia, manos, estomago y decisiones practicas";
+  if (energyPercent !== null && energyPercent <= 40) return "cansancio en respiracion, postura, lentitud y tolerancia";
+  return "cuerpo presente sin convertir cada gesto en mecanica";
+}
+
+function buildPlaceAnchor(location = null, weather = null) {
+  const locationText = `${location?.type || ""} ${(location?.tags || []).join(" ")} ${location?.name || ""}`;
+  const weatherText = `${weather?.currentCondition || ""} ${weather?.summary || ""}`;
+
+  if (textHasAny(locationText, ["guild", "gremio", "patio", "training", "entren"])) {
+    return "polvo, madera, cuero, voces del gremio y distancia fisica del entrenamiento";
+  }
+  if (textHasAny(locationText, ["inn", "posada", "tavern", "grulla", "cocina"])) {
+    return "vajilla, madera gastada, olor a comida, pasos de servicio y conversaciones cortadas";
+  }
+  if (textHasAny(locationText, ["market", "mercado", "shop", "tienda"])) {
+    return "monedas, tela, cajas, pregones, miradas de compra y stock a la vista";
+  }
+  if (textHasAny(locationText, ["forest", "bosque", "road", "camino", "gate", "puerta"])) {
+    return "barro, hojas, viento, distancia de ruta y sonidos que obligan a mirar dos veces";
+  }
+  if (textHasAny(locationText, ["temple", "templo", "shrine", "santuario"])) {
+    return "agua, piedra fria, lamparas, silencio y pasos contenidos";
+  }
+  if (textHasAny(weatherText, ["rain", "lluvia", "storm", "tormenta"])) {
+    return "humedad, ropa pesada, suelo inseguro y ruido de lluvia";
+  }
+
+  return "un objeto, sonido u olor propio del lugar debe cargar parte de la emocion";
+}
+
+function buildEmotionalSceneDirector({
+  currentLocation = null,
+  sameRoom = [],
+  highestSeverity = "quiet",
+  primarySource = null,
+  satietyPercent = null,
+  energyPercent = null,
+  lifePercent = null,
+  injuries = [],
+  weather = null,
+  relationshipDynamics = null,
+} = {}) {
+  const hasNpc = toArray(sameRoom).length > 0;
+  const hasGroup = toArray(sameRoom).length >= 2 || Number(relationshipDynamics?.count) > 0;
+  const important = ["high", "medium"].includes(highestSeverity) || hasNpc;
+  const locationName = currentLocation?.name || "la escena";
+
+  return {
+    schemaVersion: "emotional_scene_director_v1",
+    sceneMode: important ? "dramatized_scene" : "living_brief",
+    paragraphTarget: important ? "3-6 parrafos antes del HUD si hay decision o NPC relevante" : "1-3 parrafos con un detalle vivo antes del HUD",
+    emotionalQuestion: primarySource
+      ? `Que mascara, limite o deseo visible se tensa en ${locationName} por ${primarySource.key}?`
+      : `Que pequeno cambio visible hace que ${locationName} no se sienta estatica?`,
+    beatEngine: [
+      "Anzuelo: abrir con objeto, gesto, sonido, cuerpo o interrupcion; no con resumen administrativo.",
+      "Mascara: el NPC primero protege rol, tarea, orgullo o limite; no concede todo de inmediato.",
+      "Presion: la accion de Lucas debe mover algo visible: pausa, mirada, objeto, distancia, tono o decision.",
+      "Grieta: mostrar una apertura, rechazo mas honesto, condicion o pregunta; no explicar todo el interior.",
+      "Salida: terminar con proxima decision clara y luego HUD mecanico.",
+    ],
+    sensoryAnchors: {
+      body: buildBodyAnchor({ satietyPercent, energyPercent, lifePercent, injuries }),
+      place: buildPlaceAnchor(currentLocation, weather),
+      social: hasGroup
+        ? "miradas cruzadas, interrupciones, alianzas pequenas y silencios entre NPCs"
+        : hasNpc
+          ? "distancia fisica, manos ocupadas, ritmo de voz y objeto de tarea del NPC"
+          : "cuerpo de Lucas, lugar, clima y objetivos abiertos",
+    },
+    dialogueShape: {
+      importantNpcScene: "2-5 intervenciones con gesto/subtexto si la accion pide respuesta emocional o social.",
+      lineRule: "Una linea puede ser breve, pero debe cargar deseo, miedo, prueba, limite, oferta o consecuencia.",
+      noFlatReply: "Evitar respuesta de una sola frase minima cuando hay pedido, entrenamiento, conflicto o decision.",
+    },
+    slowBurnRule:
+      "No resolver confianza, intimidad, perdon, miedo o respeto de golpe; avanzar por microcambios visibles y consecuencias guardadas por backend.",
+    boundary:
+      "Dramatizar solo estado confirmado y subtexto visible; no inventar resultados mecanicos, conocimiento secreto ni pensamientos privados como certeza de Lucas.",
+  };
+}
+
 function buildDramaticContext({
   gameState = null,
   lucasSummary = null,
@@ -1532,6 +1736,18 @@ function buildDramaticContext({
   const dramaticQuestion = primarySource
     ? `Que cambia ahora en ${locationName} por ${primarySource.key}?`
     : `Que detalle vivo de ${locationName} empuja la proxima decision de Lucas?`;
+  const emotionalScene = buildEmotionalSceneDirector({
+    currentLocation,
+    sameRoom,
+    highestSeverity,
+    primarySource,
+    satietyPercent,
+    energyPercent,
+    lifePercent,
+    injuries,
+    weather,
+    relationshipDynamics,
+  });
 
   return {
     schemaVersion: "dramatic_context_v1",
@@ -1552,6 +1768,7 @@ function buildDramaticContext({
     styleDirectives: [
       "Abrir desde sensacion, gesto, interrupcion o presion concreta; evitar resumen plano si hay NPCs o tension.",
       "Usar microacciones y subtexto: respiracion, manos, miradas, tareas, silencios, objetos y reaccion del entorno.",
+      "Construir escena con anzuelo, mascara, presion, grieta visible y salida; no saltar directo a resumen si hay respuesta emocional.",
       "La rutina puede ser breve, pero debe dejar una pequena consecuencia emocional, social o fisica si el estado lo permite.",
       "No convertir todo en exposicion; separar escena dramatica del HUD mecanico final.",
     ],
@@ -1564,6 +1781,7 @@ function buildDramaticContext({
       "Respetar npcKnowledgeContext: certeza solo con fuente diegetica; inferencias deben sonar como duda, pregunta o rumor.",
       "Ningun NPC debe recitar HUD, numeros o reglas del backend salvo interfaz administrativa explicita.",
     ],
+    emotionalScene,
     groupDynamics: {
       mode: groupMode,
       sameRoomNpcIds: visibleNpcIds.slice(0, 8),
@@ -1635,6 +1853,7 @@ module.exports = {
   summarizeLocation,
   buildNpcVoiceProfile,
   buildNpcDialogueProfile,
+  buildNpcDramaticRole,
   summarizeNpcEmotionalProfile,
   summarizeNpcRelationship,
   buildSceneRelationshipDynamics,

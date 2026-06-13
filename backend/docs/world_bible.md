@@ -8,6 +8,7 @@ Continuidad canon inicial/importada: Día 10, 12:00, La Grulla Azul, Hoshimori. 
 Actualización C9: mantener este archivo como biblia de mundo, pero no usarlo para decidir día, hora, ubicación, misiones activas, eventos vivos, NPCs presentes, stock, heridas, conocimiento privado ni recompensas actuales.
 Actualizacion C14: este archivo sigue definiendo lore estable; la voz viva de NPCs, relacion con Lucas, tension emocional, disponibilidad y subtexto se consultan en backend mediante `dialogueProfile`, `voiceProfile`, `socialRhythm` y `npcKnowledgeContext`.
 Actualizacion C15: los rasgos emocionales vivos de NPCs persistentes se consultan en backend mediante `emotionalProfile` y `scene.relationshipDynamics`; este archivo solo da base de mundo, no interioridad actual ni escena presente.
+Actualizacion C16: la direccion dramatica viva se consulta en backend mediante `dramaticContext.emotionalScene` y `dialogueProfile.dramaticRole`; este archivo no reemplaza mascara, presion, grieta visible ni escena actual.
 
 ---
 

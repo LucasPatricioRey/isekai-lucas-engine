@@ -172,6 +172,7 @@ function slimNpcSummaryForProfile(npc, profile) {
           relationshipRegister: npc.dialogueProfile.relationshipRegister || null,
           emotionalTemperature: npc.dialogueProfile.emotionalTemperature || null,
           currentPressure: npc.dialogueProfile.currentPressure || null,
+          dramaticRole: npc.dialogueProfile.dramaticRole || null,
           emotionalSubtext: npc.dialogueProfile.emotionalSubtext || null,
           subtextSeed: npc.dialogueProfile.subtextSeed || "",
           dialogueMoves: (npc.dialogueProfile.dialogueMoves || []).slice(0, 3),

@@ -104,6 +104,16 @@ async function main() {
   );
   assertCondition(
     issues,
+    "all dialogue profiles expose dramatic role direction",
+    npcSummaries.every((npc) => npc.dialogueProfile?.dramaticRole?.schemaVersion === "npc_dramatic_role_v1")
+  );
+  assertCondition(
+    issues,
+    "dramatic roles preserve private thought boundary",
+    npcSummaries.every((npc) => /No narrar pensamiento privado/.test(npc.dialogueProfile?.dramaticRole?.rule || ""))
+  );
+  assertCondition(
+    issues,
     "all dialogue profiles expose anti-HUD dialogue guardrail",
     npcSummaries.every((npc) =>
       (npc.dialogueProfile?.avoid || []).some((line) => /HUD|mecanicas/.test(line))
@@ -113,6 +123,8 @@ async function main() {
   const speechStyles = unique(npcSummaries.map((npc) => npc.dialogueProfile?.speechRhythm));
   const registers = unique(npcSummaries.map((npc) => npc.dialogueProfile?.relationshipRegister?.key));
   const dialogueMoves = unique(npcSummaries.flatMap((npc) => npc.dialogueProfile?.dialogueMoves || []));
+  const masks = unique(npcSummaries.map((npc) => npc.dialogueProfile?.dramaticRole?.publicMask));
+  const anchors = unique(npcSummaries.map((npc) => npc.dialogueProfile?.dramaticRole?.objectAnchor));
   const maxProfileBytes = Math.max(
     0,
     ...npcSummaries.map((npc) => Buffer.byteLength(JSON.stringify(npc.dialogueProfile || {}), "utf8"))
@@ -123,7 +135,7 @@ async function main() {
   assertCondition(
     issues,
     "dialogue profiles stay compact",
-    maxProfileBytes <= 2400,
+    maxProfileBytes <= 3800,
     `${maxProfileBytes} bytes max`
   );
   assertCondition(
@@ -143,6 +155,18 @@ async function main() {
     "dialogue move library is populated",
     dialogueMoves.length >= 3,
     `${dialogueMoves.length} unique`
+  );
+  assertCondition(
+    issues,
+    "dramatic masks have useful diversity",
+    npcs.length < 5 || masks.length >= 3,
+    `${masks.length} unique`
+  );
+  assertCondition(
+    issues,
+    "object anchors have useful diversity",
+    npcs.length < 5 || anchors.length >= 3,
+    `${anchors.length} unique`
   );
 
   if (missingSpeechStyle.length > 0) warnings.push(`NPCs without speechStyle: ${missingSpeechStyle.slice(0, 12).join(", ")}`);
@@ -171,6 +195,21 @@ async function main() {
     issues,
     "dramaticContext has a dramatic question",
     Boolean(dramaticContext.sceneTension?.dramaticQuestion)
+  );
+  assertCondition(
+    issues,
+    "dramaticContext exposes emotional scene director",
+    dramaticContext.emotionalScene?.schemaVersion === "emotional_scene_director_v1"
+  );
+  assertCondition(
+    issues,
+    "emotional scene director exposes beat engine",
+    (dramaticContext.emotionalScene?.beatEngine || []).some((line) => /Mascara/.test(line))
+  );
+  assertCondition(
+    issues,
+    "emotional scene director keeps mechanics boundary",
+    /no inventar resultados mecanicos/.test(dramaticContext.emotionalScene?.boundary || "")
   );
 
   if (warnings.length > 0) {
