@@ -875,11 +875,11 @@ function resistanceMoveForNpc(npc = {}, relationship = {}, pressure = null) {
 function objectAnchorForNpc(npc = {}) {
   const text = `${npc.role || ""} ${npc.currentTask || ""} ${(npc.personality || []).join(" ")}`;
 
-  if (textHasAny(text, ["gremio", "registro", "mostrador", "documento", "procedimiento"])) {
-    return "papeles, sello, mostrador, carpetas o el peso de una pausa institucional";
-  }
   if (textHasAny(text, ["instructor", "guardia", "combate", "entren", "arma", "patrulla"])) {
     return "pies, funda, vara, correa, polvo del patio o distancia entre cuerpos";
+  }
+  if (textHasAny(text, ["gremio", "registro", "mostrador", "documento", "procedimiento"])) {
+    return "papeles, sello, mostrador, carpetas o el peso de una pausa institucional";
   }
   if (textHasAny(text, ["posada", "taberna", "cocina", "mesera", "dueno", "trabaja"])) {
     return "bandeja, taza, trapo, mesa, monedas, delantal o ruido de cocina";
@@ -1514,8 +1514,14 @@ function buildPlaceAnchor(location = null, weather = null) {
   const locationText = `${location?.type || ""} ${(location?.tags || []).join(" ")} ${location?.name || ""}`;
   const weatherText = `${weather?.currentCondition || ""} ${weather?.summary || ""}`;
 
-  if (textHasAny(locationText, ["guild", "gremio", "patio", "training", "entren"])) {
+  if (textHasAny(locationText, ["private_room", "lucas", "habitacion", "rest"])) {
+    return "madera quieta, manta, mochila, luz baja y sonidos lejanos de posada";
+  }
+  if (textHasAny(locationText, ["patio", "training", "entren", "yard"])) {
     return "polvo, madera, cuero, voces del gremio y distancia fisica del entrenamiento";
+  }
+  if (textHasAny(locationText, ["guild", "gremio", "records", "missions", "registro"])) {
+    return "papeles, sello, mostrador, carpetas y pausas de procedimiento";
   }
   if (textHasAny(locationText, ["inn", "posada", "tavern", "grulla", "cocina"])) {
     return "vajilla, madera gastada, olor a comida, pasos de servicio y conversaciones cortadas";

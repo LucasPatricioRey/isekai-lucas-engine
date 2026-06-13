@@ -1,6 +1,6 @@
 # world_bible.md — Isekai Lucas
 
-Versión: Fase C15 v0.5
+Versión: Fase C17 v0.5
 Estado: versión validada por Lucas mediante revisión guiada  
 Uso: archivo de conocimiento/lore estable. No guarda estado vivo y nunca reemplaza MongoDB/backend.
 Continuidad canon inicial/importada: Día 10, 12:00, La Grulla Azul, Hoshimori. La continuidad actual se consulta siempre en backend.
@@ -9,6 +9,7 @@ Actualización C9: mantener este archivo como biblia de mundo, pero no usarlo pa
 Actualizacion C14: este archivo sigue definiendo lore estable; la voz viva de NPCs, relacion con Lucas, tension emocional, disponibilidad y subtexto se consultan en backend mediante `dialogueProfile`, `voiceProfile`, `socialRhythm` y `npcKnowledgeContext`.
 Actualizacion C15: los rasgos emocionales vivos de NPCs persistentes se consultan en backend mediante `emotionalProfile` y `scene.relationshipDynamics`; este archivo solo da base de mundo, no interioridad actual ni escena presente.
 Actualizacion C16: la direccion dramatica viva se consulta en backend mediante `dramaticContext.emotionalScene` y `dialogueProfile.dramaticRole`; este archivo no reemplaza mascara, presion, grieta visible ni escena actual.
+Actualizacion C17: los playtests de escena representativa viven en backend/docs y auditorias (`audit:narrative-scene-playtest`); este archivo sigue siendo lore estable, no una plantilla de respuesta narrativa.
 
 ---
 

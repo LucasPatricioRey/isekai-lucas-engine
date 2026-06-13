@@ -1,6 +1,6 @@
 # rules_engine.md — Motor Isekai Lucas
 
-Versión: Fase C15 v1.0 — narracion dramatica, perfiles emocionales NPC y HUD obligatorio
+Versión: Fase C17 v1.0 — playtest narrativo representativo, perfiles emocionales NPC y HUD obligatorio
 Estado: versión validada por Lucas mediante revisión guiada  
 Fuente de migración: Enciclopedia V2 Isekai Lucas + decisiones confirmadas por Lucas durante Fase 1 + validación guiada Fase 2  
 Propósito: este archivo define **cómo se resuelve el juego**. No contiene el save vivo completo ni el lore mundial extenso; eso vive en MongoDB y `world_bible.md`.
@@ -15,6 +15,7 @@ Actualizacion C14: agrega `dramaticContext` y `dialogueProfile` en contexto comp
 Actualizacion C15: agrega `Npc.emotionalProfile`, subtexto emocional en `dialogueProfile`, `scene.relationshipDynamics` para relaciones NPC-NPC cercanas y `audit:npc-emotions`.
 Actualizacion C15.1: endurece dialogo NPC para evitar frases minimas pobres y sube rangos base de fundamentos tecnicos de combate de 30 min en habilidades principiantes.
 Actualizacion C16: agrega direccion emocional de escena (`dramaticContext.emotionalScene`) y rol dramatico por NPC (`dialogueProfile.dramaticRole`) para sostener anzuelo, mascara, presion, grieta visible y salida sin inventar mecanicas.
+Actualizacion C17: agrega `audit:narrative-scene-playtest` para validar, sin mutar canon, entrenamiento con Eddan, escena grupal en La Grulla Azul, tramite/reporte en gremio y escena solitaria de cansancio; las anclas sensoriales distinguen patio, gremio administrativo y habitacion privada.
 
 ---
 
@@ -1645,7 +1646,7 @@ Si `narrativeHints.scenePlan` pide escena comprimida, resumir la rutina y elegir
 
 Cuando el GPT use `applyTurn` debe enviar `actionFamily` si la accion tiene familia clara (`investigation`, `report`, `travel`, `social`, `physical_training`, `magic_practice`, `mission`, etc.). Este campo solo guia `narrativeHints`: no crea mecanicas ni reemplaza tags, pero evita que reportes, investigaciones o viajes se clasifiquen como compra/entrenamiento por inferencia.
 
-### 19.10 Narracion dramatica y dialogo vivo C14/C15/C16
+### 19.10 Narracion dramatica y dialogo vivo C14/C15/C16/C17
 
 `getCompactContext` debe exponer `dramaticContext` para cada escena jugable. Este bloque no cambia estado ni autoriza resultados; solo guia estilo:
 
@@ -1709,6 +1710,15 @@ Reglas de uso:
 - en grupos, no hacer turnos artificiales: usar miradas, interrupciones, silencio, alianzas pequenas y reacciones cruzadas;
 - respetar `npcKnowledgeContext`: certeza solo con fuente diegetica, inferencias como duda/pregunta/rumor;
 - ningun NPC debe recitar HUD, numeros o reglas salvo interfaz administrativa explicita.
+
+C17 agrega playtest representativo obligatorio. `audit:narrative-scene-playtest` debe cubrir, sin mutar canon:
+
+- entrenamiento con Eddan: un NPC aspero debe corregir con causa, imagen concreta del peligro, gesto y limite, no con una frase minima;
+- La Grulla Azul en grupo: Roberto, Yara y Fern deben reaccionar tambien entre ellos segun tarea, confianza laboral, nervios y limites;
+- gremio administrativo: Garrick y Mara deben sonar institucionales de formas distintas, usando papeles, sello, mostrador, pruebas y procedimiento como ancla;
+- escena sin NPC: el interes debe salir del cuerpo de Lucas, lugar, clima, objetivo abierto o tension pendiente, no de inventar presencia.
+
+Si una escena manual en GPT Builder falla estos casos, primero revisar si el contexto compacto trae `dramaticContext.emotionalScene`, `dialogueProfile.dramaticRole`, `emotionalProfile` y `scene.relationshipDynamics`. Despues revisar instrucciones del GPT. No compensar inventando resultados mecanicos en la prosa.
 
 ### 19.11 Ejemplo: charla ligera con Yara
 

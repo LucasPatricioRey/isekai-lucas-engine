@@ -69,6 +69,35 @@ Resultado esperado:
 - No genera EXP/loot inventado.
 - Rollback manual externo deja el canon intacto.
 
+## D. C17 playtest narrativo sin mutar canon
+
+Objetivo: comprobar que el GPT narra con mas tension, dialogo vivo y HUD final usando los datos compactos del backend. Estas pruebas empiezan con lectura de contexto y no deben mutar estado salvo que el usuario confirme una accion real.
+
+Antes de probar en GPT Builder Preview, correr en local:
+
+```bash
+npm run audit:narrative-scene-playtest
+```
+
+Ese audit arma cuatro escenas representativas en memoria, sin tocar MongoDB: entrenamiento con Eddan, cierre de La Grulla Azul, reporte/tramite en gremio y escena solitaria de Lucas cansado.
+
+Prompts manuales recomendados:
+
+1. `Lucas le pide a Eddan seguir practicando daga, pero quiere que lo corrija de verdad y sin sparring real.`
+2. `Lucas vuelve al comedor de La Grulla Azul al cierre y le pregunta a Yara si necesita ayuda, con Roberto y Fern cerca.`
+3. `Lucas pregunta a Garrick y Mara por el estado del registro y por el mechon gris reportado del borde del bosque.`
+4. `Lucas se queda solo en su habitacion al final del dia, cansado, con el asunto del bosque todavia abierto.`
+
+Resultado esperado:
+
+- La escena abre con un anzuelo concreto: objeto, gesto, sonido, cuerpo o interrupcion.
+- Los NPCs no responden con una sola frase pobre en entrenamiento, pedido directo, conflicto o decision.
+- Cada NPC conserva voz propia segun `dialogueProfile`, `emotionalProfile`, confianza, tarea y conocimiento.
+- En grupo, los NPCs reaccionan tambien entre ellos: miradas, interrupciones, mediaciones, silencios o roces.
+- En escenas sin NPC, el interes sale del cuerpo de Lucas, el lugar, el clima, objetivos abiertos y tension pendiente.
+- El HUD sigue al final y no desaparece.
+- No se inventan EXP, loot, dinero, cierre de evento, heridas, romance, resultados de combate ni presencia de NPCs.
+
 ## Checklist posterior a cada bloque
 
 Preguntar al GPT:

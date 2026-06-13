@@ -267,6 +267,68 @@ function slimNpcKnowledgeContextForProfile(context, profile) {
   };
 }
 
+function slimWorldEventForProfile(event, profile) {
+  if (!event || profile === "debug_audit") return event;
+  return {
+    eventId: event.eventId,
+    title: event.title,
+    type: event.type,
+    eventLayer: event.eventLayer,
+    countsAsMainEvent: Boolean(event.countsAsMainEvent),
+    blocksMainEventGeneration: Boolean(event.blocksMainEventGeneration),
+    status: event.status,
+    severity: event.severity,
+    visibility: event.visibility,
+    startDay: event.startDay,
+    startTime: event.startTime,
+    endDay: event.endDay,
+    endTime: event.endTime || "",
+    affectedLocationIds: (event.affectedLocationIds || []).slice(0, 3),
+    affectedNpcIds: (event.affectedNpcIds || []).slice(0, 3),
+    progress: event.progress
+      ? {
+          stage: event.progress.stage || "",
+          statusLabel: event.progress.statusLabel || "",
+          summary: responseShaping.truncateText(event.progress.summary || "", 160),
+          nextAction: responseShaping.truncateText(event.progress.nextAction || "", 120),
+          evidenceIds: (event.progress.evidenceIds || []).slice(0, 3),
+          reportIds: (event.progress.reportIds || []).slice(0, 3),
+        }
+      : {},
+    dailyEventNotice: event.dailyEventNotice
+      ? {
+          title: event.dailyEventNotice.title,
+          block: event.dailyEventNotice.block || null,
+          text: responseShaping.truncateText(event.dailyEventNotice.text || "", 180),
+        }
+      : null,
+    effects: (event.effects || []).slice(0, 3).map((effect) => ({
+      type: effect.type,
+      summary: responseShaping.truncateText(effect.summary || effect.description || effect.rule || "", 140),
+    })),
+    tags: (event.tags || []).slice(0, 8),
+  };
+}
+
+function eventStatusLineForProfile(event, profile) {
+  if (!event || profile === "debug_audit") return event;
+  return {
+    eventId: event.eventId,
+    title: event.title,
+    status: event.status,
+    eventLayer: event.eventLayer,
+    severity: event.severity,
+    progress: event.progress
+      ? {
+          stage: event.progress.stage || "",
+          statusLabel: event.progress.statusLabel || "",
+          summary: responseShaping.truncateText(event.progress.summary || "", 180),
+          nextAction: responseShaping.truncateText(event.progress.nextAction || "", 120),
+        }
+      : {},
+  };
+}
+
 function uniqueByEventId(events) {
   const seen = new Set();
   const result = [];
@@ -1768,16 +1830,18 @@ async function getCompactContext(req, res) {
         },
         relevantNpcMemories: relevantNpcMemories.map(responseShaping.summarizeNpcMemory),
         mainEvent: mainEventSummary,
-        eventForStatusLine: mainEventSummary,
-        activeEvents: activeEventSummaries,
-        scheduledEvents: scheduledEventSummaries,
+        eventForStatusLine: eventStatusLineForProfile(mainEventSummary, profile),
+        activeEvents: activeEventSummaries.map((event) => slimWorldEventForProfile(event, profile)),
+        scheduledEvents: scheduledEventSummaries.map((event) => slimWorldEventForProfile(event, profile)),
         currentDailyEvent: currentDailyEventSummary,
-        dailyEvents: dailyEvents.map(responseShaping.summarizeWorldEvent),
+        dailyEvents: dailyEvents
+          .map(responseShaping.summarizeWorldEvent)
+          .map((event) => slimWorldEventForProfile(event, profile)),
         minorRumors: [
           ...activeRumors.map(responseShaping.summarizeRumor),
-          ...minorRumorEventSummaries,
+          ...minorRumorEventSummaries.map((event) => slimWorldEventForProfile(event, profile)),
         ],
-        backgroundEvents: backgroundEventSummaries,
+        backgroundEvents: backgroundEventSummaries.map((event) => slimWorldEventForProfile(event, profile)),
         activeRumors: activeRumors.map(responseShaping.summarizeRumor),
         socialLedgerToday: todaySocialLedger.map(responseShaping.summarizeNpcSocialLedger),
         socialRhythm,

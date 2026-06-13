@@ -199,7 +199,13 @@ async function checkCompactEndpoints(issues) {
 
   section("Compact Critical Endpoints");
   assertCondition(issues, "context/compact OK", context.ok === true && context.compact === true);
-  assertCondition(issues, "context/compact stays under GPT Actions response budget", JSON.stringify(context).length < 100000);
+  const contextBytes = JSON.stringify(context).length;
+  assertCondition(
+    issues,
+    "context/compact stays under GPT Actions response budget",
+    contextBytes < 100000,
+    `${contextBytes}/100000 bytes`
+  );
   assertCondition(issues, "context/compact has socialLedgerToday", Array.isArray(context.context?.socialLedgerToday));
   assertCondition(
     issues,

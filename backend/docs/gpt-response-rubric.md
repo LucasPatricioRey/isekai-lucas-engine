@@ -28,6 +28,8 @@ Usar esta rubrica durante pruebas manuales en GPT Builder Preview. Marcar cada i
 | Dialogo seco con contenido | Un NPC aspero puede ser breve, pero no pobre: en pedido, entrenamiento o conflicto debe haber gesto, causa, consecuencia o subtexto; no una unica frase minima. |
 | RelationshipDynamics | Si hay varios NPCs cercanos, reaccionan entre ellos segun confianza, familiaridad y tension; no todo pasa por Lucas. |
 | Grupo vivo | Si hay varios NPCs, hay miradas, interrupciones, silencios, alianzas o roces; no turnos artificiales. |
+| C17 escena representativa | Entrenamiento, posada, gremio y escena sin NPC pasan con anzuelo concreto, presion visible, dialogo con intencion y salida clara antes del HUD. |
+| Escena sin NPC | Si Lucas esta solo, la narracion sigue viva con cuerpo, lugar, clima, objetivo abierto o tension pendiente; no cae en resumen plano. |
 | No exposicion mecanica | Ningun NPC recita HUD, numeros, reglas o conocimiento sin fuente diegetica. |
 
 ## Tono y separacion tecnica
