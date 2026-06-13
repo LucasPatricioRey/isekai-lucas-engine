@@ -1,12 +1,13 @@
 # rules_engine.md — Motor Isekai Lucas
 
-Versión: Fase C9 v0.4 — social, confianza, voz NPC, contexto compacto y auditoria de estado
+Versión: Fase C10 v0.5 — combate avanzado playtest, balance inicial y auditoria controlada
 Estado: versión validada por Lucas mediante revisión guiada  
 Fuente de migración: Enciclopedia V2 Isekai Lucas + decisiones confirmadas por Lucas durante Fase 1 + validación guiada Fase 2  
 Propósito: este archivo define **cómo se resuelve el juego**. No contiene el save vivo completo ni el lore mundial extenso; eso vive en MongoDB y `world_bible.md`.
 
 Actualización v0.3: agrega sistema social ampliado, formato obligatorio de diálogo NPC y libertad creativa controlada para NPCs según personalidad, memoria y conocimiento.
 Actualización C9: el contexto compacto normal usa perfiles de proyección, oculta fixtures `testSuite` del canon, expone auditoría read-only `auditState` para modo técnico y formaliza que los archivos de conocimiento del GPT son guía estable, no save vivo.
+Actualización C10: agrega auditoria mutante controlada `audit:combat-playtest` sobre `GameState` temporal para verificar sparring, amenaza menor, bloqueo/esquiva, moral enemiga, retirada de Lucas, herida leve/tratamiento y evidencia post-combate sin loot inventado.
 
 ---
 
@@ -1181,11 +1182,27 @@ Defender, bloquear, esquivar y retirarse son acciones mecanicas distintas. Bloqu
 
 Usar objetos durante combate tambien requiere preview/apply de combate. `use_item` solo puede consumir items reales del inventario y, en C8.1, se limita a tratamiento de campo con `itemId` e `injuryId` reales. El backend decide consumo, calidad, estabilizacion y logs; el narrador no puede inventar curacion, vendajes disponibles ni restauracion de vida.
 
-### 16.4 Muerte
+### 16.4 Playtest C10 obligatorio
+
+Antes de usar mucho combate real en partida, el backend debe pasar `npm run audit:combat-playtest` ademas de `npm run audit:combat-advanced`. Este playtest no toca el canon: clona el `GameState` vivo a un `gameId` temporal, crea enemigos/eventos/misiones/heridas temporales, ejecuta acciones reales de combate y borra todo al final.
+
+Escenarios C10 minimos:
+
+- sparring: combate controlado, dano capado, sin InjuryRecord serio;
+- amenaza menor: ataque con rolls backend, fatiga y resultBand guardados en log;
+- defensa: bloqueo aplica bonus defensivo real, esquiva genera fatiga real y ambos progresan skills tecnicas;
+- moral enemiga: NPC resuelve huida por moral sin decision narrativa del GPT;
+- retirada de Lucas: `flee` usa distancia, ruta de escape, fatiga y roll backend;
+- herida leve: tratamiento estabiliza sangrado, no restaura vida;
+- post-combate: `previewLoot/claimLoot` crea evidencia y credito institucional si corresponde, pero no dinero ni items inventados.
+
+Si alguno falla, el narrador no debe resolver ese caso por texto libre. Hay que ajustar backend/schema/tests antes de continuar.
+
+### 16.5 Muerte
 
 Muerte posible y permanente si la situación lo justifica. No matar NPCs importantes de forma barata, pero no usar plot armor si la situación fue letal.
 
-### 16.5 Recompensas
+### 16.6 Recompensas
 
 Matar enemigo no da loot automático. Sin contrato/prueba, no hay recompensa de gremio automática.
 

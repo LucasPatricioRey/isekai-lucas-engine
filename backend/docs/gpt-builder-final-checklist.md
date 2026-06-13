@@ -105,6 +105,8 @@ npm run check
 npm run audit:openapi
 npm run audit:openapi-compact
 npm run audit:state-hygiene
+npm run audit:combat-advanced
+npm run audit:combat-playtest
 npm run audit:gpt-readiness-compact
 ```
 
@@ -115,6 +117,7 @@ Condicion minima para abrir Preview:
 - `GET /api/context/compact` responde `ok: true`.
 - La respuesta compacta queda por debajo de 100000 caracteres.
 - `GET /api/characters/char_lucas/state` devuelve HP, MP, dinero, inventario y skills directos.
+- `audit:combat-playtest` pasa si se va a usar combate real en partida.
 - El dia/hora/ubicacion existen y tienen formato valido.
 - Dinero y MP son numeros no negativos.
 - `activeMissionIds` es array.
