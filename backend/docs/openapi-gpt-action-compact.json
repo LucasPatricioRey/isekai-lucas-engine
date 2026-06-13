@@ -420,6 +420,13 @@
               "$ref": "#/components/schemas/SkillPatchItem"
             }
           },
+          "magicPatches": {
+            "type": "array",
+            "description": "Desbloqueos magicos formales: abrir una rama entrenable o registrar tecnica/hechizo conocido. No inventar hechizos; cumplir requisitos backend.",
+            "items": {
+              "$ref": "#/components/schemas/MagicPatchItem"
+            }
+          },
           "moneyPatch": {
             "$ref": "#/components/schemas/MoneyPatch"
           },
@@ -1175,6 +1182,78 @@
           "skillId",
           "expDelta",
           "category",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "MagicPatchItem": {
+        "type": "object",
+        "description": "Cambio formal de magia. Usar para desbloquear una rama entrenable o registrar una tecnica/hechizo conocido tras cumplir requisitos.",
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "unlock_skill",
+              "set_technique"
+            ]
+          },
+          "skillId": {
+            "type": "string",
+            "description": "Para unlock_skill. Ejemplo: skill_magia_ofensiva."
+          },
+          "disciplineId": {
+            "type": "string",
+            "description": "Opcional; si se omite, el backend deriva la disciplina desde skillId."
+          },
+          "name": {
+            "type": "string"
+          },
+          "techniqueId": {
+            "type": "string",
+            "description": "Para set_technique. Debe existir en MagicTechnique."
+          },
+          "characterId": {
+            "type": "string",
+            "default": "char_lucas"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "practicing",
+              "known",
+              "mastered",
+              "blocked"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "description": "Origen diegetico/mecanico: autodidactic_breakthrough, instructor, book, admin, etc."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 12
+          },
+          "breakthrough": {
+            "type": "boolean",
+            "description": "Obligatorio como true para aprender locked_template."
+          },
+          "safetyConfirmed": {
+            "type": "boolean",
+            "description": "Obligatorio como true para aprender hechizos reales."
+          },
+          "notes": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "op",
           "reason"
         ],
         "additionalProperties": false

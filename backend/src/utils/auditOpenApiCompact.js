@@ -174,6 +174,7 @@ function main() {
     "evidencePatches",
     "knowledgePatches",
     "skillPatch",
+    "magicPatches",
     "shopStockPatches",
     "npcMemoryPatches",
     "npcRelationshipPatches",

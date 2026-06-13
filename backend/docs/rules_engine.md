@@ -1071,6 +1071,29 @@ Desbloqueos relevantes:
 
 Un elemento hijo no debe superar a su rama padre por más de una fase completa salvo razón narrativa especial.
 
+### 14.8 Desbloqueo formal por `magicPatches`
+
+La teoría, meditación o práctica segura puede dar EXP con `skillPatch`, pero no crea ramas mágicas ni hechizos por narración. Todo desbloqueo real de magia debe quedar guardado con `applyTurn.magicPatches`.
+
+Operaciones permitidas:
+
+- `unlock_skill`: agrega una skill mágica viva si existe una disciplina asociada y Lucas cumple sus `unlockRequirements.skills`.
+- `set_technique`: registra conocimiento formal en `CharacterMagicKnowledge` para una técnica/hechizo existente.
+
+Ruta autodidacta mínima para el primer hechizo ofensivo:
+
+1. Lucas puede estudiar teoría propia sin instructor/libro para subir `skill_magia` y `skill_mana`, siempre que no narre efecto externo real.
+2. Con `skill_magia` P.N2 + `skill_mana` P.N2 puede desbloquear la rama `skill_magia_ofensiva` mediante `magicPatches[{ op:"unlock_skill", skillId:"skill_magia_ofensiva" }]`. Esto no desbloquea ningún hechizo.
+3. Con `skill_magia_ofensiva` P.N3 + `skill_mana` P.N3 puede intentar un breakthrough de `technique_locked_offensive_spark`.
+4. Un hechizo real solo puede pasar a `known`/`mastered` si `set_technique` incluye `breakthrough:true`, `safetyConfirmed:true`, una razón concreta y todos los requisitos de la técnica. Si falta algo, el backend debe rechazarlo.
+
+Reglas de narración:
+
+- Antes de `changes.magic` o `knownSpells`, narrar estructura, intuición, teoría, control o fracaso parcial; no narrar fuego, luz, daño, defensa, curación ni efecto externo como éxito real.
+- `locked_template` no es un hechizo aprendido. Es una plantilla de requisitos para validar intentos.
+- En público, cualquier práctica ofensiva tiene riesgo social alto aunque el efecto sea mínimo.
+- Si el desbloqueo es irreversible o ambiguo, crear checkpoint automático o pedir confirmación técnica antes de forzar el cambio.
+
 ---
 
 ## 15. Entrenamiento físico, trabajo y viaje

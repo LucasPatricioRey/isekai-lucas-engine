@@ -426,6 +426,7 @@ async function main() {
   assertCondition(issues, "compact has missionPatch", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.missionPatch));
   assertCondition(issues, "compact has evidencePatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.evidencePatches));
   assertCondition(issues, "compact has skillPatch", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.skillPatch));
+  assertCondition(issues, "compact has magicPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.magicPatches));
   assertCondition(issues, "compact has shopStockPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.shopStockPatches));
   assertCondition(issues, "compact has npcMemoryPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.npcMemoryPatches));
   assertCondition(issues, "compact has npcRelationshipPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.npcRelationshipPatches));

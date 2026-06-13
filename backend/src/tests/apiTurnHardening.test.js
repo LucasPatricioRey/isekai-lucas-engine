@@ -8,6 +8,7 @@ const EventLog = require("../models/EventLog");
 const Faction = require("../models/Faction");
 const GameState = require("../models/GameState");
 const JobContract = require("../models/JobContract");
+const CharacterMagicKnowledge = require("../models/CharacterMagicKnowledge");
 const Mission = require("../models/Mission");
 const Npc = require("../models/Npc");
 const NpcSocialLedger = require("../models/NpcSocialLedger");
@@ -39,6 +40,7 @@ let tempNpcId = "";
 let tempRemoteNpcId = "";
 let tempFactionId = "";
 let tempWeatherRegionId = "";
+let tempMagicCharacterId = "";
 
 async function createIsolatedGameState() {
   tempGameId = `test_turn_hardening_${Date.now()}`;
@@ -51,6 +53,7 @@ async function createIsolatedGameState() {
   tempRemoteNpcId = `npc_test_relationship_remote_${Date.now()}`;
   tempFactionId = `faction_test_institution_${Date.now()}`;
   tempWeatherRegionId = `region_test_turn_hardening_${Date.now()}`;
+  tempMagicCharacterId = `char_test_magic_${Date.now()}`;
 
   const base = await GameState.findOne({ gameId: "isekai_lucas_main" }).lean();
   assert.ok(base, "Base GameState is required for isolated API tests.");
@@ -289,6 +292,7 @@ async function cleanupIsolatedState() {
   if (tempRemoteNpcId) await NpcSocialLedger.deleteMany({ npcId: tempRemoteNpcId });
   if (tempFactionId) await Faction.deleteOne({ factionId: tempFactionId });
   if (tempWeatherRegionId) await WeatherState.deleteMany({ regionId: tempWeatherRegionId });
+  if (tempMagicCharacterId) await CharacterMagicKnowledge.deleteMany({ characterId: tempMagicCharacterId });
   await EventLog.deleteMany({
     $or: [
       { tags: "test_turn_hardening" },
@@ -1705,6 +1709,192 @@ describe("turn hardening coverage", () => {
       { skills: { $elemMatch: { skillId: "skill_percepcion" } } }
     ).lean();
     assert.equal(afterSkill.skills[0].exp, initialPerception.exp + 15);
+  });
+
+  it("infers skillPatch duration from timeAdvance without fromDay", async () => {
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: 10,
+          time: "12:00",
+          block: "MediodÃ­a",
+          "lucasStatus.energy.current": 80,
+          "lucasStatus.energy.label": "rendimiento normal",
+        },
+      }
+    );
+    const before = await GameState.findOne(
+      { gameId: tempGameId },
+      { skills: { $elemMatch: { skillId: "skill_fuerza" } } }
+    ).lean();
+    const initial = before.skills[0];
+
+    const applied = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: entreno con duracion inferida.",
+      timeAdvance: {
+        from: "12:00",
+        to: "12:30",
+      },
+      biologicalCostExemptReason: "Fixture de test: duracion de skill sin coste biologico aplicado.",
+      skillPatch: [
+        {
+          skillId: "skill_fuerza",
+          expDelta: 6,
+          category: "entreno_moderado",
+          reason: "Entreno moderado de media hora con duracion inferida.",
+        },
+      ],
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de skillPatch con duracion inferida.",
+          visibility: "hidden",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+    });
+
+    assert.equal(applied.status, 200, JSON.stringify(applied.data));
+    assert.equal(applied.data.changes.skills[0].durationMinutes, 30);
+    assert.equal(applied.data.changes.skills[0].durationAdjustedBaseExpDelta, 3);
+    assert.equal(applied.data.changes.skills[0].effectiveExpDelta, 15);
+
+    const after = await GameState.findOne(
+      { gameId: tempGameId },
+      { skills: { $elemMatch: { skillId: "skill_fuerza" } } }
+    ).lean();
+    assert.equal(after.skills[0].exp, initial.exp + 15);
+  });
+
+  it("applies formal magic patches and blocks unsafe spell unlocks", async () => {
+    await CharacterMagicKnowledge.deleteMany({ characterId: tempMagicCharacterId });
+    const fixtureState = await GameState.findOne({ gameId: tempGameId });
+    const originalCharacterId = fixtureState.characterId || "char_lucas";
+    fixtureState.currentDay = 10;
+    fixtureState.time = "12:00";
+    fixtureState.block = "Tarde";
+    fixtureState.characterId = tempMagicCharacterId;
+    fixtureState.flags = {
+      ...(fixtureState.flags || {}),
+      knownSpells: [],
+    };
+    fixtureState.skills = (fixtureState.skills || []).filter((skill) => skill.skillId !== "skill_magia_ofensiva");
+    for (const skill of fixtureState.skills) {
+      if (["skill_mana", "skill_magia"].includes(skill.skillId)) {
+        skill.phase = "Principiante";
+        skill.level = 2;
+        skill.exp = 0;
+        skill.expToNext = 100;
+      }
+    }
+    fixtureState.markModified("skills");
+    fixtureState.markModified("flags");
+    await fixtureState.save();
+
+    const unlocked = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: desbloqueo formal de rama ofensiva.",
+      magicPatches: [
+        {
+          op: "unlock_skill",
+          skillId: "skill_magia_ofensiva",
+          reason: "Lucas cumple base de Mana y Magia para estudiar ofensiva sin hechizo.",
+        },
+      ],
+    });
+
+    assert.equal(unlocked.status, 200, JSON.stringify(unlocked.data));
+    assert.equal(unlocked.data.changes.magic[0].op, "unlock_skill");
+    assert.equal(unlocked.data.changes.magic[0].after.skillId, "skill_magia_ofensiva");
+
+    const blockedSpell = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Intento invalido de test: hechizo ofensivo sin requisitos.",
+      magicPatches: [
+        {
+          op: "set_technique",
+          characterId: tempMagicCharacterId,
+          techniqueId: "technique_locked_offensive_spark",
+          status: "known",
+          source: "autodidactic_breakthrough",
+          reason: "Lucas intenta declarar chispa ofensiva antes de cumplir requisitos completos.",
+          breakthrough: true,
+          safetyConfirmed: true,
+        },
+      ],
+    });
+    assert.equal(blockedSpell.status, 400);
+    assert.match(blockedSpell.data.error, /requisitos magicos/);
+    assert.equal(
+      await CharacterMagicKnowledge.countDocuments({ characterId: tempMagicCharacterId }),
+      0
+    );
+
+    const wrongCharacter = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Intento invalido de test: magia para otro personaje.",
+      magicPatches: [
+        {
+          op: "set_technique",
+          characterId: "char_test_wrong_magic_owner",
+          techniqueId: "technique_locked_offensive_spark",
+          status: "known",
+          source: "autodidactic_breakthrough",
+          reason: "Lucas intenta guardar un desbloqueo magico sobre otro personaje.",
+          breakthrough: true,
+          safetyConfirmed: true,
+        },
+      ],
+    });
+    assert.equal(wrongCharacter.status, 400);
+    assert.match(wrongCharacter.data.error, /characterId/);
+
+    const readyState = await GameState.findOne({ gameId: tempGameId });
+    for (const skill of readyState.skills) {
+      if (["skill_mana", "skill_magia_ofensiva"].includes(skill.skillId)) {
+        skill.phase = "Principiante";
+        skill.level = 3;
+        skill.exp = 0;
+        skill.expToNext = 100;
+      }
+    }
+    readyState.markModified("skills");
+    await readyState.save();
+
+    const learnedSpell = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: breakthrough formal de chispa ofensiva.",
+      magicPatches: [
+        {
+          op: "set_technique",
+          characterId: tempMagicCharacterId,
+          techniqueId: "technique_locked_offensive_spark",
+          status: "known",
+          source: "autodidactic_breakthrough",
+          reason: "Lucas completa un prototipo seguro, repetible y contenido de chispa ofensiva controlada.",
+          breakthrough: true,
+          safetyConfirmed: true,
+          tags: ["test_turn_hardening"],
+        },
+      ],
+    });
+
+    assert.equal(learnedSpell.status, 200, JSON.stringify(learnedSpell.data));
+    assert.equal(learnedSpell.data.changes.magic[0].isRealSpell, true);
+    assert.equal(learnedSpell.data.changes.magic[0].knownSpells.after.includes("technique_locked_offensive_spark"), true);
+
+    const knowledge = await CharacterMagicKnowledge.findOne({
+      characterId: tempMagicCharacterId,
+      techniqueId: "technique_locked_offensive_spark",
+    }).lean();
+    assert.equal(knowledge.status, "known");
+
+    const afterState = await GameState.findOne({ gameId: tempGameId }).lean();
+    assert.equal(afterState.flags.knownSpells.includes("technique_locked_offensive_spark"), true);
+
+    await GameState.updateOne({ gameId: tempGameId }, { $set: { characterId: originalCharacterId } });
   });
 
   it("applies npc relationship patches through applyTurn", async () => {

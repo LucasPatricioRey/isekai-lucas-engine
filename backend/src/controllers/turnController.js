@@ -13,12 +13,20 @@ const Mission = require("../models/Mission");
 const Commitment = require("../models/Commitment");
 const Evidence = require("../models/Evidence");
 const Faction = require("../models/Faction");
+const CharacterMagicKnowledge = require("../models/CharacterMagicKnowledge");
+const MagicDiscipline = require("../models/MagicDiscipline");
+const MagicTechnique = require("../models/MagicTechnique");
 const { syncNpcRoutines } = require("../services/routineService");
 const { calculateActivityCost, normalizeCategory } = require("../services/biologicalClockService");
 const { reconcileDailyEventsForGameState } = require("../services/dailyEventSchedulerService");
 const { buildWorldEventSocialConsequencePlan } = require("../services/dailyEventSocialService");
 const { expireAvailableMissionsForGameState } = require("../services/missionService");
-const { normalizeCategory: normalizeSkillCategory, previewSkillProgression } = require("../services/skillProgressionService");
+const {
+  EXP_TO_NEXT_BY_PHASE,
+  PHASE_ORDER,
+  normalizeCategory: normalizeSkillCategory,
+  previewSkillProgression,
+} = require("../services/skillProgressionService");
 const { ensureCurrentWeatherForGameState } = require("../services/weatherService");
 const { createAutomaticCheckpoint } = require("../services/checkpointService");
 const {
@@ -88,6 +96,32 @@ const VALID_EVIDENCE_HOLDER_TYPES = new Set(["character", "npc", "location", "fa
 const VALID_EVENT_PROGRESS_CONFIDENCE = new Set(["unknown", "rumor", "partial", "strong", "confirmed"]);
 const VALID_ACTION_FAMILIES = new Set(Object.values(ACTION_FAMILIES));
 const VALID_FACTION_ACCESS_LEVELS = new Set(["none", "basic", "trusted", "restricted", "hostile"]);
+const VALID_MAGIC_PATCH_OPS = new Set(["unlock_skill", "set_technique"]);
+const VALID_MAGIC_KNOWLEDGE_STATUSES = new Set(["unknown", "practicing", "known", "mastered", "blocked"]);
+const MAGIC_SKILL_DISCIPLINE_IDS = {
+  skill_percepcion_magica: "discipline_magic_perception",
+  skill_magia_ofensiva: "discipline_offensive_magic",
+  skill_fuego: "discipline_fire",
+  skill_rayo: "discipline_lightning",
+  skill_hielo: "discipline_ice",
+  skill_tierra_viento: "discipline_earth_wind",
+  skill_magia_defensiva: "discipline_defensive_magic",
+  skill_magia_curativa: "discipline_healing_magic",
+  skill_magia_mental: "discipline_mental_magic",
+  skill_magia_invocacion: "discipline_summoning_magic",
+};
+const MAGIC_SKILL_NAMES = {
+  skill_percepcion_magica: "Percepcion magica",
+  skill_magia_ofensiva: "Magia ofensiva",
+  skill_fuego: "Fuego",
+  skill_rayo: "Rayo/Electricidad",
+  skill_hielo: "Hielo",
+  skill_tierra_viento: "Tierra/Viento",
+  skill_magia_defensiva: "Magia defensiva",
+  skill_magia_curativa: "Magia curativa",
+  skill_magia_mental: "Magia mental",
+  skill_magia_invocacion: "Magia de invocacion",
+};
 
 function validationError(message, details = {}) {
   const error = new Error(message);
@@ -366,6 +400,10 @@ function buildApplyTurnAutoCheckpointPlan(changes = {}) {
     addAutoCheckpointTrigger(triggers, "progression", "progreso de habilidades");
   }
 
+  if (Array.isArray(changes.magic) && changes.magic.length > 0) {
+    addAutoCheckpointTrigger(triggers, "magic", "desbloqueo o conocimiento magico formal");
+  }
+
   if (moneyDelta >= 100 || changes.inventory || changes.shopStocks) {
     addAutoCheckpointTrigger(triggers, "economy", "cambio económico o de inventario");
   }
@@ -384,6 +422,7 @@ function buildApplyTurnAutoCheckpointPlan(changes = {}) {
     "major_social",
     "long_scene",
     "progression",
+    "magic",
     "commitment",
     "evidence",
     "knowledge",
@@ -413,6 +452,123 @@ function toPlain(value) {
   if (!value) return value;
   if (typeof value.toObject === "function") return value.toObject();
   return JSON.parse(JSON.stringify(value));
+}
+
+function magicPhaseRank(phase) {
+  const index = PHASE_ORDER.indexOf(phase);
+  return index === -1 ? -1 : index;
+}
+
+function magicSkillMeetsRequirement(skill, requirement = {}) {
+  if (!skill) return false;
+
+  const skillRank = magicPhaseRank(skill.phase);
+  const requiredRank = magicPhaseRank(requirement.minPhase || "Principiante");
+
+  if (skillRank < requiredRank) return false;
+  if (skillRank > requiredRank) return true;
+
+  return Number(skill.level || 0) >= Number(requirement.minLevel || 1);
+}
+
+function summarizeMagicSkill(skill = {}) {
+  return {
+    skillId: skill.skillId,
+    name: skill.name,
+    phase: skill.phase,
+    level: skill.level,
+    exp: skill.exp,
+    expToNext: skill.expToNext,
+  };
+}
+
+function summarizeMagicKnowledge(entry = null) {
+  if (!entry) return null;
+  return {
+    knowledgeId: entry.knowledgeId,
+    characterId: entry.characterId,
+    techniqueId: entry.techniqueId,
+    status: entry.status,
+    learnedDay: entry.learnedDay,
+    learnedTime: entry.learnedTime,
+    source: entry.source || "",
+    tags: entry.tags || [],
+  };
+}
+
+function normalizeMagicPatches(patches) {
+  if (patches === undefined || patches === null) return [];
+  return Array.isArray(patches) ? patches : [patches];
+}
+
+function createMagicKnowledgeId(characterId, techniqueId) {
+  return `magic_${characterId}_${techniqueId}`;
+}
+
+function getGameStateFlags(gameState) {
+  return gameState.flags && typeof gameState.flags === "object" && !Array.isArray(gameState.flags)
+    ? toPlain(gameState.flags)
+    : {};
+}
+
+function setGameStateFlags(gameState, flags) {
+  gameState.flags = flags;
+  if (typeof gameState.markModified === "function") {
+    gameState.markModified("flags");
+  }
+}
+
+function syncKnownSpellFlag(gameState, technique, status) {
+  if (!technique?.isRealSpell) return null;
+
+  const flags = getGameStateFlags(gameState);
+  const before = Array.isArray(flags.knownSpells) ? [...flags.knownSpells] : [];
+  const knownSpells = new Set(before);
+
+  if (["known", "mastered"].includes(status)) {
+    knownSpells.add(technique.techniqueId);
+  } else {
+    knownSpells.delete(technique.techniqueId);
+  }
+
+  const after = Array.from(knownSpells).sort();
+  flags.knownSpells = after;
+  setGameStateFlags(gameState, flags);
+
+  return {
+    before,
+    after,
+    changed: before.join("|") !== after.join("|"),
+  };
+}
+
+function validateMagicRequirements({ gameState, skillRequirements = [], knownTechniqueIds = [], knownTechniqueSet = new Set() }) {
+  const skillsById = new Map((gameState.skills || []).map((skill) => [skill.skillId, skill]));
+  const missingSkills = [];
+  const missingTechniques = [];
+
+  for (const requirement of skillRequirements || []) {
+    if (!magicSkillMeetsRequirement(skillsById.get(requirement.skillId), requirement)) {
+      missingSkills.push({
+        skillId: requirement.skillId,
+        minPhase: requirement.minPhase || "Principiante",
+        minLevel: requirement.minLevel || 1,
+      });
+    }
+  }
+
+  for (const techniqueId of knownTechniqueIds || []) {
+    if (!knownTechniqueSet.has(techniqueId)) {
+      missingTechniques.push(techniqueId);
+    }
+  }
+
+  if (missingSkills.length > 0 || missingTechniques.length > 0) {
+    throw validationError("magicPatches no cumple requisitos magicos.", {
+      missingSkills,
+      missingTechniques,
+    });
+  }
 }
 
 async function getContextualLocationIds(locationId, session = null) {
@@ -672,7 +828,7 @@ function normalizeSkillPatchInput(patch) {
   };
 }
 
-function inferSkillPatchDurationMinutes({ input, patch, body, skillPatchCount }) {
+function inferSkillPatchDurationMinutes({ input, patch, body, skillPatchCount, gameState = null }) {
   if (input.durationMinutes) return input.durationMinutes;
 
   const patchCategory = normalizeSkillCategory(input.category);
@@ -688,7 +844,7 @@ function inferSkillPatchDurationMinutes({ input, patch, body, skillPatchCount })
 
   const timeAdvance = body?.timeAdvance || null;
   if (skillPatchCount === 1 && timeAdvance?.from && timeAdvance?.to) {
-    const fromDay = timeAdvance.fromDay || gameState.currentDay;
+    const fromDay = timeAdvance.fromDay || gameState?.currentDay || body?.currentDay || 1;
     const toDay = timeAdvance.toDay || fromDay;
     const elapsedMinutes = diffAdvanceMinutes({
       fromDay,
@@ -742,6 +898,7 @@ function applyValidatedSkillPatch({
     patch,
     body,
     skillPatchCount,
+    gameState,
   });
   const preview = previewSkillProgression({
     skill: toPlain(skill),
@@ -2712,6 +2869,221 @@ async function applyMissionPatches(gameState, missionPatch, session = null) {
   return results;
 }
 
+async function getKnownTechniqueSet({ characterId = "char_lucas", session = null } = {}) {
+  const known = await CharacterMagicKnowledge.find({
+    characterId,
+    status: { $in: ["practicing", "known", "mastered"] },
+  })
+    .select("techniqueId")
+    .session(session)
+    .lean();
+
+  return new Set(known.map((entry) => entry.techniqueId));
+}
+
+async function applyMagicSkillUnlock({ gameState, patch, session = null }) {
+  const skillId = patch.skillId;
+  const reason = String(patch.reason || "").trim();
+  if (!skillId) throw validationError("magicPatches.skillId es obligatorio para unlock_skill.");
+
+  const existing = (gameState.skills || []).find((skill) => skill.skillId === skillId);
+  if (existing) {
+    return {
+      op: "unlock_skill",
+      skillId,
+      alreadyUnlocked: true,
+      before: summarizeMagicSkill(existing),
+      after: summarizeMagicSkill(existing),
+      displayLines: [`Rama magica ya desbloqueada: ${existing.name}.`],
+    };
+  }
+
+  if (reason.length < 12) {
+    throw validationError("magicPatches.reason debe explicar el origen del desbloqueo magico.");
+  }
+
+  const disciplineId = patch.disciplineId || MAGIC_SKILL_DISCIPLINE_IDS[skillId];
+  if (!disciplineId) {
+    throw validationError("magicPatches.unlock_skill solo permite ramas magicas conocidas.", {
+      skillId,
+      allowedSkillIds: Object.keys(MAGIC_SKILL_DISCIPLINE_IDS),
+    });
+  }
+
+  const discipline = await MagicDiscipline.findOne({ disciplineId }).session(session).lean();
+  if (!discipline) {
+    throw validationError("magicPatches.disciplineId no existe.", { disciplineId, skillId });
+  }
+
+  validateMagicRequirements({
+    gameState,
+    skillRequirements: discipline.unlockRequirements?.skills || [],
+  });
+
+  const newSkill = {
+    skillId,
+    name: patch.name || MAGIC_SKILL_NAMES[skillId] || discipline.name || skillId,
+    phase: "Principiante",
+    level: 1,
+    exp: 0,
+    expToNext: EXP_TO_NEXT_BY_PHASE.Principiante,
+  };
+  gameState.skills.push(newSkill);
+
+  return {
+    op: "unlock_skill",
+    skillId,
+    disciplineId,
+    alreadyUnlocked: false,
+    before: null,
+    after: summarizeMagicSkill(newSkill),
+    reason,
+    displayLines: [`Rama magica desbloqueada: ${newSkill.name}.`],
+  };
+}
+
+async function applyMagicTechniqueKnowledge({ gameState, patch, session = null }) {
+  const techniqueId = patch.techniqueId;
+  const ownerCharacterId = gameState.characterId || "char_lucas";
+  const characterId = patch.characterId || ownerCharacterId;
+  const status = patch.status || "practicing";
+  const reason = String(patch.reason || "").trim();
+
+  if (!techniqueId) throw validationError("magicPatches.techniqueId es obligatorio para set_technique.");
+  if (characterId !== ownerCharacterId) {
+    throw validationError("magicPatches.characterId debe coincidir con el personaje del GameState.", {
+      characterId,
+      expectedCharacterId: ownerCharacterId,
+    });
+  }
+  if (!VALID_MAGIC_KNOWLEDGE_STATUSES.has(status)) {
+    throw validationError("magicPatches.status invalido.", {
+      status,
+      allowed: Array.from(VALID_MAGIC_KNOWLEDGE_STATUSES),
+    });
+  }
+  if (reason.length < 12) {
+    throw validationError("magicPatches.reason debe explicar el origen del desbloqueo magico.");
+  }
+
+  const technique = await MagicTechnique.findOne({ techniqueId }).session(session).lean();
+  if (!technique) throw validationError("magicPatches.techniqueId no existe.", { techniqueId });
+
+  const knownTechniqueSet = await getKnownTechniqueSet({ characterId, session });
+  validateMagicRequirements({
+    gameState,
+    skillRequirements: technique.requirements?.skills || [],
+    knownTechniqueIds: technique.requirements?.knownTechniqueIds || [],
+    knownTechniqueSet,
+  });
+
+  const learningRealSpell = technique.isRealSpell && ["known", "mastered"].includes(status);
+  if (technique.status === "locked_template") {
+    if (!learningRealSpell || patch.breakthrough !== true) {
+      throw validationError("La tecnica bloqueada requiere breakthrough:true y status known/mastered.", {
+        techniqueId,
+        status,
+        breakthrough: Boolean(patch.breakthrough),
+      });
+    }
+    if (reason.length < 20) {
+      throw validationError("El breakthrough magico requiere reason narrativo/mecanico mas concreto.", {
+        techniqueId,
+      });
+    }
+  } else if (technique.status !== "available" && status !== "blocked") {
+    throw validationError("La tecnica no esta disponible para aprender.", {
+      techniqueId,
+      status: technique.status,
+    });
+  }
+
+  if (learningRealSpell && !patch.safetyConfirmed) {
+    throw validationError("Aprender un hechizo real requiere safetyConfirmed:true.", {
+      techniqueId,
+      publicUseRisk: technique.publicUseRisk,
+    });
+  }
+
+  const existing = await CharacterMagicKnowledge.findOne({ characterId, techniqueId }).session(session);
+  const before = summarizeMagicKnowledge(existing);
+  const payload = {
+    knowledgeId: existing?.knowledgeId || patch.knowledgeId || createMagicKnowledgeId(characterId, techniqueId),
+    characterId,
+    techniqueId,
+    status,
+    learnedDay: ["known", "mastered"].includes(status)
+      ? existing?.learnedDay || gameState.currentDay
+      : existing?.learnedDay || null,
+    learnedTime: ["known", "mastered"].includes(status)
+      ? existing?.learnedTime || gameState.time
+      : existing?.learnedTime || "",
+    source: patch.source || "applyTurn.magicPatches",
+    notes: patch.notes || reason,
+    tags: unique([...(existing?.tags || []), ...(patch.tags || []), "magic_patch"]),
+  };
+
+  let saved;
+  if (existing) {
+    existing.status = payload.status;
+    existing.learnedDay = payload.learnedDay;
+    existing.learnedTime = payload.learnedTime;
+    existing.source = payload.source;
+    existing.notes = payload.notes;
+    existing.tags = payload.tags;
+    saved = await existing.save({ session });
+  } else {
+    [saved] = await CharacterMagicKnowledge.create([payload], { session });
+  }
+
+  const knownSpells = syncKnownSpellFlag(gameState, technique, status);
+
+  return {
+    op: "set_technique",
+    techniqueId,
+    techniqueName: technique.name,
+    techniqueKind: technique.kind,
+    isRealSpell: Boolean(technique.isRealSpell),
+    status,
+    breakthrough: Boolean(patch.breakthrough),
+    safetyConfirmed: Boolean(patch.safetyConfirmed),
+    before,
+    after: summarizeMagicKnowledge(saved),
+    knownSpells,
+    displayLines: [
+      technique.isRealSpell && ["known", "mastered"].includes(status)
+        ? `Hechizo aprendido formalmente: ${technique.name}.`
+        : `Conocimiento magico actualizado: ${technique.name} (${status}).`,
+    ],
+  };
+}
+
+async function applyMagicPatches(gameState, magicPatches, session = null) {
+  const patches = normalizeMagicPatches(magicPatches);
+  const results = [];
+
+  for (const patch of patches) {
+    const op = patch?.op || patch?.operation;
+    if (!VALID_MAGIC_PATCH_OPS.has(op)) {
+      throw validationError("magicPatches.op debe ser unlock_skill o set_technique.", {
+        op,
+        allowed: Array.from(VALID_MAGIC_PATCH_OPS),
+      });
+    }
+
+    if (op === "unlock_skill") {
+      results.push(await applyMagicSkillUnlock({ gameState, patch, session }));
+      continue;
+    }
+
+    if (op === "set_technique") {
+      results.push(await applyMagicTechniqueKnowledge({ gameState, patch, session }));
+    }
+  }
+
+  return results;
+}
+
 function validateEventLogInputs(eventLogs) {
   if (!Array.isArray(eventLogs)) return;
 
@@ -2777,12 +3149,12 @@ async function validateEventLogsForInsert(logsToCreate, session = null) {
   }
 }
 
-function validateHourBoundaryCost({ timeAdvance, currentTime, body }) {
+function validateHourBoundaryCost({ timeAdvance, currentTime, currentDay = 1, body }) {
   if (!timeAdvance) return;
 
   const from = timeAdvance.from || currentTime;
   const to = timeAdvance.to;
-  const fromDay = timeAdvance.fromDay || 1;
+  const fromDay = timeAdvance.fromDay || currentDay;
   const toDay = timeAdvance.toDay || fromDay;
 
   if (!isValidTime(from) || !isValidTime(to)) return;
@@ -2809,12 +3181,12 @@ function validateHourBoundaryCost({ timeAdvance, currentTime, body }) {
   }
 }
 
-function validateActivityCostMinutes({ timeAdvance, currentTime, body }) {
+function validateActivityCostMinutes({ timeAdvance, currentTime, currentDay = 1, body }) {
   if (!timeAdvance || !body.activityCost) return;
 
   const from = timeAdvance.from || currentTime;
   const to = timeAdvance.to;
-  const fromDay = timeAdvance.fromDay || 1;
+  const fromDay = timeAdvance.fromDay || currentDay;
   const toDay = timeAdvance.toDay || fromDay;
 
   if (!isValidTime(from) || !isValidTime(to)) return;
@@ -3469,6 +3841,11 @@ async function applyTurn(req, res) {
         if (skillChanges.length > 0) {
           changes.skills = skillChanges;
         }
+      }
+
+      if (body.magicPatches !== undefined) {
+        const magicChanges = await applyMagicPatches(gameState, body.magicPatches, session);
+        if (magicChanges.length > 0) changes.magic = magicChanges;
       }
 
       let updatedGameState = gameState.toObject();
