@@ -1955,6 +1955,8 @@ function buildDramaticContext({
         "Primero escena novelada con dialogo vivo; al final mantener HUD con dia/hora/lugar/vida/saciedad/energia/MP/dinero/evento/NPCs/cambios relevantes.",
       mechanicsBoundary:
         "La prosa dramatiza estado confirmado; no inventa rolls, EXP, dinero, loot, dano, curacion, relaciones ni cierre de eventos.",
+      socialChangeDisplay:
+        "En Cambios relevantes copiar displayLines de changes.npcRelationships con antes->despues y delta; nunca resumir cambios sociales solo como +N.",
     },
     sceneTension: {
       level: highestSeverity,

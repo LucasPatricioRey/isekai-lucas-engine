@@ -1,6 +1,6 @@
 # rules_engine.md — Motor Isekai Lucas
 
-Version: Fase C23 v1.0 - direccion de dialogo vivo y cadencia emocional NPC
+Version: Fase C23.1 v1.0 - dialogo vivo con cambios sociales antes/despues
 Estado: versión validada por Lucas mediante revisión guiada  
 Fuente de migración: Enciclopedia V2 Isekai Lucas + decisiones confirmadas por Lucas durante Fase 1 + validación guiada Fase 2  
 Propósito: este archivo define **cómo se resuelve el juego**. No contiene el save vivo completo ni el lore mundial extenso; eso vive en MongoDB y `world_bible.md`.
@@ -21,6 +21,7 @@ Actualizacion C19: convierte las ramas magicas documentadas en catalogo tecnico 
 Actualizacion C20: agrega `learningSources` al catalogo magico y permite `applyTurn.magicPractice[].target` para efectos no ofensivos conocidos: curacion menor estabiliza `InjuryRecord` real sin restaurar vida; defensa/resistencia se guardan como preparadas sin mitigar dano hasta un resolver de combate.
 Actualizacion C21: agrega capa viva de NPCs en Hoshimori: `socialProfile` ampliado, `livingLayer`, 23 relaciones NPC-NPC, 19 memorias base, `scene.dialogueSceneCapsules` y memoria balanceada por NPC en contexto compacto. La guia de dialogo prioriza capsulas, conocimiento real y gestos visibles; no pensamientos privados ni omnisciencia.
 Actualizacion C23: agrega `dialogueDirector` por NPC en `dialogueProfile`/`scene.dialogueSceneCapsules` para cadencia emocional, reaccion inicial, patrones de habla, ejemplos y prohibiciones. Regla: el NPC reacciona primero al tono emocional de Lucas y despues al hecho; las reglas mecanicas exactas se explican en Cambios/HUD, no en boca del NPC como manual.
+Actualizacion C23.1: refuerza que todo cambio social debe mostrarse en `Cambios relevantes` con valor anterior, valor nuevo y delta usando `changes.npcRelationships[].displayLines`; no basta escribir solo `+1` o `+2`.
 
 ---
 
@@ -1773,6 +1774,7 @@ Reglas de uso:
 - cada linea de dialogo debe tener intencion: medir, cuidar, presionar, ocultar, corregir, negociar, provocar o revelar algo permitido;
 - antes de explicar un hecho, el NPC debe reaccionar al tono de Lucas si el tono existe; una broma se responde como broma/herida social, no como formulario;
 - separar voz y mecanica: el NPC habla humano; el HUD/Cambios aclara regla exacta, coste, stock, comida de contrato, mision o consecuencia;
+- los cambios sociales numericos deben copiar `changes.npcRelationships[].displayLines` o formato equivalente con valor anterior, valor nuevo y delta: `Confianza Yara: 18->20 (+2)`. Nunca mostrar solo `Confianza Yara: +2`;
 - un NPC seco no significa NPC plano ni pobre: en escenas de pedido directo, entrenamiento, conflicto o decision social, debe haber 2-4 beats de dialogo/gesto si la escena lo permite; evitar una sola frase minima como respuesta completa;
 - las frases compactas deben tener contenido: causa, imagen concreta del peligro, condicion practica, subtexto visible o consecuencia;
 - un NPC calido no debe repetir gratitud generica: debe mostrar cuidado mediante acciones concretas, preguntas pequenas o atencion a la escena;
