@@ -1,6 +1,6 @@
 # rules_engine.md — Motor Isekai Lucas
 
-Version: Fase C24C v1.0 - displayLines mecanicas generales
+Version: Fase C24D v1.0 - rule cards criticas ampliadas
 Estado: versión validada por Lucas mediante revisión guiada  
 Fuente de migración: Enciclopedia V2 Isekai Lucas + decisiones confirmadas por Lucas durante Fase 1 + validación guiada Fase 2  
 Propósito: este archivo define **cómo se resuelve el juego**. No contiene el save vivo completo ni el lore mundial extenso; eso vive en MongoDB y `world_bible.md`.
@@ -25,6 +25,7 @@ Actualizacion C23.1: refuerza que todo cambio social debe mostrarse en `Cambios 
 Actualizacion C24A: agrega tarjetas criticas de reglas (`rule cards`) indexadas en MongoDB mediante `WorldDocumentIndex`; `searchDocs` puede consultarlas por `ruleId`, `domain`, `priority`, `tag` o `appliesTo` sin sumar operaciones al Action principal.
 Actualizacion C24B: `previewSkillProgression`, `applyTurn.skillPatch`, `applyTurn.magicPractice` y combate avanzado devuelven `displayLine/displayLines` y `skillProgressDisplay` con el formato canonico de habilidades; el GPT debe copiarlos y no reconstruirlos.
 Actualizacion C24C: `applyTurn` devuelve `mechanicalChangeDisplay` y `displayLines` canonicas para dinero, inventario, stock, biologia, estado fisico, evidencia y registro del gremio; el GPT debe copiarlas en `Cambios relevantes`.
+Actualizacion C24D: amplia las rule cards criticas consultables por Mongo/searchDocs para formato HUD/dialogo, tiempo/eventos, EXP/anti-farmeo, social/romance, economia/stock/propiedad, misiones/gremio, viaje/friccion, trabajo/asistencia, salud, magia autodidacta, presencia/agencia NPC, rumores/reputacion/facciones, inventario/evidencia, checkpoints y recovery.
 
 ---
 
@@ -186,7 +187,7 @@ GET /api/locations/:id/full
 
 Si aun así falta un dato importante, se pregunta.
 
-### 3.2.1 Rule cards criticas C24A
+### 3.2.1 Rule cards criticas C24D
 
 `rules_engine.md` sigue siendo el manual completo. Ademas, las reglas que no pueden perderse por compactacion se indexan como tarjetas criticas en `WorldDocumentIndex` con:
 
@@ -199,8 +200,16 @@ Si aun así falta un dato importante, se pregunta.
 Uso obligatorio:
 
 - si hay duda de formato mecanico, buscar la rule card exacta antes de narrar;
+- si hay duda del HUD o estructura de respuesta, usar `ruleId=format.response_hud_exact`;
+- si hay duda de dialogo/voz versus HUD, usar `ruleId=format.dialogue_direct` o `ruleId=narration.dialogue_hud_boundary`;
 - si `changes.skills` o `magicPractice.skills` existe, usar `ruleId=format.skill_progress` si no hay `displayLines` listas;
+- si hay duda de EXP, novedad, riesgo real o anti-farmeo, usar `ruleId=skills.exp_evaluation_antifarm`;
 - si hay cambio social, usar `ruleId=format.social_changes` o copiar `changes.npcRelationships[].displayLines`;
+- si hay confianza, familiaridad, respeto, deuda, romance, contacto fisico o consentimiento, usar `ruleId=social.relationship_logic` y/o `ruleId=social.romance_consent_contact`;
+- si hay compra, venta, comida, stock, propiedad o loot, usar `ruleId=economy.trade_stock_property`;
+- si hay viaje, ruta larga, peligro o friccion de mundo, usar `ruleId=travel.world_friction_preview`;
+- si hay mision, registro de gremio, MG o recompensa, usar `ruleId=missions.guild_rewards_registration`;
+- si hay turno laboral, comida de contrato, tardanza o ausencia, usar `ruleId=jobs.attendance_consequences`;
 - si hay promesa, estimacion, tramite o pendiente, usar `ruleId=commitment.promises`;
 - si hay combate real, usar `ruleId=combat.backend_resolves` y el Action de combate.
 

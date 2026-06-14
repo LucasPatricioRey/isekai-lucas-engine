@@ -1,4 +1,4 @@
-const CRITICAL_RULE_CARDS_VERSION = "C24C critical_rule_cards_v1";
+const CRITICAL_RULE_CARDS_VERSION = "C24D critical_rule_cards_v1";
 
 const criticalRuleCards = [
   {
@@ -280,6 +280,384 @@ const criticalRuleCards = [
     content:
       "Narration boundary rule. Dialogue should be alive, contextual and character-specific, while exact costs, stock, EXP, contract meals, mission rewards and system consequences belong in Cambios relevantes/HUD.",
     tags: ["rule_card", "narration", "dialogue", "hud", "npc_voice"],
+  },
+  {
+    ruleId: "format.response_hud_exact",
+    domain: "output_contract",
+    priority: "critical",
+    appliesTo: ["final_response", "hud", "state_summary", "timeAdvance", "estado_actual"],
+    must: [
+      "Use exact HH:MM time and exact location in the scene header when time passes.",
+      "Keep the response order: scene header, narration, Cambios relevantes, Estado actual, Alertas only if needed.",
+      "Always include Estado actual in normal gameplay responses.",
+      "Show day, date, block, hour, location, life, satiety, energy, MP, money, active event, situation and nearby NPCs.",
+    ],
+    never: [
+      "Use approximate time words such as aprox., cerca de, alrededor de or mas o menos in final state.",
+      "Drop Estado actual because the scene is narrative.",
+      "Hide relevant HUD fields when backend state exposes them.",
+    ],
+    template: "header -> narration -> Cambios relevantes -> Estado actual -> Alertas",
+    content:
+      "Mandatory response/HUD format. Gameplay answers must keep exact time/location and always end with Estado actual. Cambios relevantes appears only when something changed, but Estado actual always appears.",
+    tags: ["rule_card", "format", "hud", "estado_actual", "time"],
+  },
+  {
+    ruleId: "format.dialogue_direct",
+    domain: "output_contract",
+    priority: "critical",
+    appliesTo: ["dialogue", "npc_speech", "scene_text"],
+    must: [
+      "Format direct NPC speech as Nombre: \"mensaje\" or Rol: \"mensaje\".",
+      "Use known proper names for persistent NPCs Lucas knows and simple roles for generic/unknown NPCs.",
+      "Keep narration around dialogue free to show gestures, pauses, posture and tone.",
+    ],
+    never: [
+      "Use em dash as the main format for direct NPC dialogue.",
+      "Let dialogue formatting reveal NPC secrets or knowledge they do not have.",
+      "Flatten NPC speech into narrator summary when direct speech matters.",
+    ],
+    template: "NPC: \"dialogue\"",
+    content:
+      "Direct dialogue format rule. Named or persistent NPCs speak as Name: \"...\". Generic or unknown NPCs use role labels. The dialogue format does not override knowledge, memory or consent rules.",
+    tags: ["rule_card", "format", "dialogue", "npc_voice"],
+  },
+  {
+    ruleId: "time.duration_world_events",
+    domain: "time_world",
+    priority: "critical",
+    appliesTo: ["timeAdvance", "duration", "daily_events", "world_tick", "offscreen"],
+    must: [
+      "End resolved actions at exact HH:MM time.",
+      "Use 5 minutes as normal minimum unit unless an action is instant or purely observational.",
+      "Let the world advance only by in-game time, not real-world waiting.",
+      "Require logical cause for important events and avoid a second huge main event while one is active.",
+    ],
+    never: [
+      "Advance time vaguely.",
+      "Generate major tragedies or large world events just because time passed.",
+      "Use real-world inactivity as in-game elapsed time.",
+    ],
+    template: "exact duration + in-game time only + major events need cause",
+    content:
+      "Time/world event rule. Resolve duration exactly. The world moves by game time only. Minor random seeds may happen, but important events require cause and must respect active blocking main events.",
+    tags: ["rule_card", "time", "duration", "world_events", "offscreen"],
+  },
+  {
+    ruleId: "skills.exp_evaluation_antifarm",
+    domain: "skills",
+    priority: "critical",
+    appliesTo: ["skillPatch", "changes.skills", "training", "work", "travel", "study", "perception"],
+    must: [
+      "Evaluate EXP only for meaningful duration, intensity, work, travel, combat, training, study, intentional perception or real magic practice.",
+      "Use durationMinutes for per-hour categories and prorate by real minutes.",
+      "Apply daily anti-farming by skill/category unless novelty, higher difficulty, new goal, new context, real risk or master instruction exists.",
+      "Use conservative values and do not default to maximum range.",
+    ],
+    never: [
+      "Give EXP for every small action or passive presence.",
+      "Give Perception for just being present without active attention, tracking, danger or reading details.",
+      "Turn exhausted repetition into efficient farming.",
+      "Apply Aqua to physical skills.",
+    ],
+    template: "meaningful action + real duration + anti-farm + conservative range",
+    content:
+      "Skill EXP evaluation rule. Not every action gives EXP. The backend should validate category/range, duration and anti-farming; GPT should not award progress for passive, impossible or repeated empty actions.",
+    tags: ["rule_card", "skills", "exp", "anti_farm", "duration"],
+  },
+  {
+    ruleId: "social.relationship_logic",
+    domain: "npc_social",
+    priority: "critical",
+    appliesTo: ["previewSocialImpact", "npcRelationshipPatches", "socialRhythm", "npcMemoryPatches"],
+    must: [
+      "Use previewSocialImpact when an action seeks or risks relationship change unless clearly null.",
+      "Raise trust/familiarity/respect only when the NPC has source, impact, context and emotional/practical reason.",
+      "Use NPC memory for relevant social continuity even when numeric relationship stays +0.",
+      "Respect socialRhythm saturation and daily repetition limits.",
+    ],
+    never: [
+      "Raise trust automatically for talking.",
+      "Farm relationship by repeating the same joke, compliment, help or pressure in one day.",
+      "Treat memory as numerical trust or romance.",
+      "Hide +0 reasoning when Lucas clearly tried to affect a bond.",
+    ],
+    template: "source + relevance + respect + novelty -> possible delta; otherwise memory/+0",
+    content:
+      "Relationship logic rule. Social numbers change only when the NPC can know and care about the action. Repeated or poorly timed social attempts may create memory or continuity without a new numerical delta.",
+    tags: ["rule_card", "social", "trust", "anti_farm", "memory"],
+  },
+  {
+    ruleId: "social.romance_consent_contact",
+    domain: "npc_social",
+    priority: "critical",
+    appliesTo: ["romance", "flirt", "physical_contact", "jealousy", "minors"],
+    must: [
+      "Keep romance slow, mutual, contextual and consent-based.",
+      "Keep underage romance innocent/juvenile and non-explicit.",
+      "Require clear bond, signals and context for hugs, kisses or intimate contact.",
+      "Use jealousy/misunderstandings only when personality, context, witnesses and signals support them.",
+    ],
+    never: [
+      "Treat high trust as romance.",
+      "Force attraction, love, jealousy or advances because Lucas is kind.",
+      "Romanticize forced or surprise contact.",
+      "Use explicit sexual content for minors.",
+    ],
+    template: "trust != romance; contact requires signals/context/consent",
+    content:
+      "Romance/contact rule. Trust, memory and kindness do not equal romance. Physical or romantic escalation needs mutual signals, context, age safety and consent; otherwise it can be neutral, awkward or negative.",
+    tags: ["rule_card", "social", "romance", "consent", "contact"],
+  },
+  {
+    ruleId: "economy.trade_stock_property",
+    domain: "economy",
+    priority: "critical",
+    appliesTo: ["moneyPatch", "inventoryPatch", "shopStockPatches", "buy", "sell", "consume", "equip"],
+    must: [
+      "Verify inventory, owner, permissions, money, seller/location validity and stock before trade, consume, discard or equip.",
+      "Use MongoDB stock as real availability; no stock means no normal purchase.",
+      "Use plausible price variation only with quality, place, scarcity, weather, bargaining, urgency, reputation or supply/demand.",
+      "Sell items only to logical buyers and usually at 40-60 percent of base price.",
+    ],
+    never: [
+      "Assume infinite shop stock.",
+      "Invent discounts, gifts or premium prices for drama.",
+      "Discard important/protected objects without confirmation.",
+      "Use inventoryPatch for items that do not exist in the item catalog.",
+    ],
+    template: "verify owner + money + item + stock + seller before mutation",
+    content:
+      "Trade/stock/property rule. Economy is stateful. Purchases, sales, consumption and equipment require valid ownership, catalog item, stock, money and seller/location context before mutation.",
+    tags: ["rule_card", "economy", "stock", "property", "inventory"],
+  },
+  {
+    ruleId: "missions.guild_rewards_registration",
+    domain: "missions_events",
+    priority: "critical",
+    appliesTo: ["missionPatch", "missionAgenda", "guildState", "reward", "MG", "registration"],
+    must: [
+      "Use missionPatch for accepting, reporting, verifying, completing, failing or expiring missions.",
+      "Require proof submission and verification before completion/payment when proof is required.",
+      "Use factionReputationPatches for institutional credit and npcRelationshipPatches only for personal treatment.",
+      "Respect guild registration, rank, permission and boardVisibility.canAccept.",
+    ],
+    never: [
+      "Pay mission reward or MG with plain moneyPatch.",
+      "Offer blocked or expired board missions as accepted/vigente.",
+      "Treat loot, EXP, money, MG, reputation and trust as the same system.",
+    ],
+    template: "missionPatch + proof verification + guild registration gates + separate reward systems",
+    content:
+      "Guild/mission/reward rule. Missions live in MongoDB and require formal missionPatch transitions. Rewards, MG and institutional reputation are separate from loot, EXP and personal trust.",
+    tags: ["rule_card", "missions", "guild", "rewards", "registration"],
+  },
+  {
+    ruleId: "travel.world_friction_preview",
+    domain: "travel_world",
+    priority: "critical",
+    appliesTo: ["previewTravel", "worldFriction", "travel", "routeDanger", "weather"],
+    must: [
+      "Use worldFriction as compact warning for stock pressure, supply delays, weather and travel risk.",
+      "Use previewTravel before long exterior travel, dangerous routes or when worldFriction.travel.shouldPreviewTravel is true.",
+      "Use allowMultiSegment for reasonable destinations without direct route.",
+      "Let previewTravel path, duration and risk govern narration.",
+    ],
+    never: [
+      "Compose long or risky routes purely by narration.",
+      "Turn weather or route pressure into automatic combat unless backend resolves it.",
+      "Ignore stale weather before relevant exterior scenes.",
+    ],
+    template: "worldFriction warning -> previewTravel -> narrate returned path/risk",
+    content:
+      "Travel/world friction rule. Routes, weather and supply pressure should be respected through worldFriction and previewTravel. The backend path and risk output govern travel narration.",
+    tags: ["rule_card", "travel", "worldFriction", "weather", "routes"],
+  },
+  {
+    ruleId: "jobs.attendance_consequences",
+    domain: "jobs_economy",
+    priority: "critical",
+    appliesTo: ["jobContractPatch", "jobContract", "shift_late", "shift_absence", "commitmentPatches"],
+    must: [
+      "Record formal lateness or absence with jobContractPatch.",
+      "Include day, time, excuse/reason and related commitment when relevant.",
+      "Treat inferred consequence plans as pending follow-up, not automatic social punishment.",
+      "Resolve work consequences with apology, repair, relationship patch, commitment patch, lost shift or explicit no-change when justified.",
+    ],
+    never: [
+      "Keep formal job attendance only as EventLog prose.",
+      "Apply social penalties automatically just because a clock threshold passed.",
+      "Ignore pending attendance follow-up before long time skips.",
+    ],
+    template: "late/absence -> jobContractPatch -> pending consequence -> explicit resolution",
+    content:
+      "Job attendance rule. Formal work contracts track lateness, absence, meals, pay and follow-ups. Consequences are explicit and proportional, not automatic hidden punishments.",
+    tags: ["rule_card", "jobs", "attendance", "consequences", "contracts"],
+  },
+  {
+    ruleId: "health.injuries_conditions",
+    domain: "health",
+    priority: "high",
+    appliesTo: ["lucasPatch", "InjuryRecord", "conditions", "life", "vitality"],
+    must: [
+      "Use localized injuries with severity when damage justifies it.",
+      "Use special conditions only with clear cause such as poison, curse, burn, bleeding, extreme exhaustion, weather or magic.",
+      "Let Vitality progress only from real strain, hunger, fatigue or injury with proportional risk.",
+    ],
+    never: [
+      "Lower life for normal tiredness without serious cause.",
+      "Create regular disease systems without a clear special condition cause.",
+      "Turn suffering or safe discomfort into efficient farming.",
+    ],
+    template: "life loss/injury/condition requires cause; vitality requires real strain",
+    content:
+      "Health rule. Life, injuries and conditions require mechanical cause. Localized wounds and special conditions are tracked when justified; normal comfort or safe discomfort is not a farming loop.",
+    tags: ["rule_card", "health", "injuries", "conditions", "vitality"],
+  },
+  {
+    ruleId: "magic.autodidact_first_spell",
+    domain: "magic",
+    priority: "high",
+    appliesTo: ["magicPatches", "set_technique", "unlock_skill", "offensive_magic", "breakthrough"],
+    must: [
+      "Allow self-study to raise skill_magia and skill_mana when no external effect is claimed.",
+      "Unlock skill_magia_ofensiva at skill_magia P.N2 plus skill_mana P.N2 with valid magicPatch.",
+      "Require skill_magia_ofensiva P.N3 plus skill_mana P.N3 before breakthrough attempt for locked offensive spark.",
+      "Use set_technique with breakthrough:true, safetyConfirmed:true and concrete reason to learn a real spell.",
+    ],
+    never: [
+      "Let theory alone create a castable offensive spell.",
+      "Treat locked_template as known spell.",
+      "Narrate fire, light, damage or external spell effect before backend confirms known technique/effect.",
+    ],
+    template: "self-study skills -> unlock offensive branch -> breakthrough -> set_technique known",
+    content:
+      "Autodidact first spell rule. Lucas can learn without instructor/books, but only through formal skill prerequisites and magicPatches. Locked templates become real spells only after valid breakthrough and safety confirmation.",
+    tags: ["rule_card", "magic", "autodidact", "first_spell", "breakthrough"],
+  },
+  {
+    ruleId: "npc.scene_presence_agency",
+    domain: "npc_social",
+    priority: "high",
+    appliesTo: ["scene.nearbyNpcs", "npc_presence", "generic_npcs", "routines", "agency"],
+    must: [
+      "Show named NPCs only when visible, audible, probable or logically nearby by routine/location.",
+      "Let NPCs have agency, work, limits and concerns not centered on Lucas.",
+      "Use generic NPCs for ambience, witness or rumor without promoting them automatically.",
+      "Promote generic NPCs to persistent only when Lucas or the scene makes them important.",
+    ],
+    never: [
+      "Spawn named NPCs near Lucas without state/routine basis.",
+      "Make every NPC worry about Lucas without diegetic reason.",
+      "Treat generic ambience as persistent relationship state automatically.",
+    ],
+    template: "presence = location/routine/source; agency != orbiting Lucas",
+    content:
+      "NPC presence/agency rule. NPCs should feel alive but bounded by routine, knowledge and priorities. Generic characters can support scenes without becoming persistent state automatically.",
+    tags: ["rule_card", "npc", "presence", "agency", "routines"],
+  },
+  {
+    ruleId: "rumors.reputation_factions",
+    domain: "factions_rumors",
+    priority: "high",
+    appliesTo: ["Rumor", "factionReputationPatches", "reputation", "world_offscreen"],
+    must: [
+      "Track rumors with origin, content, certainty, distortion, who knows, where it circulates and time.",
+      "Use reputation by zone/faction instead of a single global morality score.",
+      "Let factions act offscreen by goals and game time, but not resolve Lucas' story for him.",
+      "Require witnesses, evidence, credible source, social connection or institutional record before reputation changes.",
+    ],
+    never: [
+      "Change prices, missions or treatment for tiny actions with no source.",
+      "Treat personal trust as institutional reputation.",
+      "Let factions solve core player arcs offscreen.",
+    ],
+    template: "rumor source/certainty/distortion + faction reputation by evidence/source",
+    content:
+      "Rumor/reputation/faction rule. Information spreads with source and distortion. Reputation is local/institutional and changes only when there is credible transmission or impact.",
+    tags: ["rule_card", "rumors", "reputation", "factions", "offscreen"],
+  },
+  {
+    ruleId: "inventory.evidence_boundary",
+    domain: "inventory_evidence",
+    priority: "high",
+    appliesTo: ["inventoryPatch", "evidencePatches", "loot", "sample", "proof"],
+    must: [
+      "Use inventoryPatch only for catalog items.",
+      "Use evidencePatches for samples, tracks, notes, testimony, improvised proof or non-sellable narrative objects.",
+      "Link evidence to events or missions with source/related IDs when relevant.",
+      "Update evidence when reported, handed over, lost, discarded or destroyed.",
+    ],
+    never: [
+      "Invent itemId for a sample/proof object just to carry it.",
+      "Turn evidence into sellable loot unless item catalog and ownership support it.",
+      "Let EventLog replace evidence state for important proof.",
+    ],
+    template: "catalog item -> inventoryPatch; proof/sample/testimony -> evidencePatches",
+    content:
+      "Inventory/evidence boundary rule. Items and evidence are different systems. Catalog items use inventory; proof, samples and improvised narrative objects use formal evidence records.",
+    tags: ["rule_card", "inventory", "evidence", "proof", "loot"],
+  },
+  {
+    ruleId: "checkpoints.rollback_policy",
+    domain: "state_safety",
+    priority: "high",
+    appliesTo: ["checkpoint", "rollback", "autoCheckpoint", "major_changes"],
+    must: [
+      "Create automatic checkpoints for day changes, long scenes, major travel, combat, important money/inventory/EXP, missions, knowledge, relationships, locations, wounds or strong consequences.",
+      "Use rollback only through explicit technical/debug flow.",
+      "Mention autoCheckpoint in Alertas only when relevant.",
+    ],
+    never: [
+      "Create manual checkpoints during normal GPT gameplay without reason.",
+      "Rollback silently.",
+      "Depend on chat memory instead of checkpoint state for reversibility.",
+    ],
+    template: "major persistent change -> auto checkpoint; rollback is explicit technical action",
+    content:
+      "Checkpoint/rollback rule. Important state changes should be recoverable. Normal narration may mention automatic checkpoints when relevant, but rollback is not casual gameplay text.",
+    tags: ["rule_card", "checkpoints", "rollback", "state_safety"],
+  },
+  {
+    ruleId: "combat.recovery_detail",
+    domain: "combat",
+    priority: "high",
+    appliesTo: ["combatAdvancedPreviewRecovery", "combatAdvancedApplyRecovery", "InjuryRecord", "treatment"],
+    must: [
+      "Use recovery preview before applying recovery.",
+      "Block recovery while bleeding is active or treatment is pending.",
+      "Track recovery on InjuryRecord without advancing clock or processing biology by itself.",
+      "Use applyTurn separately when rest time must advance game time and biological costs.",
+    ],
+    never: [
+      "Restore life from recovery endpoints.",
+      "Count hard activity as recovery.",
+      "Apply recovery twice at the same GameState day/time.",
+    ],
+    template: "treat bleeding first -> preview recovery -> apply InjuryRecord progress -> applyTurn for time",
+    content:
+      "Combat recovery detail rule. Treatment, recovery and time passage are separate. Recovery progresses wound healing and never restores life or advances the clock by itself.",
+    tags: ["rule_card", "combat", "recovery", "injuries", "treatment"],
+  },
+  {
+    ruleId: "factions.institutional_vs_personal",
+    domain: "factions_rumors",
+    priority: "high",
+    appliesTo: ["factionReputationPatches", "npcRelationshipPatches", "guild_report", "socialDebt"],
+    must: [
+      "Use factionReputationPatches for institutional reports, merit, credit, access and reputation.",
+      "Use npcRelationshipPatches only for personal treatment, direct help, conflict, trust or social debt.",
+      "Show institutional reputation separately from personal relationship changes.",
+    ],
+    never: [
+      "Convert every guild or guard report into personal socialDebt.",
+      "Treat institutional credit as friendship.",
+      "Use personal trust to bypass formal rank/permission gates unless backend allows it.",
+    ],
+    template: "institutional report -> faction; personal interaction -> NPC relationship",
+    content:
+      "Institutional vs personal rule. Guild, guard, temple or faction outcomes are not the same as an NPC owing Lucas personally. Keep reputation/credit/merit separate from trust/debt.",
+    tags: ["rule_card", "factions", "reputation", "social", "guild"],
   },
 ];
 
