@@ -1,4 +1,4 @@
-const CRITICAL_RULE_CARDS_VERSION = "C24B critical_rule_cards_v1";
+const CRITICAL_RULE_CARDS_VERSION = "C24C critical_rule_cards_v1";
 
 const criticalRuleCards = [
   {
@@ -24,19 +24,33 @@ const criticalRuleCards = [
     ruleId: "format.mechanical_changes",
     domain: "output_contract",
     priority: "critical",
-    appliesTo: ["changes", "hud", "applyTurn", "completeJobShift", "combat_results"],
+    appliesTo: [
+      "changes",
+      "changes.mechanicalChangeDisplay",
+      "changes.money",
+      "changes.inventory",
+      "changes.shopStocks",
+      "changes.activityCost",
+      "changes.biologicalClock",
+      "changes.evidence",
+      "changes.guildRegistration",
+      "hud",
+      "applyTurn",
+      "completeJobShift",
+      "combat_results",
+    ],
     must: [
       "Show persistent numerical changes with before->after and delta when available.",
       "Keep narrative prose before HUD, then Cambios relevantes, Estado actual and Alertas only if needed.",
-      "Prefer backend displayLines when they exist.",
+      "Prefer backend mechanicalChangeDisplay/displayLines when they exist.",
     ],
     never: [
       "Hide mechanical changes because narration is more dramatic.",
       "Replace exact mechanical output with vague prose.",
     ],
-    template: "Campo: before->after (+delta)",
+    template: "Campo: before→after (+delta)",
     content:
-      "Output contract for mechanical changes. Any persistent number changed by backend must be visible in Cambios relevantes with before->after and delta when available. If backend returns displayLines, copy them instead of rebuilding the line.",
+      "Output contract for mechanical changes. Any persistent number changed by backend must be visible in Cambios relevantes with before→after and delta when available. If backend returns mechanicalChangeDisplay or displayLines, copy them instead of rebuilding the line. Covers money, inventory, shop stock, biological costs, physical status, evidence and guild registration.",
     tags: ["rule_card", "format", "hud", "mechanical_changes", "displayLines"],
   },
   {

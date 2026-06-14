@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Admin Read-Only",
-    "version": "2.8.4",
-    "description": "Schema opcional para una segunda Action tecnica segura. Solo incluye endpoints existentes read-only. Sus componentes documentan parches sociales y relationshipState efectivo, pero las rutas expuestas no incluyen applyTurn, rollback, reset, delete ni mutadores peligrosos. searchDocs expone rule cards criticas, incluidas reglas C24B de displayLines de habilidades."
+    "version": "2.8.5",
+    "description": "Schema opcional para una segunda Action tecnica segura. Solo incluye endpoints existentes read-only. Sus componentes documentan parches sociales y relationshipState efectivo, pero las rutas expuestas no incluyen applyTurn, rollback, reset, delete ni mutadores peligrosos. searchDocs expone rule cards criticas, incluidas reglas C24C de displayLines mecanicas."
   },
   "servers": [
     {

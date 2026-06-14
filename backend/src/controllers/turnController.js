@@ -36,6 +36,10 @@ const {
   withSkillProgressDisplay,
 } = require("../utils/skillProgressDisplay");
 const {
+  attachMechanicalChangeDisplay,
+  withInventoryDisplay,
+} = require("../utils/mechanicalChangeDisplay");
+const {
   ACTION_FAMILIES,
   attachNarrativeTrackingToLogDrafts,
   buildNarrativeHints,
@@ -1349,13 +1353,13 @@ async function applyInventoryPatch(inventory, patch, session = null) {
   const afterIndex = inventory.findIndex((item) => item.itemId === itemId);
   const afterItem = afterIndex >= 0 ? toPlain(inventory[afterIndex]) : null;
 
-  return {
+  return withInventoryDisplay({
     op,
     itemId,
     quantity,
     before: beforeItem,
     after: afterItem,
-  };
+  });
 }
 
 async function applyNpcRelationshipPatches(gameState, patches, session = null) {
@@ -2561,7 +2565,9 @@ function buildMissionOutcome({ op, mission, before, reward = null, patch = {} } 
   }
 
   if (reward?.money && !reward.alreadyPaid) {
-    rewardLines.push(`Recompensa pagada: ${formatCopper(reward.money.delta)}.`);
+    rewardLines.push(
+      `Dinero por recompensa: ${formatCopper(reward.money.before)}\u2192${formatCopper(reward.money.after)} (+${reward.money.delta} cobre).`
+    );
   }
   if (reward?.mg && !reward.alreadyPaid) {
     rewardLines.push(`MG: ${reward.mg.before}->${reward.mg.after} (+${reward.mg.delta}).`);
@@ -4636,6 +4642,8 @@ async function applyTurn(req, res) {
           };
         }
       }
+
+      attachMechanicalChangeDisplay(changes);
 
       const logsToCreate = [];
 

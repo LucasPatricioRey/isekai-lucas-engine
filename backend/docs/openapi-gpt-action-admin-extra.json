@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Admin Extra Read-Only",
-    "version": "2.9.1",
-    "description": "Segundo bloque opcional de Actions para modo tecnico/debug. Solo lectura, sin applyTurn, sin checkpoints create/rollback, sin mutadores directos. Usa operationId con prefijo admin para evitar duplicados con el schema compacto. searchDocs expone rule cards C24B para formatos mecanicos."
+    "version": "2.9.2",
+    "description": "Segundo bloque opcional de Actions para modo tecnico/debug. Solo lectura, sin applyTurn, sin checkpoints create/rollback, sin mutadores directos. Usa operationId con prefijo admin para evitar duplicados con el schema compacto. searchDocs expone rule cards C24C para formatos mecanicos."
   },
   "servers": [
     {
