@@ -22,6 +22,8 @@ Actualizacion C16: `context/compact` expone `dramaticContext.emotionalScene` y `
 
 Actualizacion C17: `src/utils/auditNarrativeScenePlaytest.js` agrega playtest read-only de cuatro escenas representativas: entrenamiento con Eddan, cierre grupal de La Grulla Azul, reporte/tramite en gremio y escena solitaria de cansancio. Tambien ajusta anclas sensoriales para distinguir patio de entrenamiento, gremio administrativo y habitacion privada.
 
+Actualizacion C21: `src/seeds/seedHoshimoriNpcLivingLayer.js` backfillea los 25 NPCs de Hoshimori con `socialProfile` ampliado y `livingLayer`, agrega 23 relaciones NPC-NPC y 19 memorias base. `context/compact` expone `scene.dialogueSceneCapsules` y balancea memorias por NPC cercano para mejorar dialogos sin volver omnisciente al narrador.
+
 ## Resumen ejecutivo
 
 G1 compara tres niveles:

@@ -1150,6 +1150,88 @@ function summarizeNpcPresenceRef(npc) {
   };
 }
 
+function npcPresenceRank(npcId, npcPresence = {}) {
+  const groups = [
+    ["same_room", npcPresence.sameRoom || npcPresence.visible || []],
+    ["same_building", npcPresence.sameBuilding || []],
+    ["probable", npcPresence.probable || []],
+    ["relevant", npcPresence.relevant || []],
+  ];
+
+  for (const [key, list] of groups) {
+    if (toArray(list).some((entry) => entry?.npcId === npcId)) return key;
+  }
+
+  return "nearby";
+}
+
+function firstNpcMemoryForCapsule(npcId, memories = []) {
+  return toArray(memories).find((memory) => memory?.npcId === npcId) || null;
+}
+
+function buildDialogueSceneCapsules({
+  nearbyNpcs = [],
+  npcPresence = {},
+  relevantNpcMemories = [],
+  maxNpcs = 6,
+} = {}) {
+  const presentPriority = {
+    same_room: 0,
+    same_building: 1,
+    probable: 2,
+    relevant: 3,
+    nearby: 4,
+  };
+  const sortedNpcs = toArray(nearbyNpcs)
+    .filter(Boolean)
+    .map((npc) => ({
+      npc,
+      presence: npcPresenceRank(npc.npcId, npcPresence),
+    }))
+    .sort((left, right) => {
+      const rankDiff = (presentPriority[left.presence] ?? 9) - (presentPriority[right.presence] ?? 9);
+      if (rankDiff !== 0) return rankDiff;
+      return String(left.npc.name || left.npc.npcId).localeCompare(String(right.npc.name || right.npc.npcId));
+    })
+    .slice(0, maxNpcs);
+
+  const capsules = sortedNpcs.map(({ npc, presence }) => {
+    const livingLayer = npc.flags?.livingLayer || {};
+    const dialogueProfile = npc.dialogueProfile || {};
+    const dramaticRole = dialogueProfile.dramaticRole || {};
+    const emotionalProfile = npc.emotionalProfile || {};
+    const memory = firstNpcMemoryForCapsule(npc.npcId, relevantNpcMemories);
+
+    return {
+      npcId: npc.npcId,
+      name: npc.name,
+      presence,
+      voice: truncateText(dialogueProfile.speechRhythm || npc.voiceProfile?.speechStyle || "", 60),
+      mask: truncateText(dramaticRole.publicMask || "", 70),
+      wantsNow: truncateText(livingLayer.currentConcern || dramaticRole.sceneWant || npc.currentTask || "", 80),
+      pressure: truncateText(livingLayer.scenePressure || dialogueProfile.currentPressure?.summary || "", 70),
+      memoryToUse: memory
+        ? {
+            memoryId: memory.memoryId,
+            summary: truncateText(memory.summary || memory.fact || "", 85),
+            certainty: memory.certainty || "",
+          }
+        : null,
+      gestureAnchor: truncateText(
+        dramaticRole.vulnerabilityTell || emotionalProfile.visibleTells?.[0] || livingLayer.dialogueTexture || "",
+        60
+      ),
+      sampleTone: truncateText(livingLayer.dialogueExample || "", 85),
+    };
+  });
+
+  return {
+    schemaVersion: "dialogue_scene_capsules_v1",
+    guidance: "Usar voz+tarea+memoria+limite; no frase minima ni mente privada.",
+    capsules,
+  };
+}
+
 function relationshipPressureForScene(relationship = {}) {
   const trust = Number(relationship.trust) || 0;
   const familiarity = Number(relationship.familiarity) || 0;
@@ -1852,6 +1934,7 @@ function buildDramaticContext({
       "No convertir todo en exposicion; separar escena dramatica del HUD mecanico final.",
     ],
     dialogueDirectives: [
+      "Si scene.dialogueSceneCapsules existe, usar esas capsulas como guia prioritaria para voz, gesto, presion y ejemplo de tono.",
       "Aplicar dialogueProfile y emotionalProfile de cada NPC: ritmo, registro por confianza, temperatura emocional, subtexto visible, limites y movimientos.",
       "Cada linea de dialogo necesita intencion: medir, cuidar, presionar, ocultar, corregir, negociar, provocar o revelar algo permitido.",
       "En pedidos directos de Lucas, entrenamiento, conflicto o decision social, evitar resolver al NPC con una sola frase minima; usar 2-4 beats de dialogo/gesto si la escena lo permite.",
@@ -1933,6 +2016,7 @@ module.exports = {
   buildNpcVoiceProfile,
   buildNpcDialogueProfile,
   buildNpcDramaticRole,
+  buildDialogueSceneCapsules,
   summarizeNpcEmotionalProfile,
   summarizeNpcRelationship,
   buildSceneRelationshipDynamics,

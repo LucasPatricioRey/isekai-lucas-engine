@@ -10,6 +10,7 @@ Actualizacion C14: este archivo sigue definiendo lore estable; la voz viva de NP
 Actualizacion C15: los rasgos emocionales vivos de NPCs persistentes se consultan en backend mediante `emotionalProfile` y `scene.relationshipDynamics`; este archivo solo da base de mundo, no interioridad actual ni escena presente.
 Actualizacion C16: la direccion dramatica viva se consulta en backend mediante `dramaticContext.emotionalScene` y `dialogueProfile.dramaticRole`; este archivo no reemplaza mascara, presion, grieta visible ni escena actual.
 Actualizacion C17: los playtests de escena representativa viven en backend/docs y auditorias (`audit:narrative-scene-playtest`); este archivo sigue siendo lore estable, no una plantilla de respuesta narrativa.
+Actualizacion C21: las personalidades, metas inmediatas, relaciones NPC-NPC, memorias vivas y capsulas de dialogo se consultan en backend (`socialProfile`, `livingLayer`, `NpcMemory`, `NpcRelationship`, `scene.dialogueSceneCapsules`). Este archivo conserva el canon estable y no decide voz actual ni conocimiento privado.
 
 ---
 

@@ -36,13 +36,26 @@ function listNpcFactionIds(npc = {}) {
   return unique(toArray(npc.factionLinks).map((link) => link.factionId));
 }
 
+function isFactionScopedKnowledge(record = {}) {
+  if (!record || record.status !== "active") return false;
+  if (record.visibility === "public") return true;
+  if (record.flags?.allowFactionKnowledge === true || record.flags?.factionScope === "institutional") return true;
+  return (
+    record.visibility === "semi_private" &&
+    ["institutional_record", "public_record", "system"].includes(record.sourceType)
+  );
+}
+
 function isDirectKnowledge(record = {}, npc = {}) {
   if (!record || record.status !== "active") return false;
   if (record.visibility === "mechanical_only") return false;
   if (record.visibility === "public") return true;
   if (toArray(record.holderNpcIds).includes(npc.npcId)) return true;
   const npcFactionIds = listNpcFactionIds(npc);
-  return toArray(record.holderFactionIds).some((factionId) => npcFactionIds.includes(factionId));
+  return (
+    isFactionScopedKnowledge(record) &&
+    toArray(record.holderFactionIds).some((factionId) => npcFactionIds.includes(factionId))
+  );
 }
 
 function canStateAsCertainty(record = {}) {
@@ -73,12 +86,25 @@ function canStateMemoryAsCertainty(memory = {}) {
   );
 }
 
-function summarizeKnowledgeRecord(record = {}) {
+function neutralizeCharacterPerspective(value = "") {
+  return String(value || "")
+    .replace(/^Lucas sabe por .+? que\s+/i, "")
+    .replace(/^Lucas sabe que\s+/i, "")
+    .replace(/^Lucas sabe\s+/i, "")
+    .trim();
+}
+
+function summarizeKnowledgeRecord(record = {}, options = {}) {
+  const fact = options.perspective === "npc" ? neutralizeCharacterPerspective(record.fact) : record.fact;
+  const summary = options.perspective === "npc"
+    ? neutralizeCharacterPerspective(record.summary || record.fact || "")
+    : record.summary || "";
+
   return {
     knowledgeId: record.knowledgeId,
     factKey: record.factKey,
-    fact: record.fact,
-    summary: record.summary || "",
+    fact,
+    summary,
     subjectType: record.subjectType,
     subjectId: record.subjectId || "",
     sourceType: record.sourceType,
@@ -197,10 +223,18 @@ function buildNpcKnowledgeContext({
   const activeRecords = toArray(knowledgeRecords).filter((record) => record.status === "active");
   const perNpc = toArray(nearbyNpcs).slice(0, 10).map((npc) => {
     const directRecords = activeRecords.filter((record) => isDirectKnowledge(record, npc));
+    const knownMemories = toArray(relevantNpcMemories)
+      .filter((memory) => memory.npcId === npc.npcId)
+      .slice(0, 3)
+      .map(summarizeNpcMemoryAsKnowledge);
     return {
       npcId: npc.npcId,
       name: npc.name,
-      knownRecords: directRecords.slice(0, 5).map(summarizeKnowledgeRecord),
+      knownRecords: directRecords
+        .slice(0, 5)
+        .map((record) => summarizeKnowledgeRecord(record, { perspective: "npc" })),
+      knownMemoryCount: knownMemories.length,
+      knownMemories,
       jobAvailability: buildJobKnowledgeEntry({
         npc,
         records: activeRecords,

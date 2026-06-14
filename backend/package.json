@@ -22,6 +22,7 @@
     "seed:documents": "node src/seeds/seedDocuments.js",
     "seed:combat-equipment": "node src/seeds/seedCombatEquipmentProfiles.js",
     "seed:hoshimori-npc-emotions": "node src/seeds/seedHoshimoriNpcEmotions.js",
+    "seed:hoshimori-npc-living": "node src/seeds/seedHoshimoriNpcLivingLayer.js",
     "check": "node src/utils/checkProject.js",
     "smoke": "node src/utils/smokeTestRender.js",
     "audit:coverage": "node src/utils/auditLiveCoverage.js",

@@ -19,6 +19,7 @@ Actualizacion C17: agrega `audit:narrative-scene-playtest` para validar, sin mut
 Actualizacion C18: agrega `applyTurn.magicPractice` para practica magica real con tiempo/coste/MP/EXP validados y permite `use_magic` en combate solo con hechizos conocidos formalmente.
 Actualizacion C19: convierte las ramas magicas documentadas en catalogo tecnico de disciplinas, teorias/ejercicios y plantillas `locked_template`; las plantillas existen para validar requisitos, no son hechizos conocidos por Lucas.
 Actualizacion C20: agrega `learningSources` al catalogo magico y permite `applyTurn.magicPractice[].target` para efectos no ofensivos conocidos: curacion menor estabiliza `InjuryRecord` real sin restaurar vida; defensa/resistencia se guardan como preparadas sin mitigar dano hasta un resolver de combate.
+Actualizacion C21: agrega capa viva de NPCs en Hoshimori: `socialProfile` ampliado, `livingLayer`, 23 relaciones NPC-NPC, 19 memorias base, `scene.dialogueSceneCapsules` y memoria balanceada por NPC en contexto compacto. La guia de dialogo prioriza capsulas, conocimiento real y gestos visibles; no pensamientos privados ni omnisciencia.
 
 ---
 
@@ -1696,7 +1697,7 @@ Si `narrativeHints.scenePlan` pide escena comprimida, resumir la rutina y elegir
 
 Cuando el GPT use `applyTurn` debe enviar `actionFamily` si la accion tiene familia clara (`investigation`, `report`, `travel`, `social`, `physical_training`, `magic_practice`, `mission`, etc.). Este campo solo guia `narrativeHints`: no crea mecanicas ni reemplaza tags, pero evita que reportes, investigaciones o viajes se clasifiquen como compra/entrenamiento por inferencia.
 
-### 19.10 Narracion dramatica y dialogo vivo C14/C15/C16/C17
+### 19.10 Narracion dramatica y dialogo vivo C14/C15/C16/C17/C21
 
 `getCompactContext` debe exponer `dramaticContext` para cada escena jugable. Este bloque no cambia estado ni autoriza resultados; solo guia estilo:
 
@@ -1705,6 +1706,8 @@ Cuando el GPT use `applyTurn` debe enviar `actionFamily` si la accion tiene fami
 - la tension sale de estado confirmado: cuerpo de Lucas, evento principal, compromisos, misiones, clima, friccion de mundo, NPCs presentes o combate activo;
 - la prosa puede dramatizar sensaciones, gestos, silencios, interrupciones, tareas y entorno, pero no crea dano, curacion, loot, EXP, dinero, relaciones ni resoluciones;
 - si no hay tension fuerte, el lugar, el cuerpo de Lucas y las agendas abiertas deben sostener una escena breve pero viva.
+
+Desde C21, si `scene.dialogueSceneCapsules` existe, debe usarse como prioridad para dialogo inmediato. Cada capsula resume voz, mascara publica, deseo visible, presion actual, gesto/ancla, memoria relevante y ejemplo de tono por NPC cercano. Es una guia compacta de puesta en escena: permite escribir mejor dialogo, pero no autoriza al GPT a revelar interioridad privada, inventar conocimiento ni decidir resultados mecanicos.
 
 `dramaticContext.emotionalScene` dirige la arquitectura emocional de la respuesta:
 
@@ -1759,6 +1762,7 @@ Reglas de uso:
 - un NPC calido no debe repetir gratitud generica: debe mostrar cuidado mediante acciones concretas, preguntas pequenas o atencion a la escena;
 - en grupos, no hacer turnos artificiales: usar miradas, interrupciones, silencio, alianzas pequenas y reacciones cruzadas;
 - respetar `npcKnowledgeContext`: certeza solo con fuente diegetica, inferencias como duda/pregunta/rumor;
+- usar `scene.dialogueSceneCapsules` antes que frases genericas si esta disponible;
 - ningun NPC debe recitar HUD, numeros o reglas salvo interfaz administrativa explicita.
 
 C17 agrega playtest representativo obligatorio. `audit:narrative-scene-playtest` debe cubrir, sin mutar canon:

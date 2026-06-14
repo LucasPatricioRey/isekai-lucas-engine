@@ -125,6 +125,58 @@ function compactProfileCaps(profile) {
   };
 }
 
+function npcMemoryImportanceRank(memory = {}) {
+  const ranks = {
+    critical: 4,
+    important: 3,
+    normal: 2,
+    minor: 1,
+  };
+  return ranks[memory.importance] || 0;
+}
+
+function sortNpcMemories(left = {}, right = {}) {
+  const importanceDiff = npcMemoryImportanceRank(right) - npcMemoryImportanceRank(left);
+  if (importanceDiff !== 0) return importanceDiff;
+  const dayDiff = (Number(right.createdDay) || 0) - (Number(left.createdDay) || 0);
+  if (dayDiff !== 0) return dayDiff;
+  return String(right.createdTime || "").localeCompare(String(left.createdTime || ""));
+}
+
+function selectBalancedNpcMemories(memories = [], npcIds = [], requestedLimit = 0, profile = "player_scene") {
+  if (profile === "debug_audit") return memories;
+  if (!requestedLimit || requestedLimit <= 0) return [];
+
+  const nearbyNpcIds = npcIds.filter(Boolean);
+  const maxTotal = requestedLimit;
+  const byNpc = new Map();
+  const selected = [];
+  const selectedIds = new Set();
+
+  for (const memory of [...memories].sort(sortNpcMemories)) {
+    if (!memory?.npcId) continue;
+    if (!byNpc.has(memory.npcId)) byNpc.set(memory.npcId, []);
+    byNpc.get(memory.npcId).push(memory);
+  }
+
+  for (const npcId of nearbyNpcIds) {
+    const firstMemory = byNpc.get(npcId)?.[0];
+    if (!firstMemory || selectedIds.has(firstMemory.memoryId)) continue;
+    selected.push(firstMemory);
+    selectedIds.add(firstMemory.memoryId);
+    if (selected.length >= maxTotal) return selected.sort(sortNpcMemories);
+  }
+
+  for (const memory of [...memories].sort(sortNpcMemories)) {
+    if (!memory?.memoryId || selectedIds.has(memory.memoryId)) continue;
+    selected.push(memory);
+    selectedIds.add(memory.memoryId);
+    if (selected.length >= maxTotal) break;
+  }
+
+  return selected.sort(sortNpcMemories);
+}
+
 function slimNpcSummaryForProfile(npc, profile) {
   if (!npc || profile === "debug_audit") return npc;
   const dramaticRole = npc.dialogueProfile?.dramaticRole
@@ -255,6 +307,15 @@ function slimNpcKnowledgeContextForProfile(context, profile) {
         certainty: record.certainty,
         visibility: record.visibility,
         canShare: Boolean(record.canShare),
+      })),
+      knownMemoryCount: entry.knownMemoryCount || (entry.knownMemories || []).length,
+      knownMemories: (entry.knownMemories || []).slice(0, 2).map((memory) => ({
+        memoryId: memory.memoryId,
+        summary: memory.summary || memory.fact || "",
+        sourceType: memory.sourceType,
+        certainty: memory.certainty,
+        privacyLevel: memory.privacyLevel,
+        canShare: Boolean(memory.canShare),
       })),
       jobAvailability: entry.jobAvailability
         ? {
@@ -1211,11 +1272,9 @@ async function getCompactContext(req, res) {
     ];
     if (activeMissionIds.length > 0) activeMissionClauses.push({ missionId: { $in: activeMissionIds } });
 
-    const characterId = gameState.characterId || "char_lucas";
     const knowledgeClauses = [{ visibility: "public" }];
     if (nearbyNpcIds.length > 0) knowledgeClauses.push({ holderNpcIds: { $in: nearbyNpcIds } });
     if (nearbyFactionIds.length > 0) knowledgeClauses.push({ holderFactionIds: { $in: nearbyFactionIds } });
-    knowledgeClauses.push({ holderCharacterIds: { $in: [characterId] } });
     if (activeEventIds.length > 0) knowledgeClauses.push({ relatedEventIds: { $in: activeEventIds } });
     if (activeMissionIds.length > 0) knowledgeClauses.push({ relatedMissionIds: { $in: activeMissionIds } });
 
@@ -1230,10 +1289,14 @@ async function getCompactContext(req, res) {
     const socialLedgerLimit = profile === "debug_audit" ? 20 : profile === "minimal_header" ? 4 : 10;
     const knowledgeRecordLimit = profile === "debug_audit" ? 40 : profile === "minimal_header" ? 12 : 24;
     const narrativeContextLimit = profile === "debug_audit" ? 30 : profile === "minimal_header" ? 8 : 18;
+    const memoryFetchLimit =
+      profile === "debug_audit"
+        ? limits.memoryLimit
+        : Math.min(40, Math.max(limits.memoryLimit * 4, nearbyNpcIds.length * 3, limits.memoryLimit));
 
     const [
       inventoryItems,
-      relevantNpcMemories,
+      rawRelevantNpcMemories,
       activeEvents,
       dailyEvents,
       layeredWorldEvents,
@@ -1262,7 +1325,7 @@ async function getCompactContext(req, res) {
             importance: { $in: ["normal", "important", "critical"] },
           })
             .sort({ importance: -1, createdDay: -1, createdTime: -1 })
-            .limit(limits.memoryLimit)
+            .limit(memoryFetchLimit)
             .lean()
         : Promise.resolve([]),
 
@@ -1444,6 +1507,13 @@ async function getCompactContext(req, res) {
       Faction.findOne({ factionId: "faction_hoshimori_guild" }).lean(),
     ]);
 
+    const relevantNpcMemories = selectBalancedNpcMemories(
+      rawRelevantNpcMemories,
+      nearbyNpcIds,
+      limits.memoryLimit,
+      profile
+    );
+
     const activeMissionSummaries = activeMissions.map((mission) =>
       responseShaping.summarizeMission(mission, gameState.currentDay, gameState.time)
     );
@@ -1551,6 +1621,12 @@ async function getCompactContext(req, res) {
       relationships: nearbyNpcRelationships,
       nearbyNpcs: nearbyNpcSummariesForResponse,
       npcPresence,
+    });
+    const dialogueSceneCapsules = responseShaping.buildDialogueSceneCapsules({
+      nearbyNpcs: nearbyNpcSummaries,
+      npcPresence,
+      relevantNpcMemories,
+      maxNpcs: profile === "debug_audit" ? limits.npcLimit : Math.min(limits.npcLimit, 3),
     });
     const npcById = new Map(nearbyNpcs.map((npc) => [npc.npcId, npc]));
     const alerts = [];
@@ -1918,6 +1994,7 @@ async function getCompactContext(req, res) {
           nearbyNpcs: nearbyNpcSummariesForResponse,
           npcPresence,
           relationshipDynamics: sceneRelationshipDynamics,
+          dialogueSceneCapsules,
           routineOverrides,
           recentEventSummaries: recentEventLogs.map((log) => responseShaping.summarizeEventLog(log)),
         },
