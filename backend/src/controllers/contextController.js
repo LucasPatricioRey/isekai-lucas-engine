@@ -94,7 +94,7 @@ function compactProfileDefaults(profile) {
     npcLimit: 5,
     memoryLimit: 3,
     rumorLimit: 3,
-    missionLimit: 5,
+    missionLimit: 3,
     eventLimit: 5,
     logLimit: 3,
     commitmentLimit: 5,
@@ -675,7 +675,18 @@ function commitmentAgendaEntry(commitment) {
 function buildCommitmentAgenda(commitments = []) {
   const byUrgency = (urgency) => commitments.filter((commitment) => commitment.urgency === urgency);
   const consequenceReady = commitments.filter((commitment) => commitment.consequencePreview?.pastGrace);
-  const needsResolution = commitments.filter((commitment) => commitment.consequencePreview?.requiresExplicitResolution);
+  const immediateResolutionUrgencies = new Set([
+    "consequence_ready",
+    "overdue_in_grace",
+    "due_now",
+    "review_overdue",
+    "review_due",
+  ]);
+  const needsResolution = commitments.filter(
+    (commitment) =>
+      commitment.consequencePreview?.requiresExplicitResolution &&
+      immediateResolutionUrgencies.has(commitment.urgency)
+  );
 
   return {
     consequenceReady: consequenceReady.map(commitmentAgendaEntry),

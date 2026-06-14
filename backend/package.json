@@ -65,6 +65,7 @@
     "repair:lucas-morning-shift-exit": "node src/utils/repairLucasMorningShiftExit.js",
     "repair:forest-evidence-progress": "node src/utils/repairForestEvidenceProgress.js",
     "repair:commitment-followups": "node src/utils/repairCommitmentFollowups.js",
+    "repair:mongo-state-c22": "node src/utils/repairMongoStateC22.js",
     "ensure:combat-training-skills": "node src/utils/ensureCombatTrainingSkills.js"
   },
   "keywords": [],
