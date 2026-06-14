@@ -148,7 +148,7 @@ async function seedDocuments() {
   }
 
   console.log(
-    `Documentos indexados correctamente: ${docsToInsert.length} (${criticalRuleCards.length} rule cards C24A)`
+    `Documentos indexados correctamente: ${docsToInsert.length} (${criticalRuleCards.length} rule cards ${CRITICAL_RULE_CARDS_VERSION})`
   );
 
   await mongoose.disconnect();

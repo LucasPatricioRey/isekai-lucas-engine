@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Combat Advanced",
-    "version": "0.7.0",
-    "description": "Tercer bloque de Actions para combate avanzado. Cubre preview/apply con previewId, backend rolls, ataque, defensa, bloqueo, esquiva, retirada, moral enemiga, fatiga, heridas, conducta enemiga C12 por tipo de encuentro, uso controlado de objetos de tratamiento, evidencia/loot logico sin inventario automatico, tratamiento basico y recuperacion C13 sin restauracion gratuita de vida."
+    "version": "0.7.1",
+    "description": "Tercer bloque de Actions para combate avanzado. Cubre preview/apply con previewId, backend rolls, ataque, defensa, bloqueo, esquiva, retirada, moral enemiga, fatiga, heridas, conducta enemiga C12 por tipo de encuentro, uso controlado de objetos de tratamiento, evidencia/loot logico sin inventario automatico, tratamiento basico y recuperacion C13 sin restauracion gratuita de vida. La progresion de habilidades de combate devuelve displayLine/displayLines canonicas."
   },
   "servers": [
     {

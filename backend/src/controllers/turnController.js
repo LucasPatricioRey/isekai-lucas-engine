@@ -32,6 +32,10 @@ const { previewMagicPractice } = require("../services/magicService");
 const { ensureCurrentWeatherForGameState } = require("../services/weatherService");
 const { createAutomaticCheckpoint } = require("../services/checkpointService");
 const {
+  buildSkillProgressDisplay,
+  withSkillProgressDisplay,
+} = require("../utils/skillProgressDisplay");
+const {
   ACTION_FAMILIES,
   attachNarrativeTrackingToLogDrafts,
   buildNarrativeHints,
@@ -1245,7 +1249,7 @@ function applyValidatedSkillPatch({
   skill.exp = after.exp;
   skill.expToNext = after.expToNext;
 
-  return {
+  return withSkillProgressDisplay({
     skillId: patch.skillId,
     name: skill.name,
     reason: input.reason,
@@ -1264,7 +1268,7 @@ function applyValidatedSkillPatch({
     before,
     after,
     levelUps,
-  };
+  });
 }
 
 async function applyInventoryPatch(inventory, patch, session = null) {
@@ -3397,7 +3401,7 @@ async function applyMagicPracticePatches({
       skill.exp = after.exp;
       skill.expToNext = after.expToNext;
 
-      const change = {
+      const change = withSkillProgressDisplay({
         skillId: skill.skillId,
         name: skill.name,
         source: "magicPractice",
@@ -3414,7 +3418,7 @@ async function applyMagicPracticePatches({
         before,
         after,
         levelUps: levelUps || [],
-      };
+      });
       appliedSkills.push(change);
       skillChanges.push(change);
     }
@@ -4495,6 +4499,11 @@ async function applyTurn(req, res) {
       if (body.magicPatches !== undefined) {
         const magicChanges = await applyMagicPatches(gameState, body.magicPatches, session);
         if (magicChanges.length > 0) changes.magic = magicChanges;
+      }
+
+      if (Array.isArray(changes.skills) && changes.skills.length > 0) {
+        changes.skills = changes.skills.map((change) => withSkillProgressDisplay(change));
+        changes.skillProgressDisplay = buildSkillProgressDisplay(changes.skills);
       }
 
       let updatedGameState = gameState.toObject();

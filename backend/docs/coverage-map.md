@@ -729,6 +729,7 @@ C24A - Critical Rule Cards:
 | Area / seccion | Fuente en docs | Representacion en repo | Representacion en MongoDB vivo | Estado | Evidencia | Proxima accion recomendada |
 |---|---|---|---|---|---|---|
 | Rule cards criticas | `rules_engine.md` 3.2.1 | `WorldDocumentIndex` con `ruleId`, `domain`, `priority`, `appliesTo`, `must`, `never`, `template`; `seedDocuments.js`; `searchDocs` con filtros | `WorldDocumentIndex` guarda tarjetas `rule_card` junto a chunks de docs | implemented_backend | `GET /api/search/docs?ruleId=format.skill_progress` devuelve regla exacta sin sumar operacion al Action principal. | C24B: agregar `displayLines` backend para `changes.skills` y otros cambios mecanicos. |
+| DisplayLines de habilidades | `rules_engine.md` 10.3 | `skillProgressDisplay.js`, `previewSkillProgression`, `applyTurn.skillPatch`, `applyTurn.magicPractice`, combate avanzado | No crea estado nuevo; viaja en respuestas y logs mecanicos | implemented_backend | `displayLine/displayLines` usan `format.skill_progress`: habilidad, fase, nivel, EXP antes/despues y EXP efectiva. | Extender luego a dinero/inventario si hace falta un contrato igual de estricto. |
 
 ## Endpoint admin propuesto, no implementado
 

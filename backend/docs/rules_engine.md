@@ -1,6 +1,6 @@
 # rules_engine.md — Motor Isekai Lucas
 
-Version: Fase C24A v1.0 - rule cards criticas consultables por Actions
+Version: Fase C24B v1.0 - displayLines mecanicas de habilidades
 Estado: versión validada por Lucas mediante revisión guiada  
 Fuente de migración: Enciclopedia V2 Isekai Lucas + decisiones confirmadas por Lucas durante Fase 1 + validación guiada Fase 2  
 Propósito: este archivo define **cómo se resuelve el juego**. No contiene el save vivo completo ni el lore mundial extenso; eso vive en MongoDB y `world_bible.md`.
@@ -23,6 +23,7 @@ Actualizacion C21: agrega capa viva de NPCs en Hoshimori: `socialProfile` amplia
 Actualizacion C23: agrega `dialogueDirector` por NPC en `dialogueProfile`/`scene.dialogueSceneCapsules` para cadencia emocional, reaccion inicial, patrones de habla, ejemplos y prohibiciones. Regla: el NPC reacciona primero al tono emocional de Lucas y despues al hecho; las reglas mecanicas exactas se explican en Cambios/HUD, no en boca del NPC como manual.
 Actualizacion C23.1: refuerza que todo cambio social debe mostrarse en `Cambios relevantes` con valor anterior, valor nuevo y delta usando `changes.npcRelationships[].displayLines`; no basta escribir solo `+1` o `+2`.
 Actualizacion C24A: agrega tarjetas criticas de reglas (`rule cards`) indexadas en MongoDB mediante `WorldDocumentIndex`; `searchDocs` puede consultarlas por `ruleId`, `domain`, `priority`, `tag` o `appliesTo` sin sumar operaciones al Action principal.
+Actualizacion C24B: `previewSkillProgression`, `applyTurn.skillPatch`, `applyTurn.magicPractice` y combate avanzado devuelven `displayLine/displayLines` y `skillProgressDisplay` con el formato canonico de habilidades; el GPT debe copiarlos y no reconstruirlos.
 
 ---
 
@@ -762,6 +763,8 @@ Si cambia fase:
 ```txt
 Fuerza P.N10 98/100→Novato N1 3/250(+5)
 ```
+
+Desde C24B, cuando el backend devuelva `changes.skillProgressDisplay`, `changes.skills[].displayLines`, `preview.displayLine` o `resolution.skillProgression[].displayLines`, el GPT debe copiar esas lineas. No debe reconstruir ni resumir como `Nivel 8 -> Nivel 9` si hay EXP disponible.
 
 ### 10.4 Multiplicadores
 

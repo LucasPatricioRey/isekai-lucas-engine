@@ -1,4 +1,4 @@
-const CRITICAL_RULE_CARDS_VERSION = "C24A critical_rule_cards_v1";
+const CRITICAL_RULE_CARDS_VERSION = "C24B critical_rule_cards_v1";
 
 const criticalRuleCards = [
   {
@@ -43,20 +43,27 @@ const criticalRuleCards = [
     ruleId: "format.skill_progress",
     domain: "output_contract",
     priority: "critical",
-    appliesTo: ["changes.skills", "skillPatch", "magicPractice.skills", "completeJobShift.skills", "combat.skills"],
+    appliesTo: [
+      "changes.skills",
+      "changes.skillProgressDisplay",
+      "skillPatch",
+      "magicPractice.skills",
+      "preview.displayLine",
+      "combat.skills",
+    ],
     must: [
       "Show skill name, phase abbreviation, level, EXP before, EXP requirement, EXP after and effective EXP gained.",
       "Show level-up/fase change when levelUps is not empty.",
-      "Use backend displayLines if present.",
+      "Use backend displayLines or skillProgressDisplay if present.",
     ],
     never: [
       "Show only 'Nivel X -> Nivel Y' when EXP data exists.",
       "Hide leftover EXP after level-up.",
       "Summarize skill progress as '+EXP' without before and after.",
     ],
-    template: "[Habilidad] [Fase].[Nivel] [antes]/[req]->[Fase].[Nivel] [despues]/[req] (+[EXP])",
+    template: "[Habilidad] [Fase].[Nivel] [antes]/[req]→[Fase].[Nivel] [despues]/[req] (+[EXP])",
     content:
-      "Skill progress format is mandatory. For every changes.skills entry, show phase, level and EXP before/after with effective EXP gained. Example: Resistencia P.N8 75/100->P.N9 19/100 (+44). If no level-up, still show EXP before/after.",
+      "Skill progress format is mandatory. For every changes.skills entry, show phase, level and EXP before/after with effective EXP gained. Prefer backend displayLines/skillProgressDisplay. Example: Resistencia P.N8 75/100→P.N9 19/100 (+44). If no level-up, still show EXP before/after.",
     tags: ["rule_card", "format", "skills", "exp", "level_up", "hud"],
   },
   {

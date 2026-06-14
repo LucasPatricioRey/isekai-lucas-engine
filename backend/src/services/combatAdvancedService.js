@@ -18,6 +18,7 @@ const WeaponProfile = require("../models/WeaponProfile");
 const WorldEvent = require("../models/WorldEvent");
 const { createAutomaticCheckpoint } = require("./checkpointService");
 const { previewSkillProgression } = require("./skillProgressionService");
+const { withSkillProgressDisplay } = require("../utils/skillProgressDisplay");
 
 const ADVANCED_ACTIONS = [
   {
@@ -801,15 +802,21 @@ function applyCombatSkillAward({ gameState, encounter, actor, resolution, weapon
   incrementCombatSkillActionCount(encounter, key);
 
   return [
-    {
+    withSkillProgressDisplay({
       skillId: candidate.skillId,
+      name: skill.name,
       category: candidate.category,
       reason: candidate.reason,
+      effectiveExpDelta: preview.validation?.effectiveExpDelta || 0,
+      expDelta: preview.validation?.effectiveExpDelta || 0,
+      before: preview.progression?.before || null,
+      after: preview.progression?.after || null,
+      levelUps: preview.progression?.levelUps || [],
       previousSimilarCount,
       modifiers,
       validation: preview.validation,
       progression: preview.progression,
-    },
+    }),
   ];
 }
 
@@ -3641,6 +3648,9 @@ async function applyAdvancedAction({ gameId = "isekai_lucas_main", previewId } =
           effectiveExpDelta: entry.validation?.effectiveExpDelta || 0,
           before: entry.progression?.before || null,
           after: entry.progression?.after || null,
+          displayLine: entry.displayLine || "",
+          displayLines: entry.displayLines || [],
+          formatRuleId: entry.formatRuleId || "format.skill_progress",
         })),
     ];
   }

@@ -1,3 +1,8 @@
+const {
+  buildSkillProgressDisplay,
+  withSkillProgressDisplay,
+} = require("../utils/skillProgressDisplay");
+
 const PHASE_ORDER = [
   "Principiante",
   "Novato",
@@ -648,9 +653,33 @@ function previewSkillProgression({
     throw error;
   }
 
+  const progression = applySkillExpPreview(skill, validation.effectiveExpDelta);
+  const display = withSkillProgressDisplay({
+    skillId: skill?.skillId,
+    name: skill?.name,
+    effectiveExpDelta: validation.effectiveExpDelta,
+    expDelta: validation.effectiveExpDelta,
+    before: progression.before,
+    after: progression.after,
+    levelUps: progression.levelUps,
+  });
+
   return {
     validation,
-    progression: applySkillExpPreview(skill, validation.effectiveExpDelta),
+    progression: {
+      ...progression,
+      displayLine: display.displayLine,
+      displayLines: display.displayLines,
+      levelUpDisplayLine: display.levelUpDisplayLine,
+      hasLevelUp: display.hasLevelUp,
+    },
+    display,
+    displayLine: display.displayLine,
+    displayLines: display.displayLines,
+    levelUpDisplayLine: display.levelUpDisplayLine,
+    hasLevelUp: display.hasLevelUp,
+    formatRuleId: display.formatRuleId,
+    skillProgressDisplay: buildSkillProgressDisplay([display]),
   };
 }
 

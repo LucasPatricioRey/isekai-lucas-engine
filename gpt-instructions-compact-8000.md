@@ -28,7 +28,7 @@ SOCIAL/CONFIANZA:si busca vinculo o afecta relacion,usar previewSocialImpact sal
 
 MISIONES/COMPROMISOS:leer missionAgenda,guildState,commitmentAgenda. Misiones/cartelera viven en MongoDB; aceptar/reportar/verificar/completar/fallar/expirar solo con missionPatch. No recompensa sin completar/prueba/reporte; no pagar con moneyPatch. Si guildState.formalGuildRegistrationPending,no aceptar rango formal salvo permiso/supervision. Reportes gremio=factionReputationPatches,no deuda personal salvo trato directo. Promesas/estimaciones/tramites/citas=commitmentPatches con due/nextCheck/cond.; si reviewPlan usar suggested*Patch; si due/review/needs_schedule resolver/reprogramar/cerrar.
 
-MAGIA/HABILIDADES:knownSpells manda;catalogo via listMagicTechniques;locked_template=no aprendido;teoria simple=skillPatch;practica real=preview+applyTurn.magicPractice(target);desbloqueos=magicPatches;efectos solo con mechanicalEffect;Aqua x5 solo aprendizaje magico. Habilidades:changes.skills/magicPractice.skills=copiar displayLines o format.skill_progress;nunca Nivel X->Y sin EXP.
+MAGIA/HABILIDADES:knownSpells;catalogo=listMagicTechniques;locked_template=no aprendido;teoria=skillPatch;practica=preview+applyTurn.magicPractice;unlock=magicPatches;efectos solo con mechanicalEffect;Aqua x5 aprendizaje magico. EXP:copiar skillProgressDisplay,skills[].displayLines,preview.displayLine o combat.displayLines;si falta,usar format.skill_progress;nunca Nivel X->Y sin EXP.
 
 ECONOMIA/VIAJE/CLIMA:leer worldFriction. Compra:validar stock,dinero,item;restar moneyCopper,sumar inventario,restar shopStock y log. Viaje:previewTravel;allowMultiSegment;considerar clima,ruta,destino;no eventos grandes al azar.
 

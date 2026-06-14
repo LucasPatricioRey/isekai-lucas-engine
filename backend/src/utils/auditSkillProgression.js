@@ -195,6 +195,12 @@ async function main() {
   });
 
   assertEqual(issues, "service preview mana after exp", servicePreview.progression.after.exp, 75);
+  assertTrue(
+    issues,
+    "service preview exposes skill display line",
+    /Mana P\.N1 35\/100\u2192P\.N1 75\/100 \(\+40\)/.test(servicePreview.displayLine || ""),
+    servicePreview.displayLine || ""
+  );
 
   const [beforeContext, activeCombats, apiLevelPreview, apiAquaPhysical, apiAquaMagic] = await Promise.all([
     request("/api/context/full"),
@@ -250,6 +256,12 @@ async function main() {
 
   assertEqual(issues, "api level-up after level", apiLevelPreview.preview?.progression?.after?.level, 7);
   assertEqual(issues, "api level-up after exp", apiLevelPreview.preview?.progression?.after?.exp, 46);
+  assertTrue(
+    issues,
+    "api preview exposes skill display line",
+    /Fuerza P\.N6 96\/100\u2192P\.N7 46\/100 \(\+50\)/.test(apiLevelPreview.preview?.displayLine || ""),
+    apiLevelPreview.preview?.displayLine || ""
+  );
   assertEqual(issues, "api Aqua physical effective", apiAquaPhysical.preview?.validation?.effectiveExpDelta, 50);
   assertEqual(issues, "api Aqua magic effective", apiAquaMagic.preview?.validation?.effectiveExpDelta, 40);
   assertTrue(issues, "api day is valid", Number.isInteger(beforeState.currentDay) && beforeState.currentDay >= 1, String(beforeState.currentDay));
