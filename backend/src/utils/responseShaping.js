@@ -1025,6 +1025,32 @@ function buildDialogueAvoidForNpc(npc = {}, relationship = {}) {
   return unique(avoids).slice(0, 5);
 }
 
+function summarizeNpcDialogueDirector(npc = {}) {
+  const director = npc.flags?.dialogueDirector || null;
+  if (!director || director.schemaVersion !== "npc_dialogue_director_v1") return null;
+
+  const speechPatterns = director.speechPatterns && typeof director.speechPatterns === "object"
+    ? Object.fromEntries(
+        Object.entries(director.speechPatterns)
+          .slice(0, 5)
+          .map(([key, value]) => [key, truncateText(value || "", 110)])
+      )
+    : {};
+
+  return {
+    schemaVersion: "npc_dialogue_director_v1",
+    cadence: truncateText(director.cadence || "", 120),
+    emotionalRule: truncateText(director.emotionalRule || "", 150),
+    reactFirst: truncateText(director.reactFirst || "", 130),
+    speechPatterns,
+    sceneRules: unique(director.sceneRules || []).slice(0, 3).map((line) => truncateText(line, 120)),
+    sampleBeats: unique(director.sampleBeats || []).slice(0, 3).map((line) => truncateText(line, 130)),
+    avoid: unique(director.avoid || []).slice(0, 3).map((line) => truncateText(line, 100)),
+    rule:
+      "El NPC reacciona primero al tono emocional de Lucas; el dato mecanico exacto va al HUD/Cambios, no como manual hablado.",
+  };
+}
+
 function currentDialoguePressure(npc = {}) {
   const status = npc.availability?.status || "";
   const task = truncateText(npc.currentTask || "", 120);
@@ -1065,10 +1091,12 @@ function buildNpcDialogueProfile(npc, relationshipInput = null) {
   const pressure = currentDialoguePressure(npc);
   const socialProfile = summarizeNpcSocialProfile(npc);
   const emotionalProfile = summarizeNpcEmotionalProfile(npc);
+  const dialogueDirector = summarizeNpcDialogueDirector(npc);
 
   return {
     schemaVersion: "dialogue_profile_v1",
     speechRhythm: truncateText(npc.speechStyle || "voz cotidiana segun rol y personalidad", 140),
+    dialogueDirector,
     relationshipRegister: register,
     emotionalTemperature,
     currentPressure: pressure,
@@ -1198,18 +1226,23 @@ function buildDialogueSceneCapsules({
   const capsules = sortedNpcs.map(({ npc, presence }) => {
     const livingLayer = npc.flags?.livingLayer || {};
     const dialogueProfile = npc.dialogueProfile || {};
+    const dialogueDirector = dialogueProfile.dialogueDirector || {};
     const dramaticRole = dialogueProfile.dramaticRole || {};
     const emotionalProfile = npc.emotionalProfile || {};
     const memory = firstNpcMemoryForCapsule(npc.npcId, relevantNpcMemories);
+    const sampleBeats = unique(dialogueDirector.sampleBeats || []);
 
     return {
       npcId: npc.npcId,
       name: npc.name,
       presence,
       voice: truncateText(dialogueProfile.speechRhythm || npc.voiceProfile?.speechStyle || "", 60),
+      cadence: truncateText(dialogueDirector.cadence || "", 70),
       mask: truncateText(dramaticRole.publicMask || "", 70),
       wantsNow: truncateText(livingLayer.currentConcern || dramaticRole.sceneWant || npc.currentTask || "", 80),
       pressure: truncateText(livingLayer.scenePressure || dialogueProfile.currentPressure?.summary || "", 70),
+      reactFirst: truncateText(dialogueDirector.reactFirst || "", 80),
+      emotionalRule: truncateText(dialogueDirector.emotionalRule || "", 90),
       memoryToUse: memory
         ? {
             memoryId: memory.memoryId,
@@ -1221,13 +1254,15 @@ function buildDialogueSceneCapsules({
         dramaticRole.vulnerabilityTell || emotionalProfile.visibleTells?.[0] || livingLayer.dialogueTexture || "",
         60
       ),
-      sampleTone: truncateText(livingLayer.dialogueExample || "", 85),
+      sampleTone: truncateText(sampleBeats[0] || livingLayer.dialogueExample || "", 95),
+      avoid: unique(dialogueDirector.avoid || []).slice(0, 2).map((line) => truncateText(line, 70)),
     };
   });
 
   return {
     schemaVersion: "dialogue_scene_capsules_v1",
-    guidance: "Usar voz+tarea+memoria+limite; no frase minima ni mente privada.",
+    guidance:
+      "Prioridad: reaccion emocional visible -> voz del NPC -> dato. No usar NPC como manual; mecanica exacta va en HUD/Cambios.",
     capsules,
   };
 }
@@ -1741,8 +1776,8 @@ function buildEmotionalSceneDirector({
     },
     dialogueShape: {
       importantNpcScene: "2-5 intervenciones con gesto/subtexto si hay respuesta emocional.",
-      lineRule: "Linea breve si carga deseo, miedo, prueba, limite, oferta o consecuencia.",
-      noFlatReply: "No una sola frase minima en pedido, entrenamiento, conflicto o decision.",
+      lineRule: "La linea puede ser breve, pero debe respirar: pausa, deseo, miedo, prueba, limite, oferta o consecuencia.",
+      noFlatReply: "No frase neutra/minima en pedido, broma, entrenamiento, conflicto o decision; reaccion emocional primero.",
     },
     slowBurnRule: "Confianza, miedo, respeto o perdon avanzan por microcambios y backend.",
     boundary: "Solo estado confirmado/subtexto visible; no mecanicas, secretos ni mente privada.",
@@ -1934,7 +1969,9 @@ function buildDramaticContext({
       "No convertir todo en exposicion; separar escena dramatica del HUD mecanico final.",
     ],
     dialogueDirectives: [
-      "Si scene.dialogueSceneCapsules existe, usar esas capsulas como guia prioritaria para voz, gesto, presion y ejemplo de tono.",
+      "Si scene.dialogueSceneCapsules existe, usar esas capsulas como guia prioritaria para voz, gesto, presion, cadence/reactFirst y ejemplo de tono.",
+      "Si dialogueDirector existe, el NPC responde primero al tono emocional de Lucas; despues al hecho. El dato mecanico exacto va en Cambios/HUD.",
+      "No usar NPCs como manual de reglas, contrato, inventario o backend: convertir reglas en lenguaje humano, objeto visible, pausa o consecuencia practica.",
       "Aplicar dialogueProfile y emotionalProfile de cada NPC: ritmo, registro por confianza, temperatura emocional, subtexto visible, limites y movimientos.",
       "Cada linea de dialogo necesita intencion: medir, cuidar, presionar, ocultar, corregir, negociar, provocar o revelar algo permitido.",
       "En pedidos directos de Lucas, entrenamiento, conflicto o decision social, evitar resolver al NPC con una sola frase minima; usar 2-4 beats de dialogo/gesto si la escena lo permite.",

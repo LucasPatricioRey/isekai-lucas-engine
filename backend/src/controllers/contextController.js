@@ -199,6 +199,19 @@ function slimNpcSummaryForProfile(npc, profile) {
         rule: npc.dialogueProfile.emotionalSubtext.rule || "",
       }
     : null;
+  const dialogueDirector = npc.dialogueProfile?.dialogueDirector
+    ? {
+        schemaVersion: npc.dialogueProfile.dialogueDirector.schemaVersion,
+        cadence: responseShaping.truncateText(npc.dialogueProfile.dialogueDirector.cadence || "", 90),
+        emotionalRule: responseShaping.truncateText(npc.dialogueProfile.dialogueDirector.emotionalRule || "", 110),
+        reactFirst: responseShaping.truncateText(npc.dialogueProfile.dialogueDirector.reactFirst || "", 90),
+        speechPatterns: npc.dialogueProfile.dialogueDirector.speechPatterns || {},
+        sceneRules: (npc.dialogueProfile.dialogueDirector.sceneRules || []).slice(0, 2),
+        sampleBeats: (npc.dialogueProfile.dialogueDirector.sampleBeats || []).slice(0, 2),
+        avoid: (npc.dialogueProfile.dialogueDirector.avoid || []).slice(0, 2),
+        rule: npc.dialogueProfile.dialogueDirector.rule || "",
+      }
+    : null;
 
   return {
     npcId: npc.npcId,
@@ -244,6 +257,7 @@ function slimNpcSummaryForProfile(npc, profile) {
       ? {
           schemaVersion: npc.dialogueProfile.schemaVersion,
           speechRhythm: npc.dialogueProfile.speechRhythm || "",
+          dialogueDirector,
           relationshipRegister: npc.dialogueProfile.relationshipRegister || null,
           emotionalTemperature: npc.dialogueProfile.emotionalTemperature || null,
           currentPressure: npc.dialogueProfile.currentPressure || null,

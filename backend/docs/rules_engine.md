@@ -1,6 +1,6 @@
 # rules_engine.md — Motor Isekai Lucas
 
-Versión: Fase C20 v1.0 — magia no ofensiva conocida con target formal
+Version: Fase C23 v1.0 - direccion de dialogo vivo y cadencia emocional NPC
 Estado: versión validada por Lucas mediante revisión guiada  
 Fuente de migración: Enciclopedia V2 Isekai Lucas + decisiones confirmadas por Lucas durante Fase 1 + validación guiada Fase 2  
 Propósito: este archivo define **cómo se resuelve el juego**. No contiene el save vivo completo ni el lore mundial extenso; eso vive en MongoDB y `world_bible.md`.
@@ -20,6 +20,7 @@ Actualizacion C18: agrega `applyTurn.magicPractice` para practica magica real co
 Actualizacion C19: convierte las ramas magicas documentadas en catalogo tecnico de disciplinas, teorias/ejercicios y plantillas `locked_template`; las plantillas existen para validar requisitos, no son hechizos conocidos por Lucas.
 Actualizacion C20: agrega `learningSources` al catalogo magico y permite `applyTurn.magicPractice[].target` para efectos no ofensivos conocidos: curacion menor estabiliza `InjuryRecord` real sin restaurar vida; defensa/resistencia se guardan como preparadas sin mitigar dano hasta un resolver de combate.
 Actualizacion C21: agrega capa viva de NPCs en Hoshimori: `socialProfile` ampliado, `livingLayer`, 23 relaciones NPC-NPC, 19 memorias base, `scene.dialogueSceneCapsules` y memoria balanceada por NPC en contexto compacto. La guia de dialogo prioriza capsulas, conocimiento real y gestos visibles; no pensamientos privados ni omnisciencia.
+Actualizacion C23: agrega `dialogueDirector` por NPC en `dialogueProfile`/`scene.dialogueSceneCapsules` para cadencia emocional, reaccion inicial, patrones de habla, ejemplos y prohibiciones. Regla: el NPC reacciona primero al tono emocional de Lucas y despues al hecho; las reglas mecanicas exactas se explican en Cambios/HUD, no en boca del NPC como manual.
 
 ---
 
@@ -1697,7 +1698,7 @@ Si `narrativeHints.scenePlan` pide escena comprimida, resumir la rutina y elegir
 
 Cuando el GPT use `applyTurn` debe enviar `actionFamily` si la accion tiene familia clara (`investigation`, `report`, `travel`, `social`, `physical_training`, `magic_practice`, `mission`, etc.). Este campo solo guia `narrativeHints`: no crea mecanicas ni reemplaza tags, pero evita que reportes, investigaciones o viajes se clasifiquen como compra/entrenamiento por inferencia.
 
-### 19.10 Narracion dramatica y dialogo vivo C14/C15/C16/C17/C21
+### 19.10 Narracion dramatica y dialogo vivo C14/C15/C16/C17/C21/C23
 
 `getCompactContext` debe exponer `dramaticContext` para cada escena jugable. Este bloque no cambia estado ni autoriza resultados; solo guia estilo:
 
@@ -1708,6 +1709,18 @@ Cuando el GPT use `applyTurn` debe enviar `actionFamily` si la accion tiene fami
 - si no hay tension fuerte, el lugar, el cuerpo de Lucas y las agendas abiertas deben sostener una escena breve pero viva.
 
 Desde C21, si `scene.dialogueSceneCapsules` existe, debe usarse como prioridad para dialogo inmediato. Cada capsula resume voz, mascara publica, deseo visible, presion actual, gesto/ancla, memoria relevante y ejemplo de tono por NPC cercano. Es una guia compacta de puesta en escena: permite escribir mejor dialogo, pero no autoriza al GPT a revelar interioridad privada, inventar conocimiento ni decidir resultados mecanicos.
+
+Desde C23, cada NPC importante puede exponer `dialogueDirector`, directo o dentro de `dialogueProfile`/`scene.dialogueSceneCapsules`. Este bloque no cambia reglas ni conocimiento: dirige **como** habla el NPC. Incluye:
+
+- `cadence`: respiracion, longitud y textura emocional de la voz;
+- `emotionalRule`: que emocion, broma, verguenza, miedo o presion debe atender primero;
+- `reactFirst`: gesto, pausa u objeto antes de contestar;
+- `speechPatterns`: como bromea, corrige, cuida, niega, advierte o negocia;
+- `sceneRules`: reglas de puesta en escena para ese NPC;
+- `sampleBeats`: ejemplos de tono, no frases obligatorias;
+- `avoid`: formas prohibidas de aplanarlo o volverlo mecanico.
+
+Regla C23: si Lucas habla con tono emocional claro (broma, miedo, exigencia, verguenza, cariño, enojo, ansiedad), el NPC debe responder primero a ese tono con gesto/pausa/voz/subtexto visible, y recien despues al dato practico. El dato mecanico exacto, costo, stock, contrato, recompensa, EXP o aclaracion tecnica debe ir en `Cambios relevantes`/HUD, no como exposicion artificial del NPC.
 
 `dramaticContext.emotionalScene` dirige la arquitectura emocional de la respuesta:
 
@@ -1730,6 +1743,7 @@ Uso esperado:
 Cada `scene.nearbyNpcs[]` debe exponer `dialogueProfile` compacto:
 
 - `speechRhythm`: como suena el NPC;
+- `dialogueDirector`: cadencia emocional, reaccion inicial, patrones de habla y ejemplos de tono;
 - `relationshipRegister`: como cambia el trato por confianza, respeto, sospecha, miedo o familiaridad;
 - `emotionalTemperature`: que emocion domina la respuesta;
 - `currentPressure`: si el NPC esta libre, trabajando, ocupado o ausente;
@@ -1757,6 +1771,8 @@ Cada `scene.nearbyNpcs[]` tambien puede exponer `emotionalProfile`: `defaultMood
 Reglas de uso:
 
 - cada linea de dialogo debe tener intencion: medir, cuidar, presionar, ocultar, corregir, negociar, provocar o revelar algo permitido;
+- antes de explicar un hecho, el NPC debe reaccionar al tono de Lucas si el tono existe; una broma se responde como broma/herida social, no como formulario;
+- separar voz y mecanica: el NPC habla humano; el HUD/Cambios aclara regla exacta, coste, stock, comida de contrato, mision o consecuencia;
 - un NPC seco no significa NPC plano ni pobre: en escenas de pedido directo, entrenamiento, conflicto o decision social, debe haber 2-4 beats de dialogo/gesto si la escena lo permite; evitar una sola frase minima como respuesta completa;
 - las frases compactas deben tener contenido: causa, imagen concreta del peligro, condicion practica, subtexto visible o consecuencia;
 - un NPC calido no debe repetir gratitud generica: debe mostrar cuidado mediante acciones concretas, preguntas pequenas o atencion a la escena;
@@ -1773,6 +1789,62 @@ C17 agrega playtest representativo obligatorio. `audit:narrative-scene-playtest`
 - escena sin NPC: el interes debe salir del cuerpo de Lucas, lugar, clima, objetivo abierto o tension pendiente, no de inventar presencia.
 
 Si una escena manual en GPT Builder falla estos casos, primero revisar si el contexto compacto trae `dramaticContext.emotionalScene`, `dialogueProfile.dramaticRole`, `emotionalProfile` y `scene.relationshipDynamics`. Despues revisar instrucciones del GPT. No compensar inventando resultados mecanicos en la prosa.
+
+#### Ejemplos C23: separar dialogo humano de explicacion mecanica
+
+Caso: Lucas bromea con Roberto porque le cobraron comida antes del turno.
+
+Mal:
+
+```md
+Roberto: "Eso fue almuerzo antes de turno. La comida del contrato corresponde al turno tarde."
+```
+
+Problema: es correcto mecanicamente, pero Roberto suena como un formulario y no responde a la broma/herida social de Lucas.
+
+Bien:
+
+```md
+Roberto se queda mirandolo con el trapo todavia apretado en la mano.
+
+Roberto: "Treinta y cinco cobre y ya me estas haciendo escena de abandono..."
+
+Fern baja la vista hacia una jarra para no dejar escapar la sonrisa. Yara se queda en la puerta de la cocina medio segundo mas de lo necesario.
+
+Roberto senala el plato vacio.
+
+Roberto: "Eso fue almuerzo... de cliente. La comida del turno sigue ahi. No te la robe, no te eche, no te desherede."
+
+Pausa.
+
+Roberto: "Si quisiera decirte que no te quiero aca, no te cobraria comida. Te daria la puerta. Sale mas barato."
+```
+
+Luego, en Cambios/HUD:
+
+```md
+Aclaracion: la comida cobrada fue almuerzo fuera de turno. La comida incluida del contrato sigue disponible para el turno tarde si Lucas la pide explicitamente.
+```
+
+Caso: Yara esta ocupada y Lucas le cuenta que volvio bien del gremio.
+
+Mal:
+
+```md
+Yara: "Entonces te fue bien."
+```
+
+Bien:
+
+```md
+Yara se queda con la bandeja suspendida un instante, como si el ruido de la sala hubiera bajado solo para esa frase.
+
+Yara: "Entonces... volviste bien."
+
+Mira hacia la cocina, recuerda que sigue trabajando, y acomoda rapido una taza que ya estaba derecha.
+
+Yara: "Eso ya es algo. No lo digas muy fuerte, que si Roberto oye 'problema' empieza a contar platos como si fueran escudos."
+```
 
 ### 19.11 Ejemplo: charla ligera con Yara
 

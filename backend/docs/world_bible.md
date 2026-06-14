@@ -1,6 +1,6 @@
 # world_bible.md — Isekai Lucas
 
-Versión: Fase C17 v0.5
+Version: Fase C23 v0.6 - lore estable con voz viva delegada al backend
 Estado: versión validada por Lucas mediante revisión guiada  
 Uso: archivo de conocimiento/lore estable. No guarda estado vivo y nunca reemplaza MongoDB/backend.
 Continuidad canon inicial/importada: Día 10, 12:00, La Grulla Azul, Hoshimori. La continuidad actual se consulta siempre en backend.
@@ -11,6 +11,7 @@ Actualizacion C15: los rasgos emocionales vivos de NPCs persistentes se consulta
 Actualizacion C16: la direccion dramatica viva se consulta en backend mediante `dramaticContext.emotionalScene` y `dialogueProfile.dramaticRole`; este archivo no reemplaza mascara, presion, grieta visible ni escena actual.
 Actualizacion C17: los playtests de escena representativa viven en backend/docs y auditorias (`audit:narrative-scene-playtest`); este archivo sigue siendo lore estable, no una plantilla de respuesta narrativa.
 Actualizacion C21: las personalidades, metas inmediatas, relaciones NPC-NPC, memorias vivas y capsulas de dialogo se consultan en backend (`socialProfile`, `livingLayer`, `NpcMemory`, `NpcRelationship`, `scene.dialogueSceneCapsules`). Este archivo conserva el canon estable y no decide voz actual ni conocimiento privado.
+Actualizacion C23: la cadencia emocional y patrones de habla actuales de NPCs se consultan en backend mediante `dialogueDirector`; este archivo no reemplaza tono vivo, gestos de escena ni relacion actual.
 
 ---
 
