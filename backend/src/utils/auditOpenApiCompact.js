@@ -138,6 +138,22 @@ function main() {
   }
   assertCondition(issues, "missing compact operation count", missingCompact.length === 0, String(missingCompact.length));
 
+  section("SearchDocs Rule Cards");
+  const compactSearchDocsParams = compactOps.get("GET /api/search/docs")?.parameters || [];
+  const compactSearchDocsParamNames = new Set(compactSearchDocsParams.map((param) => param.name));
+  assertCondition(
+    issues,
+    "compact searchDocs q is optional for rule cards",
+    compactSearchDocsParams.find((param) => param.name === "q")?.required === false
+  );
+  for (const paramName of ["ruleId", "source", "domain", "priority", "tag", "appliesTo", "limit"]) {
+    assertCondition(
+      issues,
+      `compact searchDocs supports ${paramName}`,
+      compactSearchDocsParamNames.has(paramName)
+    );
+  }
+
   section("Excluded From Compact");
   const excludedIncluded = [];
   for (const operationKey of COMPACT_EXCLUDED) {

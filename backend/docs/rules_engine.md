@@ -1,6 +1,6 @@
 # rules_engine.md — Motor Isekai Lucas
 
-Version: Fase C23.1 v1.0 - dialogo vivo con cambios sociales antes/despues
+Version: Fase C24A v1.0 - rule cards criticas consultables por Actions
 Estado: versión validada por Lucas mediante revisión guiada  
 Fuente de migración: Enciclopedia V2 Isekai Lucas + decisiones confirmadas por Lucas durante Fase 1 + validación guiada Fase 2  
 Propósito: este archivo define **cómo se resuelve el juego**. No contiene el save vivo completo ni el lore mundial extenso; eso vive en MongoDB y `world_bible.md`.
@@ -22,6 +22,7 @@ Actualizacion C20: agrega `learningSources` al catalogo magico y permite `applyT
 Actualizacion C21: agrega capa viva de NPCs en Hoshimori: `socialProfile` ampliado, `livingLayer`, 23 relaciones NPC-NPC, 19 memorias base, `scene.dialogueSceneCapsules` y memoria balanceada por NPC en contexto compacto. La guia de dialogo prioriza capsulas, conocimiento real y gestos visibles; no pensamientos privados ni omnisciencia.
 Actualizacion C23: agrega `dialogueDirector` por NPC en `dialogueProfile`/`scene.dialogueSceneCapsules` para cadencia emocional, reaccion inicial, patrones de habla, ejemplos y prohibiciones. Regla: el NPC reacciona primero al tono emocional de Lucas y despues al hecho; las reglas mecanicas exactas se explican en Cambios/HUD, no en boca del NPC como manual.
 Actualizacion C23.1: refuerza que todo cambio social debe mostrarse en `Cambios relevantes` con valor anterior, valor nuevo y delta usando `changes.npcRelationships[].displayLines`; no basta escribir solo `+1` o `+2`.
+Actualizacion C24A: agrega tarjetas criticas de reglas (`rule cards`) indexadas en MongoDB mediante `WorldDocumentIndex`; `searchDocs` puede consultarlas por `ruleId`, `domain`, `priority`, `tag` o `appliesTo` sin sumar operaciones al Action principal.
 
 ---
 
@@ -174,14 +175,34 @@ El contexto de partida normal no debe exponer fixtures `flags.testSuite === true
 Si `context/full` no trae la información necesaria, el GPT no debe inventar. Debe buscar más con endpoints profundos:
 
 ```txt
-GET /api/docs/search?q=...
-GET /api/world/search?q=...
-GET /api/db/search?q=...
+GET /api/search/docs?q=...
+GET /api/search/docs?ruleId=format.skill_progress
+GET /api/search/db?q=...
 GET /api/npcs/:id/full
 GET /api/locations/:id/full
 ```
 
 Si aun así falta un dato importante, se pregunta.
+
+### 3.2.1 Rule cards criticas C24A
+
+`rules_engine.md` sigue siendo el manual completo. Ademas, las reglas que no pueden perderse por compactacion se indexan como tarjetas criticas en `WorldDocumentIndex` con:
+
+- `ruleId`: ID estable, por ejemplo `format.skill_progress`;
+- `domain`: area de regla, por ejemplo `output_contract`, `combat`, `magic`, `commitments`;
+- `priority`: `critical`, `high`, `normal` o `reference`;
+- `appliesTo`: superficies mecanicas como `changes.skills`, `magicPractice.skills`, `npcRelationshipPatches`;
+- `must`, `never` y `template`: resumen operativo para el GPT.
+
+Uso obligatorio:
+
+- si hay duda de formato mecanico, buscar la rule card exacta antes de narrar;
+- si `changes.skills` o `magicPractice.skills` existe, usar `ruleId=format.skill_progress` si no hay `displayLines` listas;
+- si hay cambio social, usar `ruleId=format.social_changes` o copiar `changes.npcRelationships[].displayLines`;
+- si hay promesa, estimacion, tramite o pendiente, usar `ruleId=commitment.promises`;
+- si hay combate real, usar `ruleId=combat.backend_resolves` y el Action de combate.
+
+Las rule cards no reemplazan al backend ni autorizan resultados nuevos. Solo hacen que las reglas criticas sean recuperables por Action sin depender de memoria del chat.
 
 ### 3.3 Escritura automática
 

@@ -724,6 +724,12 @@ G23.2 - Biological Accumulator Persistence Fix:
 | Procesamiento en hora exacta | `rules_engine.md` costes por hora | `applyTurn.activityCost` acumula entre horas y procesa pendientes al llegar a `:00` | No depende de recentEventLogs ni memoria de chat | implemented_backend | `apiBiologicalAccumulator.test.js` cubre comida 12:00->12:20, carrera 13:00->13:10, cierre 13:10->14:00, multiples actividades y no doble proceso. | Extender a turnos reales/travel real cuando existan mutadores finales. |
 | OpenAPI compacto sin exceder limite | GPT Actions compact | `ActivityCostInput.processingMode=auto`, `sourceEventLogId`; hasta 30 operaciones | No aplica | implemented_backend | `audit:openapi-compact` OK dentro del limite de 30 operaciones. | Pegar schema compacto actualizado en GPT Builder. |
 
+C24A - Critical Rule Cards:
+
+| Area / seccion | Fuente en docs | Representacion en repo | Representacion en MongoDB vivo | Estado | Evidencia | Proxima accion recomendada |
+|---|---|---|---|---|---|---|
+| Rule cards criticas | `rules_engine.md` 3.2.1 | `WorldDocumentIndex` con `ruleId`, `domain`, `priority`, `appliesTo`, `must`, `never`, `template`; `seedDocuments.js`; `searchDocs` con filtros | `WorldDocumentIndex` guarda tarjetas `rule_card` junto a chunks de docs | implemented_backend | `GET /api/search/docs?ruleId=format.skill_progress` devuelve regla exacta sin sumar operacion al Action principal. | C24B: agregar `displayLines` backend para `changes.skills` y otros cambios mecanicos. |
+
 ## Endpoint admin propuesto, no implementado
 
 No hay endpoint seguro para contar colecciones vivas. Para futuras auditorias conviene crear un endpoint estrictamente read-only y protegido por API key:

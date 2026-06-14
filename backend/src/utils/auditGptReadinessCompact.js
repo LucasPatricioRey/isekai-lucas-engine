@@ -121,6 +121,7 @@ async function checkCompactEndpoints(issues) {
     characterState,
     fern,
     docs,
+    skillProgressRule,
     pavoStock,
     missionBoard,
     routes,
@@ -137,6 +138,7 @@ async function checkCompactEndpoints(issues) {
     request("/api/characters/char_lucas/state"),
     request("/api/search/db?q=Fern"),
     request("/api/search/docs?q=romance"),
+    request("/api/search/docs?ruleId=format.skill_progress"),
     request("/api/economy/shops/shop_pavo_food_stall/stock"),
     request("/api/missions/board"),
     request("/api/travel/routes"),
@@ -279,6 +281,11 @@ async function checkCompactEndpoints(issues) {
   assertCondition(issues, "character state has MP", Boolean(characterState.state?.mp?.max));
   assertCondition(issues, "search/db returns Fern", (fern.results?.npcs || []).length > 0);
   assertCondition(issues, "search/docs returns docs", (docs.results || []).length > 0);
+  assertCondition(
+    issues,
+    "search/docs returns skill progress rule card",
+    (skillProgressRule.results || []).some((doc) => doc.ruleId === "format.skill_progress")
+  );
   assertCondition(issues, "Pavo stock has rows", (pavoStock.stocks || []).length > 0);
   assertCondition(issues, "mission board returns a playable mission array", Array.isArray(missionBoard.missions));
   assertCondition(issues, "routes has rows", (routes.routes || []).length >= 20);

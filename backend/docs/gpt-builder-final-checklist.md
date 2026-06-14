@@ -47,7 +47,7 @@ Para el GPT Builder normal, pegar el contenido completo de:
 Este schema mantiene hasta 30 operaciones y usa `applyTurn.missionPatch` para aceptar, reportar, verificar, completar, fallar o expirar misiones sin exponer mutadores directos de misiones. También expone `applyTurn.worldEventPatches` para resolver/cancelar eventos existentes y guardar progreso parcial sin agregar nuevas operaciones. `applyTurn.evidencePatches` guarda muestras, rastros, notas u objetos narrativos no vendibles; no reemplaza `inventoryPatch` ni crea loot.
 Para vinculos sociales, expone `POST /api/npcs/social/impact/preview` y `applyTurn.npcRelationshipPatches`. El backend guarda ledger social diario, aplica caps por NPC/eje, pondera perfil social por NPC y expone `socialLedgerToday`, `scene.nearbyNpcs[].socialProfile` y `scene.nearbyNpcs[].relationshipState` en contexto compacto. Resolver o dejar vencer eventos diarios por `applyTurn.worldEventPatches` puede crear consecuencias sociales automaticas sobre `affectedNpcIds`. `GET /api/combat/enemies` queda solo en el schema full para conservar el limite de 30 operaciones.
 `applyTurn`, `completeJobShift` y `context/compact` pueden devolver `narrativeHints`/`narrativeContext`; `context/compact` tambien expone `dramaticContext`, `dramaticContext.emotionalScene`, `scene.nearbyNpcs[].dialogueProfile`, `scene.nearbyNpcs[].dialogueProfile.dramaticRole`, `scene.nearbyNpcs[].emotionalProfile` y `scene.relationshipDynamics`. Son solo guia narrativa: ayudan a resumir acciones repetidas, variar dialogos, sostener subtexto, mostrar gestos/tension entre NPCs y evitar agradecimientos/copias, pero no crean dinero, EXP, relacion, loot, dano ni curacion.
-Cuando cambien `docs/rules_engine.md` o `docs/world_bible.md`, ejecutar `npm run seed:documents` contra MongoDB para que `GET /api/search/docs` vea la misma version que Knowledge.
+Cuando cambien `docs/rules_engine.md` o `docs/world_bible.md`, ejecutar `npm run seed:documents` contra MongoDB para que `GET /api/search/docs` vea la misma version que Knowledge. Desde C24A, ese seed tambien publica rule cards criticas consultables por `ruleId`, por ejemplo `format.skill_progress`, sin sumar operaciones al Action principal.
 La lectura normal por turno debe empezar por `GET /api/context/compact`. Si hace falta estado mecanico directo de Lucas, usar `GET /api/characters/char_lucas/state`.
 
 El schema full de referencia tecnica queda en:
@@ -123,6 +123,7 @@ npm run audit:gpt-readiness-compact
 Condicion minima para abrir Preview:
 
 - `GET /api/context/compact` responde `ok: true`.
+- `GET /api/search/docs?ruleId=format.skill_progress` devuelve una rule card critica.
 - La respuesta compacta queda por debajo de 100000 caracteres.
 - `GET /api/characters/char_lucas/state` devuelve HP, MP, dinero, inventario y skills directos.
 - `audit:combat-playtest` pasa si se va a usar combate real en partida.

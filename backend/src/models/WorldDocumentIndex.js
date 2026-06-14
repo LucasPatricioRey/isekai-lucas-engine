@@ -26,6 +26,46 @@ const worldDocumentIndexSchema = new mongoose.Schema(
       required: true,
     },
 
+    ruleId: {
+      type: String,
+      default: "",
+      index: true,
+    },
+
+    domain: {
+      type: String,
+      default: "",
+      index: true,
+    },
+
+    priority: {
+      type: String,
+      enum: ["critical", "high", "normal", "reference", ""],
+      default: "",
+      index: true,
+    },
+
+    appliesTo: {
+      type: [String],
+      default: [],
+      index: true,
+    },
+
+    must: {
+      type: [String],
+      default: [],
+    },
+
+    never: {
+      type: [String],
+      default: [],
+    },
+
+    template: {
+      type: String,
+      default: "",
+    },
+
     content: {
       type: String,
       required: true,
@@ -54,6 +94,9 @@ const worldDocumentIndexSchema = new mongoose.Schema(
 );
 
 worldDocumentIndexSchema.index({
+  ruleId: "text",
+  domain: "text",
+  appliesTo: "text",
   title: "text",
   content: "text",
   tags: "text",

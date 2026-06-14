@@ -57,18 +57,56 @@ function getSearchTokens(query) {
     .slice(0, 8);
 }
 
+function parseListQuery(value) {
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => parseListQuery(entry));
+  }
+
+  return String(value || "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
+function parseLimit(value, fallback = 20, max = 50) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) return fallback;
+  return Math.min(parsed, max);
+}
+
 function scoreDocSearchResult(doc, rawQuery, tokens) {
-  const exactRegex = buildRegex(rawQuery);
+  const exactRegex = rawQuery ? buildRegex(rawQuery) : null;
   const normalized = normalizeSearchText(
-    `${doc.docId} ${doc.source} ${doc.section} ${doc.title} ${doc.content} ${(doc.tags || []).join(" ")}`
+    [
+      doc.docId,
+      doc.source,
+      doc.section,
+      doc.title,
+      doc.ruleId,
+      doc.domain,
+      doc.priority,
+      doc.content,
+      doc.template,
+      ...(doc.appliesTo || []),
+      ...(doc.must || []),
+      ...(doc.never || []),
+      ...(doc.tags || []),
+    ].join(" ")
   );
   let score = 0;
 
-  if (exactRegex.test(doc.title || "")) score += 10;
-  if (exactRegex.test(doc.section || "")) score += 8;
-  if (exactRegex.test(doc.content || "")) score += 5;
+  if (doc.ruleId && rawQuery && doc.ruleId === rawQuery) score += 80;
+  if (doc.priority === "critical") score += 3;
+  if (exactRegex?.test(doc.ruleId || "")) score += 30;
+  if (exactRegex?.test(doc.title || "")) score += 10;
+  if (exactRegex?.test(doc.section || "")) score += 8;
+  if (exactRegex?.test(doc.domain || "")) score += 8;
+  if (exactRegex?.test(doc.content || "")) score += 5;
 
   for (const token of tokens) {
+    if (normalizeSearchText(doc.ruleId).includes(token)) score += 8;
+    if (normalizeSearchText(doc.domain).includes(token)) score += 5;
     if (normalizeSearchText(doc.title).includes(token)) score += 4;
     if (normalizeSearchText(doc.section).includes(token)) score += 3;
     if (normalized.includes(token)) score += 1;
@@ -284,56 +322,100 @@ async function searchDb(req, res) {
 
 async function searchDocs(req, res) {
   const q = String(req.query.q || "").trim();
+  const ruleIds = parseListQuery(req.query.ruleId || req.query.ruleIds);
+  const sources = parseListQuery(req.query.source || req.query.sources);
+  const domains = parseListQuery(req.query.domain || req.query.domains);
+  const priorities = parseListQuery(req.query.priority || req.query.priorities);
+  const tags = parseListQuery(req.query.tag || req.query.tags);
+  const appliesTo = parseListQuery(req.query.appliesTo);
+  const limit = parseLimit(req.query.limit);
+  const hasFilters =
+    ruleIds.length > 0 ||
+    sources.length > 0 ||
+    domains.length > 0 ||
+    priorities.length > 0 ||
+    tags.length > 0 ||
+    appliesTo.length > 0;
 
-  if (!q) {
+  if (!q && !hasFilters) {
     return res.status(400).json({
       ok: false,
-      error: "Falta query ?q=",
+      error: "Falta query ?q= o filtro ruleId/domain/source/tag/appliesTo.",
     });
   }
 
-  const regex = buildRegex(q);
+  const clauses = [];
+
+  if (sources.length > 0) clauses.push({ source: { $in: sources } });
+  if (ruleIds.length > 0) clauses.push({ ruleId: { $in: ruleIds } });
+  if (domains.length > 0) clauses.push({ domain: { $in: domains } });
+  if (priorities.length > 0) clauses.push({ priority: { $in: priorities } });
+  if (tags.length > 0) clauses.push({ tags: { $all: tags } });
+  if (appliesTo.length > 0) clauses.push({ appliesTo: { $in: appliesTo } });
+
   const tokens = getSearchTokens(q);
-  const tokenRegexes = tokens.map((token) => buildRegex(token));
-  const tokenClauses = tokenRegexes.map((tokenRegex) => ({
-    $or: [
-      { docId: tokenRegex },
-      { source: tokenRegex },
-      { section: tokenRegex },
-      { title: tokenRegex },
-      { content: tokenRegex },
-      { searchText: tokenRegex },
-      { tags: tokenRegex },
-    ],
-  }));
+  if (q) {
+    const regex = buildRegex(q);
+    const tokenRegexes = tokens.map((token) => buildRegex(token));
+    const tokenClauses = tokenRegexes.map((tokenRegex) => ({
+      $or: [
+        { docId: tokenRegex },
+        { source: tokenRegex },
+        { section: tokenRegex },
+        { title: tokenRegex },
+        { ruleId: tokenRegex },
+        { domain: tokenRegex },
+        { priority: tokenRegex },
+        { content: tokenRegex },
+        { searchText: tokenRegex },
+        { appliesTo: tokenRegex },
+        { tags: tokenRegex },
+      ],
+    }));
 
-  const query = {
-    $or: [
-      { docId: regex },
-      { source: regex },
-      { section: regex },
-      { title: regex },
-      { content: regex },
-      { searchText: regex },
-      { tags: regex },
-      ...(tokenClauses.length > 0 ? [{ $and: tokenClauses.slice(0, 5) }] : []),
-      ...(tokenClauses.length > 0 ? tokenClauses : []),
-    ],
-  };
+    clauses.push({
+      $or: [
+        { docId: regex },
+        { source: regex },
+        { section: regex },
+        { title: regex },
+        { ruleId: regex },
+        { domain: regex },
+        { priority: regex },
+        { content: regex },
+        { searchText: regex },
+        { appliesTo: regex },
+        { tags: regex },
+        ...(tokenClauses.length > 0 ? [{ $and: tokenClauses.slice(0, 5) }] : []),
+        ...(tokenClauses.length > 0 ? tokenClauses : []),
+      ],
+    });
+  }
 
-  const docs = await WorldDocumentIndex.find(query).limit(50).lean();
+  const query = clauses.length > 0 ? { $and: clauses } : {};
+
+  const docs = await WorldDocumentIndex.find(query).limit(Math.max(limit * 3, 50)).lean();
   const ranked = docs
     .map((doc) => ({
       ...doc,
       searchScore: scoreDocSearchResult(doc, q, tokens),
     }))
-    .filter((doc) => doc.searchScore > 0 || docs.length <= 20)
+    .filter((doc) => doc.searchScore > 0 || !q || docs.length <= limit)
     .sort((a, b) => b.searchScore - a.searchScore)
-    .slice(0, 20);
+    .slice(0, limit);
 
   return res.json({
     ok: true,
     query: q,
+    filters: {
+      ruleIds,
+      sources,
+      domains,
+      priorities,
+      tags,
+      appliesTo,
+      limit,
+    },
     tokens,
     results: ranked,
   });

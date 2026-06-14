@@ -31,7 +31,7 @@ Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.j
 | getNpcFull | `GET /api/npcs/{npcId}/full` | si | si | lectura | gameplay |
 | previewSocialImpact | `POST /api/npcs/social/impact/preview` | si | si | preview | gameplay |
 | searchDatabase | `GET /api/search/db` | si | si | lectura | gameplay |
-| searchDocs | `GET /api/search/docs` | si | si | lectura | gameplay |
+| searchDocs | `GET /api/search/docs` | si | si | lectura | gameplay/reglas |
 | listTravelRoutes | `GET /api/travel/routes` | si | si | lectura | gameplay |
 | getTravelRoute | `GET /api/travel/routes/{routeId}` | si | no | lectura | gameplay |
 | getCurrentWeather | `GET /api/weather/current` | si | si | lectura | gameplay |
@@ -50,6 +50,7 @@ Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.j
 
 Notas:
 - El compact mantiene hasta 30 operaciones para respetar el limite practico de GPT Builder.
+- Desde C24A, `searchDocs` acepta filtros `ruleId`, `source`, `domain`, `priority`, `tag`, `appliesTo` y `limit`; esto permite consultar rule cards criticas sin agregar una operacion nueva.
 - `getCompactContext` es la lectura principal por turno; `getFullContext` queda fuera del compact y solo debe usarse en debug/admin.
 - `getCharacterState` evita reconstruir HP/MP/inventario/skills desde logs.
 - `previewSocialImpact` pondera perfil social del NPC (`values/tolerates/rejects/socialProfile`) y sugiere deltas capados de confianza/familiaridad/respeto/afecto/etc.; el guardado real se hace con `applyTurn.npcRelationshipPatches` y crea ledger social diario. Tambien proyecta `relationshipState` para mostrar acceso, riesgos y bloqueos antes de mutar.

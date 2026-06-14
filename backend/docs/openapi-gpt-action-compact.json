@@ -2466,14 +2466,90 @@
     "/api/search/docs": {
       "get": {
         "operationId": "searchDocs",
-        "summary": "Busca chunks indexados de rules_engine.md y world_bible.md.",
+        "summary": "Busca chunks indexados y rule cards de rules_engine.md/world_bible.md.",
         "parameters": [
           {
             "name": "q",
             "in": "query",
-            "required": true,
+            "required": false,
+            "description": "Texto libre para buscar en rules_engine.md, world_bible.md y rule cards indexadas. Puede omitirse si se usa ruleId/domain/source/tag/appliesTo.",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "ruleId",
+            "in": "query",
+            "required": false,
+            "description": "ID exacto de regla critica, por ejemplo format.skill_progress.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "description": "Fuente documental: rules_engine o world_bible.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "rules_engine",
+                "world_bible"
+              ]
+            }
+          },
+          {
+            "name": "domain",
+            "in": "query",
+            "required": false,
+            "description": "Dominio de rule card, por ejemplo output_contract, magic, combat, commitments.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "required": false,
+            "description": "Prioridad de rule card.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "critical",
+                "high",
+                "normal",
+                "reference"
+              ]
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "description": "Tag exacto requerido. Acepta varios separados por coma.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "appliesTo",
+            "in": "query",
+            "required": false,
+            "description": "Superficie mecanica a la que aplica la regla, por ejemplo changes.skills o magicPractice.skills.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Cantidad maxima de resultados, default 20, max 50.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
             }
           }
         ],
@@ -2494,7 +2570,8 @@
             "ApiKeyAuth": []
           }
         ],
-        "x-openai-isConsequential": false
+        "x-openai-isConsequential": false,
+        "description": "Permite busqueda libre por q o busqueda exacta de reglas criticas por ruleId/domain/tag/appliesTo sin agregar otra operacion al Action."
       }
     },
     "/api/npcs/{npcId}/full": {
@@ -3441,7 +3518,11 @@
             "description": "Perfil de proyeccion del contexto. Usar player_scene por defecto; mechanical_turn para chequeos mecanicos; minimal_header para lectura minima.",
             "schema": {
               "type": "string",
-              "enum": ["player_scene", "mechanical_turn", "minimal_header"],
+              "enum": [
+                "player_scene",
+                "mechanical_turn",
+                "minimal_header"
+              ],
               "default": "player_scene"
             }
           },

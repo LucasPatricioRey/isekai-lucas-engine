@@ -20,6 +20,7 @@ const Shop = require("../models/Shop");
 const WeatherState = require("../models/WeatherState");
 const WorldDocumentIndex = require("../models/WorldDocumentIndex");
 const WorldEvent = require("../models/WorldEvent");
+const { CRITICAL_RULE_CARDS_VERSION, criticalRuleCards } = require("../seeds/criticalRuleCards");
 
 const GAME_ID = "isekai_lucas_main";
 const SOURCE = "c22_mongo_state_repair";
@@ -562,10 +563,12 @@ async function reindexDocuments() {
   await WorldDocumentIndex.deleteMany({ source: { $in: ["rules_engine", "world_bible"] } });
 
   const docsToInsert = [];
+  let rulesEngineVersion = "sin_version";
   for (const file of files) {
     const fullPath = path.join(docsDir, file.fileName);
     const content = await fs.readFile(fullPath, "utf8");
     const version = extractVersion(content);
+    if (file.source === "rules_engine") rulesEngineVersion = version;
     const chunks = chunkText(content);
 
     chunks.forEach((chunk, index) => {
@@ -576,11 +579,65 @@ async function reindexDocuments() {
         source: file.source,
         section: title,
         title,
+        ruleId: "",
+        domain: "",
+        priority: "reference",
+        appliesTo: [],
+        must: [],
+        never: [],
+        template: "",
         content: chunk,
         searchText: normalizeSearchText(`${file.source} ${title} ${chunk}`),
         tags: [file.source, file.fileName.replace(".md", "")],
         version,
       });
+    });
+  }
+
+  for (const card of criticalRuleCards) {
+    const title = `Rule card: ${card.ruleId}`;
+    const structuredText = [
+      title,
+      `Domain: ${card.domain}`,
+      `Priority: ${card.priority}`,
+      `Applies to: ${(card.appliesTo || []).join(", ")}`,
+      `Must: ${(card.must || []).join(" | ")}`,
+      `Never: ${(card.never || []).join(" | ")}`,
+      card.template ? `Template: ${card.template}` : "",
+      card.content,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    docsToInsert.push({
+      docId: `rule_${card.ruleId.replace(/[^a-z0-9_]+/gi, "_")}`,
+      source: "rules_engine",
+      section: title,
+      title,
+      ruleId: card.ruleId,
+      domain: card.domain,
+      priority: card.priority,
+      appliesTo: card.appliesTo || [],
+      must: card.must || [],
+      never: card.never || [],
+      template: card.template || "",
+      content: structuredText,
+      searchText: normalizeSearchText(
+        [
+          "rules_engine rule_card",
+          card.ruleId,
+          card.domain,
+          card.priority,
+          ...(card.appliesTo || []),
+          ...(card.must || []),
+          ...(card.never || []),
+          card.template || "",
+          card.content || "",
+          ...(card.tags || []),
+        ].join(" ")
+      ),
+      tags: ["rules_engine", "rule_card", ...(card.tags || [])],
+      version: `${rulesEngineVersion}; ${CRITICAL_RULE_CARDS_VERSION}`,
     });
   }
 
