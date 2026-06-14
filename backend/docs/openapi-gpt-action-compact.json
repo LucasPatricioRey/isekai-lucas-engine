@@ -1218,10 +1218,28 @@
       },
       "GameStatePatch": {
         "type": "object",
-        "description": "Cambios tecnicos validados sobre GameState. Actualmente permite locationId.",
+        "description": "Cambios tecnicos validados sobre GameState. Permite locationId y cierre controlado del registro gremial.",
         "properties": {
           "locationId": {
             "type": "string"
+          },
+          "formalGuildRegistrationPending": {
+            "type": "boolean",
+            "description": "Solo para cerrar/reabrir el pendiente formal del registro del gremio cuando un reviewPlan lo justifica."
+          },
+          "guildRegistrationStatus": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "complete",
+              "rejected",
+              "cancelled"
+            ],
+            "description": "Estado formal del registro gremial al aplicar una revision administrativa."
+          },
+          "guildRegistrationResolution": {
+            "type": "string",
+            "description": "Resumen de la resolucion administrativa del registro gremial."
           }
         },
         "additionalProperties": false

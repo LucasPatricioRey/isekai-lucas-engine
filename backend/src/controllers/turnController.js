@@ -4236,6 +4236,54 @@ async function applyTurn(req, res) {
         };
       }
 
+      if (body.gameStatePatch?.formalGuildRegistrationPending !== undefined) {
+        const pending = body.gameStatePatch.formalGuildRegistrationPending;
+        if (typeof pending !== "boolean") {
+          throw validationError("gameStatePatch.formalGuildRegistrationPending debe ser boolean.");
+        }
+
+        const allowedStatuses = new Set(["pending", "complete", "rejected", "cancelled"]);
+        const status = body.gameStatePatch.guildRegistrationStatus || (pending ? "pending" : "complete");
+        if (!allowedStatuses.has(status)) {
+          throw validationError("gameStatePatch.guildRegistrationStatus invalido.", {
+            status,
+            allowed: Array.from(allowedStatuses),
+          });
+        }
+
+        const flags = getGameStateFlags(gameState);
+        const guild = flags.guild && typeof flags.guild === "object" ? { ...flags.guild } : {};
+        const before = {
+          formalGuildRegistrationPending: Boolean(flags.formalGuildRegistrationPending),
+          registrationStatus: guild.registrationStatus || (flags.formalGuildRegistrationPending ? "pending" : ""),
+        };
+
+        flags.formalGuildRegistrationPending = pending;
+        guild.registrationStatus = status;
+        guild.registrationUpdatedDay = gameState.currentDay;
+        guild.registrationUpdatedTime = gameState.time;
+
+        if (!pending) {
+          guild.registrationResolvedDay = gameState.currentDay;
+          guild.registrationResolvedTime = gameState.time;
+        }
+
+        if (body.gameStatePatch.guildRegistrationResolution) {
+          guild.registrationResolution = String(body.gameStatePatch.guildRegistrationResolution).slice(0, 500);
+        }
+
+        flags.guild = guild;
+        setGameStateFlags(gameState, flags);
+        changes.guildRegistration = {
+          before,
+          after: {
+            formalGuildRegistrationPending: pending,
+            registrationStatus: status,
+            registrationResolution: guild.registrationResolution || "",
+          },
+        };
+      }
+
       if (body.moneyPatch) {
         const { deltaCopper, reason } = body.moneyPatch;
 

@@ -1221,6 +1221,123 @@ describe("turn hardening coverage", () => {
     );
   });
 
+  it("generates offscreen commitment review plans and applies controlled guild registration closure", async () => {
+    const originalState = await GameState.findOne({ gameId: tempGameId }).lean();
+    const commitmentId = `commitment_offscreen_review_test_${Date.now()}`;
+
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: 10,
+          time: "12:00",
+          block: originalState.block,
+          flags: {
+            ...(originalState.flags || {}),
+            formalGuildRegistrationPending: true,
+            guild: {
+              ...((originalState.flags || {}).guild || {}),
+              registrationStatus: "pending",
+            },
+          },
+        },
+      }
+    );
+
+    await Commitment.create({
+      gameId: tempGameId,
+      commitmentId,
+      title: "Cerrar registro formal de aspirante",
+      summary: "Lucas completo su parte y el gremio debe cerrar la revision interna.",
+      type: "follow_up",
+      promiseType: "administrative_process",
+      promiseStrength: "soft",
+      status: "pending",
+      priority: "high",
+      requiresExplicitResolution: true,
+      createdDay: 10,
+      createdTime: "10:00",
+      nextCheckDay: 10,
+      nextCheckTime: "11:45",
+      speakerNpcId: tempNpcId,
+      responsibleNpcId: tempNpcId,
+      responsibleFactionId: "faction_hoshimori_guild",
+      relatedNpcIds: [tempNpcId],
+      tags: ["test_turn_hardening", "guild_registration", "applicant_part_completed"],
+    });
+
+    try {
+      const tickPreview = await post("/api/world/tick/preview", {
+        gameId: tempGameId,
+        fromDay: 10,
+        fromTime: "10:00",
+        toDay: 10,
+        toTime: "12:00",
+        dryRun: true,
+      });
+
+      assert.equal(tickPreview.status, 200, JSON.stringify(tickPreview.data));
+      assert.equal(tickPreview.data.preview.willMutateGameState, false);
+      const tickPlan = tickPreview.data.preview.commitmentReviews.plans.find(
+        (plan) => plan.commitmentId === commitmentId
+      );
+      assert.ok(tickPlan, "Expected world tick to preview the due commitment review.");
+      assert.equal(tickPlan.outcome, "fulfill");
+      assert.equal(tickPlan.suggestedCommitmentPatch.op, "fulfill");
+      assert.equal(tickPlan.suggestedGameStatePatch.formalGuildRegistrationPending, false);
+
+      const compact = await get(`/api/context/compact?gameId=${encodeURIComponent(tempGameId)}`);
+      assert.equal(compact.status, 200);
+      const plan = compact.data.context.commitmentReviewAgenda.plans.find(
+        (entry) => entry.commitmentId === commitmentId
+      );
+      assert.ok(plan, "Expected compact context to expose an offscreen review plan.");
+      assert.equal(plan.outcome, "fulfill");
+      assert.equal(plan.suggestedGameStatePatch.guildRegistrationStatus, "complete");
+      assert.ok(
+        compact.data.context.alerts.some(
+          (alert) =>
+            alert.type === "commitments_review_due" &&
+            alert.reviewPlans.some((reviewPlan) => reviewPlan.commitmentId === commitmentId)
+        )
+      );
+
+      const applied = await post("/api/turn/apply", {
+        gameId: tempGameId,
+        actionSummary: "Test controlado: el gremio cierra el registro formal segun reviewPlan.",
+        biologicalCostExemptReason: "Cierre administrativo sin actividad fisica.",
+        commitmentPatches: plan.suggestedCommitmentPatch,
+        gameStatePatch: plan.suggestedGameStatePatch,
+      });
+
+      assert.equal(applied.status, 200, JSON.stringify(applied.data));
+      assert.equal(applied.data.ok, true);
+      assert.equal(applied.data.changes.commitments[0].after.status, "fulfilled");
+      assert.equal(applied.data.changes.guildRegistration.after.formalGuildRegistrationPending, false);
+      assert.equal(applied.data.changes.guildRegistration.after.registrationStatus, "complete");
+
+      const afterCompact = await get(`/api/context/compact?gameId=${encodeURIComponent(tempGameId)}`);
+      assert.equal(afterCompact.status, 200);
+      assert.equal(afterCompact.data.context.guildState.formalGuildRegistrationPending, false);
+      assert.equal(
+        afterCompact.data.context.pendingCommitments.some((commitment) => commitment.commitmentId === commitmentId),
+        false
+      );
+    } finally {
+      await GameState.updateOne(
+        { gameId: tempGameId },
+        {
+          $set: {
+            currentDay: originalState.currentDay,
+            time: originalState.time,
+            block: originalState.block,
+            flags: originalState.flags || {},
+          },
+        }
+      );
+    }
+  });
+
   it("infers already consumed contract meals from formal meal logs", async () => {
     const originalState = await GameState.findOne({ gameId: tempGameId }).lean();
     await GameState.updateOne(

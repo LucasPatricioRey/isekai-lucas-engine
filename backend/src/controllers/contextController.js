@@ -26,6 +26,7 @@ const responseShaping = require("../utils/responseShaping");
 const { buildNarrativeContextSummary } = require("../services/narrativeVariationService");
 const { buildNpcKnowledgeContext } = require("../services/knowledgeService");
 const { buildStateAudit } = require("../services/stateAuditService");
+const { buildCommitmentReviewPlans } = require("../services/commitmentReviewService");
 const {
   annotateMissionForBoard,
   applyMissionEnvironmentFilter,
@@ -595,6 +596,7 @@ function commitmentAgendaEntry(commitment) {
     speakerNpcId: commitment.speakerNpcId || "",
     responsibleNpcId: commitment.responsibleNpcId || "",
     responsibleFactionId: commitment.responsibleFactionId || "",
+    reviewPlan: commitment.reviewPlan || null,
     targetNpcIds: commitment.targetNpcIds || [],
     relatedEventIds: commitment.relatedEventIds || [],
     relatedMissionIds: commitment.relatedMissionIds || [],
@@ -1446,7 +1448,7 @@ async function getCompactContext(req, res) {
       responseShaping.summarizeMission(mission, gameState.currentDay, gameState.time)
     );
     const priorityWeight = { critical: 4, high: 3, normal: 2, low: 1 };
-    const pendingCommitmentSummaries = pendingCommitments
+    const basePendingCommitmentSummaries = pendingCommitments
       .map((commitment) => responseShaping.summarizeCommitment(commitment, gameState.currentDay, gameState.time))
       .sort((left, right) => {
         const leftDue = commitmentScheduleAbs(left);
@@ -1455,6 +1457,30 @@ async function getCompactContext(req, res) {
         return (priorityWeight[right.priority] || 0) - (priorityWeight[left.priority] || 0);
       })
       .slice(0, limits.commitmentLimit);
+    const commitmentReviewPlans = buildCommitmentReviewPlans({
+      commitments: basePendingCommitmentSummaries,
+      gameState,
+      fromDay: gameState.currentDay,
+      fromTime: gameState.time,
+      toDay: gameState.currentDay,
+      toTime: gameState.time,
+    });
+    const reviewPlanByCommitmentId = new Map(
+      commitmentReviewPlans.map((plan) => [plan.commitmentId, plan])
+    );
+    const pendingCommitmentSummaries = basePendingCommitmentSummaries.map((commitment) => ({
+      ...commitment,
+      reviewPlan: reviewPlanByCommitmentId.get(commitment.commitmentId) || null,
+    }));
+    const commitmentReviewAgenda = {
+      schemaVersion: "commitment_review_agenda_v1",
+      dueCount: commitmentReviewPlans.length,
+      plans: commitmentReviewPlans.slice(0, 6),
+      requiresApplyTurn: commitmentReviewPlans.length > 0,
+      globalGuidance: commitmentReviewPlans.length
+        ? "Hay revisiones offscreen listas: usar los parches sugeridos o una resolucion equivalente, no inventar el resultado por narracion."
+        : "No hay revisiones offscreen vencidas en este momento.",
+    };
     const commitmentAgenda = buildCommitmentAgenda(pendingCommitmentSummaries);
     const availableMissionSummaries = availableMissions
       .map((mission) => annotateMissionForBoard(mission, gameState))
@@ -1698,8 +1724,12 @@ async function getCompactContext(req, res) {
         severity: "warning",
         message: "Hay promesas, estimaciones o procesos cuya proxima revision ya corresponde.",
         commitmentIds: commitmentAgenda.reviewDue.map((commitment) => commitment.commitmentId),
+        reviewPlans: commitmentAgenda.reviewDue
+          .map((commitment) => commitment.reviewPlan)
+          .filter(Boolean)
+          .slice(0, 4),
         recommendedAction:
-          "Usar commitmentPatches para fulfill/fail/cancel/expire, explicar bloqueo o fijar nuevo nextCheck.",
+          "Usar los reviewPlans/suggestedCommitmentPatch con applyTurn, o una resolucion equivalente validada.",
       });
     }
 
@@ -1911,6 +1941,7 @@ async function getCompactContext(req, res) {
         npcKnowledgeContext: npcKnowledgeContextForResponse,
         pendingCommitments: pendingCommitmentSummaries,
         commitmentAgenda,
+        commitmentReviewAgenda,
         guildState,
         worldFriction,
         carriedEvidence: carriedEvidence.map(responseShaping.summarizeEvidence),

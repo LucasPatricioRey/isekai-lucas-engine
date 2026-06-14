@@ -14,6 +14,7 @@ const {
   mainEventQuery,
   shouldEnsureDailyEvent,
 } = require("./dailyEventSchedulerService");
+const { previewCommitmentReviews } = require("./commitmentReviewService");
 
 function timeToMinutes(time) {
   const [hours, minutes] = String(time || "00:00").split(":").map(Number);
@@ -248,6 +249,7 @@ async function previewWorldTick({
     activeCombats,
     currentDayMainEvent,
     openMainEvent,
+    commitmentReviews,
   ] = await Promise.all([
     previewRoutineSync({ toDay: normalizedToDay, toTime: normalizedToTime }),
     previewMissionExpiry({ fromAbs, toAbs }),
@@ -265,6 +267,14 @@ async function previewWorldTick({
       .select("eventId title status startDay startTime endDay endTime severity tags")
       .lean(),
     findOpenMainEvent({ gameId }),
+    previewCommitmentReviews({
+      gameId,
+      gameState,
+      fromDay: normalizedFromDay,
+      fromTime: normalizedFromTime,
+      toDay: normalizedToDay,
+      toTime: normalizedToTime,
+    }),
   ]);
   const openMainEventStatusAtTarget = openMainEvent
     ? getEventStatusAt(openMainEvent, normalizedToDay, normalizedToTime)
@@ -305,6 +315,10 @@ async function previewWorldTick({
     warnings.push("Hay eventos activos que terminarian en este rango; preview no los resuelve.");
   }
 
+  if (commitmentReviews.dueCount > 0) {
+    warnings.push("Hay revisiones offscreen de compromisos en este rango; preview propone parches pero no muta estado.");
+  }
+
   return {
     dryRun: true,
     willMutateGameState: false,
@@ -343,6 +357,7 @@ async function previewWorldTick({
       activeCount: activeCombats.length,
       active: activeCombats,
     },
+    commitmentReviews,
     generatedContent: {
       willCreateRumors: false,
       willCreateRomance: false,

@@ -1,5 +1,6 @@
 const { after, before, describe, it } = require("node:test");
 
+const Checkpoint = require("../models/Checkpoint");
 const EventLog = require("../models/EventLog");
 const Faction = require("../models/Faction");
 const GameState = require("../models/GameState");
@@ -78,6 +79,7 @@ async function createIsolatedGameState() {
 async function cleanupIsolatedState() {
   if (tempGameId) {
     await GameState.deleteOne({ gameId: tempGameId });
+    await Checkpoint.deleteMany({ gameId: tempGameId });
     await WorldEvent.deleteMany({ gameId: tempGameId });
     await EventLog.deleteMany({ gameId: tempGameId });
     if (tempSocialNpcId) await Npc.deleteOne({ npcId: tempSocialNpcId });

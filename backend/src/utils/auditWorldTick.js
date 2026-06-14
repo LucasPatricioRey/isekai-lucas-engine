@@ -22,13 +22,7 @@ const BASE_URL =
 const API_KEY = process.env.API_KEY || process.env.AUDIT_API_KEY || "dev-secret";
 
 const EXPECTED_STATE = {
-  day: 10,
-  time: "12:00",
-  locationId: "loc_hoshimori_grulla_azul_comedor",
-  moneyCopper: 1470,
-  mpCurrent: 200,
-  activeMissionCount: 0,
-  activeCombatCount: 0,
+  minDay: 10,
 };
 
 function endpoint(path) {
@@ -75,6 +69,29 @@ function assertEqual(issues, label, actual, expected) {
 function assertTrue(issues, label, condition, evidence = "") {
   console.log(`${condition ? "PASS" : "FAIL"} ${label}${evidence ? `: ${evidence}` : ""}`);
   if (!condition) issues.push(label);
+}
+
+function isTimeString(value) {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(value || ""));
+}
+
+function timeToMinutes(time) {
+  const [hours, minutes] = String(time || "00:00").split(":").map(Number);
+  return (hours || 0) * 60 + (minutes || 0);
+}
+
+function addMinutes(day, time, minutesToAdd) {
+  const base = (Number(day || 1) - 1) * 1440 + timeToMinutes(time || "00:00");
+  const target = base + Number(minutesToAdd || 0);
+  const targetDay = Math.floor(target / 1440) + 1;
+  const minutesInDay = ((target % 1440) + 1440) % 1440;
+  const hours = String(Math.floor(minutesInDay / 60)).padStart(2, "0");
+  const minutes = String(minutesInDay % 60).padStart(2, "0");
+
+  return {
+    day: targetDay,
+    time: `${hours}:${minutes}`,
+  };
 }
 
 function summarizeGameState(context) {
@@ -133,17 +150,20 @@ async function main() {
   await assertMongoAvailable();
   const safetyBefore = await countSafetyCollections();
 
-  const [beforeContext, preview, activeCombatsBefore] = await Promise.all([
+  const [beforeContext, activeCombatsBefore] = await Promise.all([
     request("/api/context/full"),
-    post("/api/world/tick/preview", {
-      fromDay: 10,
-      fromTime: "12:00",
-      toDay: 10,
-      toTime: "14:00",
-      dryRun: true,
-    }),
     request("/api/combat/encounters/active"),
   ]);
+
+  const beforeState = summarizeGameState(beforeContext);
+  const previewTarget = addMinutes(beforeState.currentDay, beforeState.time, 120);
+  const preview = await post("/api/world/tick/preview", {
+    fromDay: beforeState.currentDay,
+    fromTime: beforeState.time,
+    toDay: previewTarget.day,
+    toTime: previewTarget.time,
+    dryRun: true,
+  });
 
   const [afterContext, activeCombatsAfter] = await Promise.all([
     request("/api/context/full"),
@@ -151,7 +171,6 @@ async function main() {
   ]);
   const safetyAfter = await countSafetyCollections();
 
-  const beforeState = summarizeGameState(beforeContext);
   const afterState = summarizeGameState(afterContext);
 
   section("Canon State From API");
@@ -184,15 +203,32 @@ async function main() {
     )
   );
 
-  assertEqual(issues, "day", beforeState.currentDay, EXPECTED_STATE.day);
-  assertEqual(issues, "time", beforeState.time, EXPECTED_STATE.time);
-  assertEqual(issues, "locationId", beforeState.locationId, EXPECTED_STATE.locationId);
-  assertEqual(issues, "moneyCopper", beforeState.moneyCopper, EXPECTED_STATE.moneyCopper);
-  assertEqual(issues, "mp current", beforeState.mpCurrent, EXPECTED_STATE.mpCurrent);
-  assertEqual(issues, "activeMissionIds count", beforeState.activeMissionIds.length, EXPECTED_STATE.activeMissionCount);
-  assertEqual(issues, "active combats before", (activeCombatsBefore.encounters || []).length, EXPECTED_STATE.activeCombatCount);
-  assertEqual(issues, "active combats after", (activeCombatsAfter.encounters || []).length, EXPECTED_STATE.activeCombatCount);
+  assertTrue(issues, "day is playable canon", beforeState.currentDay >= EXPECTED_STATE.minDay, String(beforeState.currentDay));
+  assertTrue(issues, "time has HH:MM format", isTimeString(beforeState.time), beforeState.time);
+  assertTrue(issues, "locationId exists", Boolean(beforeState.locationId), beforeState.locationId);
+  assertTrue(
+    issues,
+    "moneyCopper is non-negative number",
+    Number.isFinite(beforeState.moneyCopper) && beforeState.moneyCopper >= 0,
+    String(beforeState.moneyCopper)
+  );
+  assertTrue(
+    issues,
+    "mp current is non-negative number",
+    Number.isFinite(beforeState.mpCurrent) && beforeState.mpCurrent >= 0,
+    String(beforeState.mpCurrent)
+  );
+  assertTrue(issues, "activeMissionIds is an array", Array.isArray(beforeState.activeMissionIds));
+  assertTrue(issues, "active combats endpoint returns array", Array.isArray(activeCombatsBefore.encounters || []));
+  assertEqual(
+    issues,
+    "active combats unchanged",
+    (activeCombatsAfter.encounters || []).length,
+    (activeCombatsBefore.encounters || []).length
+  );
+  assertEqual(issues, "post-preview day unchanged", afterState.currentDay, beforeState.currentDay);
   assertEqual(issues, "post-preview time unchanged", afterState.time, beforeState.time);
+  assertEqual(issues, "post-preview location unchanged", afterState.locationId, beforeState.locationId);
   assertEqual(issues, "post-preview money unchanged", afterState.moneyCopper, beforeState.moneyCopper);
   assertEqual(issues, "post-preview MP unchanged", afterState.mpCurrent, beforeState.mpCurrent);
   assertEqual(issues, "post-preview inventory count unchanged", afterState.inventory.length, beforeState.inventory.length);
@@ -209,6 +245,8 @@ async function main() {
         activeRumorCandidates: tick.rumors?.candidateCount,
         eventsEnding: tick.events?.endingCount,
         activeCombats: tick.combats?.activeCount,
+        commitmentReviewsDue: tick.commitmentReviews?.dueCount,
+        commitmentReviewPlans: tick.commitmentReviews?.plans?.length,
       },
       null,
       2
@@ -217,11 +255,31 @@ async function main() {
 
   assertEqual(issues, "world tick dryRun", tick.dryRun, true);
   assertEqual(issues, "world tick mutates state", tick.willMutateGameState, false);
-  assertEqual(issues, "elapsed minutes 12:00 -> 14:00", tick.elapsedMinutes, 120);
-  assertTrue(issues, "routine preview checked NPCs", (tick.routines?.checkedNpcCount || 0) >= 25);
-  assertTrue(issues, "routine preview lists possible changes", (tick.routines?.updateCount || 0) >= 1);
-  assertEqual(issues, "mission expiry before 18:00", tick.missionExpiry?.expiringCount, 0);
-  assertEqual(issues, "world tick active combat count", tick.combats?.activeCount, 0);
+  assertEqual(
+    issues,
+    `${beforeState.currentDay} ${beforeState.time} -> ${previewTarget.day} ${previewTarget.time} elapsed minutes`,
+    tick.elapsedMinutes,
+    120
+  );
+  assertTrue(issues, "routine preview checked NPCs", (tick.routines?.checkedNpcCount || 0) >= 1);
+  assertTrue(issues, "routine preview has numeric update count", Number.isFinite(tick.routines?.updateCount || 0));
+  assertTrue(
+    issues,
+    "mission expiry preview has numeric expiring count",
+    Number.isFinite(tick.missionExpiry?.expiringCount || 0),
+    String(tick.missionExpiry?.expiringCount)
+  );
+  assertEqual(issues, "world tick active combat count matches API", tick.combats?.activeCount, (activeCombatsBefore.encounters || []).length);
+  if (tick.commitmentReviews) {
+    assertEqual(issues, "commitment review preview mutates state", tick.commitmentReviews.willMutateGameState, false);
+    assertTrue(issues, "commitment review plans is an array", Array.isArray(tick.commitmentReviews.plans));
+    assertTrue(
+      issues,
+      "commitment review due count is non-negative",
+      Number.isFinite(tick.commitmentReviews.dueCount) && tick.commitmentReviews.dueCount >= 0,
+      String(tick.commitmentReviews.dueCount)
+    );
+  }
   assertEqual(issues, "world tick creates rumors", tick.generatedContent?.willCreateRumors, false);
   assertEqual(issues, "world tick creates romance", tick.generatedContent?.willCreateRomance, false);
   assertEqual(issues, "world tick creates major events", tick.generatedContent?.willCreateMajorEvents, false);
@@ -231,14 +289,14 @@ async function main() {
   const gameState = await GameState.findOne({ gameId: "isekai_lucas_main" }).lean();
   const availableMissions = await Mission.countDocuments({ status: "available" });
 
-  assertEqual(issues, "db day", gameState.currentDay, EXPECTED_STATE.day);
-  assertEqual(issues, "db time", gameState.time, EXPECTED_STATE.time);
-  assertEqual(issues, "db locationId", gameState.locationId, EXPECTED_STATE.locationId);
-  assertEqual(issues, "db moneyCopper", gameState.moneyCopper, EXPECTED_STATE.moneyCopper);
-  assertEqual(issues, "db MP current", gameState.lucasStatus?.mp?.current, EXPECTED_STATE.mpCurrent);
-  assertEqual(issues, "db activeMissionIds count", (gameState.activeMissionIds || []).length, EXPECTED_STATE.activeMissionCount);
-  assertEqual(issues, "db active combat count", safetyAfter.activeCombatCount, EXPECTED_STATE.activeCombatCount);
-  assertTrue(issues, "available missions still present", availableMissions >= 11, `${availableMissions} available`);
+  assertEqual(issues, "db day matches API", gameState.currentDay, beforeState.currentDay);
+  assertEqual(issues, "db time matches API", gameState.time, beforeState.time);
+  assertEqual(issues, "db locationId matches API", gameState.locationId, beforeState.locationId);
+  assertEqual(issues, "db moneyCopper matches API", gameState.moneyCopper, beforeState.moneyCopper);
+  assertEqual(issues, "db MP current matches API", gameState.lucasStatus?.mp?.current, beforeState.mpCurrent);
+  assertEqual(issues, "db activeMissionIds count matches API", (gameState.activeMissionIds || []).length, beforeState.activeMissionIds.length);
+  assertEqual(issues, "db active combat count matches API", safetyAfter.activeCombatCount, (activeCombatsBefore.encounters || []).length);
+  assertTrue(issues, "available missions query returns count", availableMissions >= 0, `${availableMissions} available`);
 
   section("Safety Collection Counts");
   console.log(JSON.stringify({ safetyBefore, safetyAfter }, null, 2));

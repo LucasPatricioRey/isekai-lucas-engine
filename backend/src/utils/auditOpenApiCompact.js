@@ -226,6 +226,22 @@ function main() {
     "compact activityCost supports minutes mismatch override",
     Boolean(compact.components?.schemas?.ActivityCostInput?.properties?.allowMinutesMismatch)
   );
+  for (const propertyName of [
+    "formalGuildRegistrationPending",
+    "guildRegistrationStatus",
+    "guildRegistrationResolution",
+  ]) {
+    assertCondition(
+      issues,
+      `full GameStatePatch has ${propertyName}`,
+      Boolean(full.components?.schemas?.GameStatePatch?.properties?.[propertyName])
+    );
+    assertCondition(
+      issues,
+      `compact GameStatePatch has ${propertyName}`,
+      Boolean(compact.components?.schemas?.GameStatePatch?.properties?.[propertyName])
+    );
+  }
   assertCondition(
     issues,
     "compact has JobContractPatchItem",
