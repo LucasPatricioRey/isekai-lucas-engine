@@ -1051,6 +1051,176 @@ describe("turn hardening coverage", () => {
     );
   });
 
+  it("surfaces promise/process reviews and unscheduled trackable commitments", async () => {
+    const originalState = await GameState.findOne({ gameId: tempGameId }).lean();
+    const reviewCommitmentId = `commitment_review_test_${Date.now()}`;
+    const unscheduledCommitmentId = `commitment_unscheduled_test_${Date.now()}`;
+    const conditionalCommitmentId = `commitment_conditional_test_${Date.now()}`;
+
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: 10,
+          time: "12:00",
+          block: originalState.block,
+        },
+      }
+    );
+
+    const created = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: Mara da una estimacion cauta de tramite administrativo.",
+      biologicalCostExemptReason: "Registro formal de pendiente administrativo sin actividad fisica.",
+      commitmentPatches: [
+        {
+          op: "create",
+          commitmentId: reviewCommitmentId,
+          title: "Revisar cierre administrativo del registro",
+          summary: "Mara debe revisar si el expediente de Lucas ya puede cerrarse o explicar el bloqueo.",
+          type: "follow_up",
+          promiseType: "administrative_process",
+          promiseStrength: "soft",
+          priority: "high",
+          requiresExplicitResolution: true,
+          nextCheckDay: 10,
+          nextCheckTime: "11:45",
+          speakerNpcId: tempNpcId,
+          responsibleNpcId: tempNpcId,
+          tags: ["test_turn_hardening", "commitment_review"],
+        },
+        {
+          op: "create",
+          commitmentId: unscheduledCommitmentId,
+          title: "Confirmar una promesa sin fecha",
+          summary: "Compromiso importante creado para probar que no queda flotando sin revision.",
+          type: "promise",
+          promiseType: "hard_promise",
+          promiseStrength: "normal",
+          priority: "normal",
+          requiresExplicitResolution: true,
+          targetNpcIds: [tempNpcId],
+          tags: ["test_turn_hardening", "commitment_needs_schedule"],
+        },
+        {
+          op: "create",
+          commitmentId: conditionalCommitmentId,
+          title: "Devolver un favor cuando la condicion exista",
+          summary: "Promesa condicional de largo plazo para probar que no bloquea escenas normales.",
+          type: "promise",
+          promiseType: "debt_or_favor",
+          promiseStrength: "soft",
+          priority: "low",
+          requiresExplicitResolution: true,
+          conditionSummary: "Solo se activa si Lucas obtiene reconocimiento publico suficiente para cumplir el favor.",
+          targetNpcIds: [tempNpcId],
+          tags: ["test_turn_hardening", "commitment_conditional_dormant"],
+        },
+      ],
+    });
+
+    assert.equal(created.status, 200, JSON.stringify(created.data));
+    assert.equal(created.data.ok, true);
+
+    const compactWithReview = await get(`/api/context/compact?gameId=${encodeURIComponent(tempGameId)}`);
+    assert.equal(compactWithReview.status, 200);
+
+    const reviewCommitment = compactWithReview.data.context.pendingCommitments.find(
+      (entry) => entry.commitmentId === reviewCommitmentId
+    );
+    assert.ok(reviewCommitment, "Expected process review commitment in compact context.");
+    assert.equal(reviewCommitment.promiseType, "administrative_process");
+    assert.equal(reviewCommitment.promiseStrength, "soft");
+    assert.equal(reviewCommitment.nextCheckStatus, "review_overdue");
+    assert.equal(reviewCommitment.urgency, "review_overdue");
+    assert.ok(
+      compactWithReview.data.context.commitmentAgenda.reviewDue.some(
+        (entry) => entry.commitmentId === reviewCommitmentId
+      )
+    );
+    assert.ok(
+      compactWithReview.data.context.alerts.some(
+        (alert) => alert.type === "commitments_review_due" && alert.commitmentIds.includes(reviewCommitmentId)
+      )
+    );
+
+    const unscheduledCommitment = compactWithReview.data.context.pendingCommitments.find(
+      (entry) => entry.commitmentId === unscheduledCommitmentId
+    );
+    assert.ok(unscheduledCommitment, "Expected unscheduled trackable commitment in compact context.");
+    assert.equal(unscheduledCommitment.urgency, "needs_schedule");
+    assert.ok(
+      compactWithReview.data.context.commitmentAgenda.needsSchedule.some(
+        (entry) => entry.commitmentId === unscheduledCommitmentId
+      )
+    );
+    assert.ok(
+      compactWithReview.data.context.alerts.some(
+        (alert) =>
+          alert.type === "commitments_need_schedule" && alert.commitmentIds.includes(unscheduledCommitmentId)
+      )
+    );
+    assert.equal(
+      compactWithReview.data.context.alerts.some(
+        (alert) => alert.type === "commitments_need_schedule" && alert.commitmentIds.includes(conditionalCommitmentId)
+      ),
+      false
+    );
+
+    const conditionalCommitment = compactWithReview.data.context.pendingCommitments.find(
+      (entry) => entry.commitmentId === conditionalCommitmentId
+    );
+    assert.ok(conditionalCommitment, "Expected conditional dormant commitment in compact context.");
+    assert.equal(conditionalCommitment.urgency, "conditional_dormant");
+    assert.ok(
+      compactWithReview.data.context.commitmentAgenda.conditionalDormant.some(
+        (entry) => entry.commitmentId === conditionalCommitmentId
+      )
+    );
+
+    const reprogrammed = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: Mara explica demora y fija una nueva revision.",
+      biologicalCostExemptReason: "Reprogramacion formal de pendiente administrativo sin actividad fisica.",
+      commitmentPatches: {
+        op: "update",
+        commitmentId: reviewCommitmentId,
+        nextCheckDay: 10,
+        nextCheckTime: "13:00",
+        blockerSummary: "Falta una firma interna; Mara se responsabiliza de revisar antes de media tarde.",
+      },
+    });
+
+    assert.equal(reprogrammed.status, 200, JSON.stringify(reprogrammed.data));
+    assert.equal(reprogrammed.data.ok, true);
+    assert.equal(reprogrammed.data.changes.commitments[0].after.blockerSummary.includes("Falta una firma"), true);
+
+    const compactAfterReprogram = await get(`/api/context/compact?gameId=${encodeURIComponent(tempGameId)}`);
+    assert.equal(compactAfterReprogram.status, 200);
+    const updatedReview = compactAfterReprogram.data.context.pendingCommitments.find(
+      (entry) => entry.commitmentId === reviewCommitmentId
+    );
+    assert.ok(updatedReview, "Expected reprogrammed commitment in compact context.");
+    assert.equal(updatedReview.nextCheckStatus, "review_soon");
+    assert.equal(updatedReview.urgency, "review_soon");
+    assert.ok(
+      compactAfterReprogram.data.context.commitmentAgenda.reviewSoon.some(
+        (entry) => entry.commitmentId === reviewCommitmentId
+      )
+    );
+
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: originalState.currentDay,
+          time: originalState.time,
+          block: originalState.block,
+        },
+      }
+    );
+  });
+
   it("infers already consumed contract meals from formal meal logs", async () => {
     const originalState = await GameState.findOne({ gameId: tempGameId }).lean();
     await GameState.updateOne(

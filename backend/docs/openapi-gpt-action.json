@@ -632,6 +632,32 @@
             ],
             "default": "plan"
           },
+          "promiseType": {
+            "type": "string",
+            "enum": [
+              "none",
+              "hard_promise",
+              "soft_estimate",
+              "administrative_process",
+              "npc_offer",
+              "debt_or_favor",
+              "warning_or_condition",
+              "follow_up"
+            ],
+            "default": "none",
+            "description": "Clasifica promesas, estimaciones y procesos para que no queden pendientes indefinidamente."
+          },
+          "promiseStrength": {
+            "type": "string",
+            "enum": [
+              "none",
+              "soft",
+              "normal",
+              "binding"
+            ],
+            "default": "none",
+            "description": "Dureza del compromiso: soft para estimaciones cautas, binding para promesas claras."
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -712,6 +738,42 @@
           "windowEndTime": {
             "type": "string",
             "description": "HH:MM; requiere windowEndDay."
+          },
+          "nextCheckDay": {
+            "type": "integer",
+            "description": "Dia de proxima revision si no hay vencimiento duro. Evita procesos pendientes para siempre."
+          },
+          "nextCheckTime": {
+            "type": "string",
+            "description": "HH:MM; requiere nextCheckDay."
+          },
+          "blockerSummary": {
+            "type": "string",
+            "description": "Motivo de demora, bloqueo o estado actual si se reprograma la revision."
+          },
+          "conditionSummary": {
+            "type": "string",
+            "description": "Condicion que debe cumplirse para activar una promesa o favor de largo plazo."
+          },
+          "dormantUntilDay": {
+            "type": "integer",
+            "description": "Dia hasta el cual un compromiso condicional queda dormido antes de revisarse."
+          },
+          "dormantUntilTime": {
+            "type": "string",
+            "description": "HH:MM; requiere dormantUntilDay."
+          },
+          "speakerNpcId": {
+            "type": "string",
+            "description": "NPC que hizo la promesa, estimacion u oferta, si aplica."
+          },
+          "responsibleNpcId": {
+            "type": "string",
+            "description": "NPC responsable de cumplir o revisar el proceso, si aplica."
+          },
+          "responsibleFactionId": {
+            "type": "string",
+            "description": "Faccion/institucion responsable si el pendiente no depende de un NPC concreto."
           },
           "targetNpcIds": {
             "type": "array",

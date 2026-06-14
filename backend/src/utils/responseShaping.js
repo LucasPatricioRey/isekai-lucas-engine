@@ -436,11 +436,41 @@ function commitmentDueStatus(commitment, currentDay, currentTime) {
   return "future";
 }
 
+function commitmentNextCheckStatus(commitment, currentDay, currentTime) {
+  if (!commitment?.nextCheckDay) return "none";
+  const currentAbs = (Number(currentDay || 1) - 1) * 1440 + timeToMinutes(currentTime);
+  const checkAbs =
+    (Number(commitment.nextCheckDay || 1) - 1) * 1440 + timeToMinutes(commitment.nextCheckTime || "23:59");
+
+  if (currentAbs > checkAbs) return "review_overdue";
+  if (currentAbs === checkAbs) return "review_now";
+  if (checkAbs - currentAbs <= 180) return "review_soon";
+  return "future";
+}
+
+function commitmentDormantStatus(commitment, currentDay, currentTime) {
+  if (!commitment?.conditionSummary && !commitment?.dormantUntilDay) return "none";
+  if (!commitment?.dormantUntilDay) return "conditional";
+
+  const currentAbs = (Number(currentDay || 1) - 1) * 1440 + timeToMinutes(currentTime);
+  const dormantAbs =
+    (Number(commitment.dormantUntilDay || 1) - 1) * 1440 + timeToMinutes(commitment.dormantUntilTime || "23:59");
+
+  return currentAbs >= dormantAbs ? "wake_due" : "dormant";
+}
+
 function commitmentOverdueMinutes(commitment, currentDay, currentTime) {
   if (!commitment?.dueDay) return 0;
   const currentAbs = (Number(currentDay || 1) - 1) * 1440 + timeToMinutes(currentTime);
   const dueAbs = (Number(commitment.dueDay || 1) - 1) * 1440 + timeToMinutes(commitment.dueTime || "23:59");
   return Math.max(0, currentAbs - dueAbs);
+}
+
+function isTrackablePromiseCommitment(commitment = {}) {
+  if (!commitment) return false;
+  if (commitment.promiseType && commitment.promiseType !== "none") return true;
+  if (commitment.promiseStrength && commitment.promiseStrength !== "none") return true;
+  return ["promise", "obligation", "appointment", "follow_up", "mission_intention"].includes(commitment.type);
 }
 
 function defaultCommitmentFailureSeverity(commitment = {}) {
@@ -464,26 +494,51 @@ function defaultCommitmentFailureConsequence(commitment = {}) {
 
 function commitmentUrgency(commitment, currentDay, currentTime) {
   if (!commitment || ["fulfilled", "failed", "cancelled", "expired"].includes(commitment.status)) return "closed";
-  if (!commitment.dueDay) return commitment.priority === "critical" || commitment.priority === "high" ? "tracked" : "open";
 
   const currentAbs = (Number(currentDay || 1) - 1) * 1440 + timeToMinutes(currentTime);
-  const dueAbs = (Number(commitment.dueDay || 1) - 1) * 1440 + timeToMinutes(commitment.dueTime || "23:59");
-  const graceMinutes = Math.max(0, Number(commitment.graceMinutes || 0));
-  const minutesUntilDue = dueAbs - currentAbs;
+  let dueUrgency = "";
+  if (commitment.dueDay) {
+    const dueAbs = (Number(commitment.dueDay || 1) - 1) * 1440 + timeToMinutes(commitment.dueTime || "23:59");
+    const graceMinutes = Math.max(0, Number(commitment.graceMinutes || 0));
+    const minutesUntilDue = dueAbs - currentAbs;
 
-  if (currentAbs > dueAbs + graceMinutes) return "consequence_ready";
-  if (currentAbs > dueAbs) return "overdue_in_grace";
-  if (currentAbs === dueAbs) return "due_now";
-  if (minutesUntilDue <= 60) return "due_soon";
-  if (minutesUntilDue <= 180) return "upcoming";
-  return "future";
+    if (currentAbs > dueAbs + graceMinutes) dueUrgency = "consequence_ready";
+    else if (currentAbs > dueAbs) dueUrgency = "overdue_in_grace";
+    else if (currentAbs === dueAbs) dueUrgency = "due_now";
+    else if (minutesUntilDue <= 60) dueUrgency = "due_soon";
+    else if (minutesUntilDue <= 180) dueUrgency = "upcoming";
+    else dueUrgency = "future";
+  }
+
+  if (["consequence_ready", "overdue_in_grace", "due_now"].includes(dueUrgency)) return dueUrgency;
+
+  const nextCheckStatus = commitmentNextCheckStatus(commitment, currentDay, currentTime);
+  if (nextCheckStatus === "review_overdue") return "review_overdue";
+  if (nextCheckStatus === "review_now") return "review_due";
+  if (nextCheckStatus === "review_soon") return "review_soon";
+
+  if (dueUrgency) return dueUrgency;
+  const dormantStatus = commitmentDormantStatus(commitment, currentDay, currentTime);
+  if (dormantStatus === "wake_due") return "review_due";
+  if (dormantStatus === "dormant" || dormantStatus === "conditional") return "conditional_dormant";
+  if (commitment.requiresExplicitResolution || isTrackablePromiseCommitment(commitment)) return "needs_schedule";
+  return commitment.priority === "critical" || commitment.priority === "high" ? "tracked" : "open";
 }
 
-function buildCommitmentRecommendedAction({ urgency, type, requiresExplicitResolution }) {
+function buildCommitmentRecommendedAction({ urgency, type, promiseType, promiseStrength, requiresExplicitResolution }) {
   if (urgency === "consequence_ready") return "Cerrar con fulfill/fail/cancel/expire antes de avanzar escenas largas.";
   if (urgency === "overdue_in_grace") return "Resolver o reprogramar pronto; todavia esta dentro del margen de gracia.";
   if (urgency === "due_now") return "Atender ahora, cumplirlo o reprogramarlo formalmente.";
   if (urgency === "due_soon" || urgency === "upcoming") return "Tenerlo presente en la narracion y evitar saltos largos que lo ignoren.";
+  if (urgency === "review_overdue" || urgency === "review_due") {
+    if (promiseType === "soft_estimate" || promiseStrength === "soft") {
+      return "Revisar ahora: confirmar avance, explicar demora o fijar nuevo nextCheck; no tratarlo como incumplimiento duro sin causa.";
+    }
+    return "Revisar ahora: cumplir, explicar bloqueo, reprogramar nextCheck o cerrar formalmente.";
+  }
+  if (urgency === "review_soon") return "Recordar la revision cercana y evitar saltos largos que la ignoren.";
+  if (urgency === "needs_schedule") return "Agregar dueDay/dueTime o nextCheckDay/nextCheckTime, o cerrarlo si ya no aplica.";
+  if (urgency === "conditional_dormant") return "Mantenerlo dormido hasta que se cumpla la condicion o llegue su revision.";
   if (requiresExplicitResolution) return "No dejarlo solo en logs; cerrarlo formalmente cuando cambie su estado.";
   if (type === "secret") return "Respetar privacidad y conocimiento NPC.";
   return "Mantener como pendiente hasta que Lucas lo atienda o lo descarte.";
@@ -496,7 +551,10 @@ function buildCommitmentConsequencePreview(commitment, currentDay, currentTime) 
   const overdueMinutes = commitmentOverdueMinutes(commitment, currentDay, currentTime);
   const pastGrace = urgency === "consequence_ready";
   const requiresExplicitResolution = Boolean(
-    commitment?.requiresExplicitResolution || severity !== "none" || (commitment?.targetNpcIds || []).length > 0
+    commitment?.requiresExplicitResolution ||
+      severity !== "none" ||
+      (commitment?.targetNpcIds || []).length > 0 ||
+      isTrackablePromiseCommitment(commitment)
   );
 
   return {
@@ -510,6 +568,8 @@ function buildCommitmentConsequencePreview(commitment, currentDay, currentTime) 
     recommendedAction: buildCommitmentRecommendedAction({
       urgency,
       type: commitment?.type || "plan",
+      promiseType: commitment?.promiseType || "none",
+      promiseStrength: commitment?.promiseStrength || "none",
       requiresExplicitResolution,
     }),
   };
@@ -1398,6 +1458,8 @@ function summarizeWorldEvent(event) {
 function summarizeCommitment(commitment, currentDay, currentTime) {
   if (!commitment) return null;
   const dueStatus = commitmentDueStatus(commitment, currentDay, currentTime);
+  const nextCheckStatus = commitmentNextCheckStatus(commitment, currentDay, currentTime);
+  const dormantStatus = commitmentDormantStatus(commitment, currentDay, currentTime);
   const urgency = commitmentUrgency(commitment, currentDay, currentTime);
   return {
     commitmentId: commitment.commitmentId,
@@ -1406,6 +1468,8 @@ function summarizeCommitment(commitment, currentDay, currentTime) {
     title: commitment.title,
     summary: truncateText(commitment.summary || "", 700),
     type: commitment.type || "plan",
+    promiseType: commitment.promiseType || "none",
+    promiseStrength: commitment.promiseStrength || "none",
     status: commitment.status || "pending",
     priority: commitment.priority || "normal",
     failureSeverity: defaultCommitmentFailureSeverity(commitment),
@@ -1424,11 +1488,22 @@ function summarizeCommitment(commitment, currentDay, currentTime) {
     windowStartTime: commitment.windowStartTime || "",
     windowEndDay: commitment.windowEndDay,
     windowEndTime: commitment.windowEndTime || "",
+    nextCheckDay: commitment.nextCheckDay,
+    nextCheckTime: commitment.nextCheckTime || "",
+    nextCheckStatus,
+    blockerSummary: truncateText(commitment.blockerSummary || "", 350),
+    conditionSummary: truncateText(commitment.conditionSummary || "", 350),
+    dormantUntilDay: commitment.dormantUntilDay,
+    dormantUntilTime: commitment.dormantUntilTime || "",
+    dormantStatus,
     targetNpcIds: commitment.targetNpcIds || [],
     relatedNpcIds: commitment.relatedNpcIds || [],
     relatedLocationIds: commitment.relatedLocationIds || [],
     relatedMissionIds: commitment.relatedMissionIds || [],
     relatedEventIds: commitment.relatedEventIds || [],
+    speakerNpcId: commitment.speakerNpcId || "",
+    responsibleNpcId: commitment.responsibleNpcId || "",
+    responsibleFactionId: commitment.responsibleFactionId || "",
     resolution: commitment.resolution || {},
     sourceEventLogId: commitment.sourceEventLogId || "",
     tags: commitment.tags || [],

@@ -77,6 +77,29 @@ const commitmentSchema = new mongoose.Schema(
       index: true,
     },
 
+    promiseType: {
+      type: String,
+      enum: [
+        "none",
+        "hard_promise",
+        "soft_estimate",
+        "administrative_process",
+        "npc_offer",
+        "debt_or_favor",
+        "warning_or_condition",
+        "follow_up",
+      ],
+      default: "none",
+      index: true,
+    },
+
+    promiseStrength: {
+      type: String,
+      enum: ["none", "soft", "normal", "binding"],
+      default: "none",
+      index: true,
+    },
+
     status: {
       type: String,
       enum: ["pending", "active", "fulfilled", "failed", "cancelled", "expired"],
@@ -168,9 +191,59 @@ const commitmentSchema = new mongoose.Schema(
       default: "",
     },
 
+    nextCheckDay: {
+      type: Number,
+      default: null,
+      index: true,
+    },
+
+    nextCheckTime: {
+      type: String,
+      default: "",
+    },
+
+    blockerSummary: {
+      type: String,
+      default: "",
+    },
+
+    conditionSummary: {
+      type: String,
+      default: "",
+    },
+
+    dormantUntilDay: {
+      type: Number,
+      default: null,
+      index: true,
+    },
+
+    dormantUntilTime: {
+      type: String,
+      default: "",
+    },
+
     ownerCharacterId: {
       type: String,
       default: "char_lucas",
+      index: true,
+    },
+
+    speakerNpcId: {
+      type: String,
+      default: "",
+      index: true,
+    },
+
+    responsibleNpcId: {
+      type: String,
+      default: "",
+      index: true,
+    },
+
+    responsibleFactionId: {
+      type: String,
+      default: "",
       index: true,
     },
 
@@ -226,6 +299,8 @@ const commitmentSchema = new mongoose.Schema(
 );
 
 commitmentSchema.index({ gameId: 1, status: 1, dueDay: 1, dueTime: 1 });
+commitmentSchema.index({ gameId: 1, status: 1, nextCheckDay: 1, nextCheckTime: 1 });
+commitmentSchema.index({ gameId: 1, status: 1, dormantUntilDay: 1, dormantUntilTime: 1 });
 commitmentSchema.index({ gameId: 1, targetNpcIds: 1, status: 1 });
 
 module.exports = mongoose.model("Commitment", commitmentSchema);

@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
+const Commitment = require("../models/Commitment");
 const GameState = require("../models/GameState");
 const MagicTechnique = require("../models/MagicTechnique");
 const Mission = require("../models/Mission");
@@ -53,6 +54,24 @@ function readCombatSchemaActionEnum() {
 
 function cleanSortedIds(values = []) {
   return Array.from(new Set(values.filter(Boolean))).sort();
+}
+
+function auditTimeToMinutes(time = "00:00") {
+  const [hours = "0", minutes = "0"] = String(time || "00:00").split(":");
+  return Number(hours) * 60 + Number(minutes);
+}
+
+function auditAbsoluteMinutes(day, time = "23:59") {
+  return (Number(day || 1) - 1) * 1440 + auditTimeToMinutes(time);
+}
+
+function isTrackableCommitment(commitment = {}) {
+  if (!commitment) return false;
+  if (commitment.requiresExplicitResolution) return true;
+  if (commitment.promiseType && commitment.promiseType !== "none") return true;
+  if (commitment.promiseStrength && commitment.promiseStrength !== "none") return true;
+  if (["critical", "high"].includes(commitment.priority)) return true;
+  return ["promise", "obligation", "appointment", "follow_up", "mission_intention"].includes(commitment.type);
 }
 
 function findExpiredMissions(missions = [], gameState) {
@@ -316,6 +335,93 @@ function auditCombatSchema({ issues, checks }) {
   }
 }
 
+async function auditCommitments({ gameState, gameId, issues, checks }) {
+  const openCommitments = await Commitment.find({
+    gameId,
+    status: { $in: ["pending", "active"] },
+  })
+    .sort({ dueDay: 1, dueTime: 1, nextCheckDay: 1, nextCheckTime: 1 })
+    .lean();
+  const currentAbs = auditAbsoluteMinutes(gameState.currentDay, gameState.time);
+  const trackable = openCommitments.filter(isTrackableCommitment);
+  const conditionalDormant = trackable.filter(
+    (commitment) =>
+      !commitment.dueDay &&
+      !commitment.nextCheckDay &&
+      (commitment.conditionSummary || commitment.dormantUntilDay)
+  );
+  const unscheduled = trackable.filter(
+    (commitment) =>
+      !commitment.dueDay &&
+      !commitment.nextCheckDay &&
+      !commitment.conditionSummary &&
+      !commitment.dormantUntilDay
+  );
+  const reviewDue = openCommitments.filter(
+    (commitment) =>
+      (commitment.nextCheckDay &&
+        auditAbsoluteMinutes(commitment.nextCheckDay, commitment.nextCheckTime || "23:59") <= currentAbs) ||
+      (commitment.dormantUntilDay &&
+        auditAbsoluteMinutes(commitment.dormantUntilDay, commitment.dormantUntilTime || "23:59") <= currentAbs)
+  );
+  const adminWithoutResponsible = openCommitments.filter(
+    (commitment) =>
+      commitment.promiseType === "administrative_process" &&
+      !commitment.responsibleNpcId &&
+      !commitment.responsibleFactionId
+  );
+
+  checks.commitments = {
+    openCount: openCommitments.length,
+    trackableCount: trackable.length,
+    unscheduledTrackableIds: unscheduled.map((commitment) => commitment.commitmentId),
+    conditionalDormantIds: conditionalDormant.map((commitment) => commitment.commitmentId),
+    reviewDueIds: reviewDue.map((commitment) => commitment.commitmentId),
+    administrativeProcessWithoutResponsibleIds: adminWithoutResponsible.map(
+      (commitment) => commitment.commitmentId
+    ),
+  };
+
+  if (unscheduled.length > 0) {
+    addIssue(issues, {
+      code: "trackable_commitments_without_due_or_review",
+      severity: "warning",
+      message: "Hay compromisos/promesas/procesos importantes sin fecha objetivo ni proxima revision.",
+      evidence: {
+        commitmentIds: unscheduled.map((commitment) => commitment.commitmentId),
+      },
+      recommendedAction:
+        "Agregar dueDay/dueTime o nextCheckDay/nextCheckTime, o cerrarlos formalmente si ya no aplican.",
+    });
+  }
+
+  if (reviewDue.length > 0) {
+    addIssue(issues, {
+      code: "commitment_reviews_due",
+      severity: "warning",
+      message: "Hay compromisos/promesas/procesos cuya proxima revision ya corresponde.",
+      evidence: {
+        commitmentIds: reviewDue.map((commitment) => commitment.commitmentId),
+      },
+      recommendedAction:
+        "Cumplir, explicar bloqueo, reprogramar nextCheck o cerrar formalmente con commitmentPatches.",
+    });
+  }
+
+  if (adminWithoutResponsible.length > 0) {
+    addIssue(issues, {
+      code: "administrative_process_without_responsible_actor",
+      severity: "info",
+      message: "Hay procesos administrativos sin NPC o faccion responsable.",
+      evidence: {
+        commitmentIds: adminWithoutResponsible.map((commitment) => commitment.commitmentId),
+      },
+      recommendedAction:
+        "Guardar responsibleNpcId o responsibleFactionId para evitar pendientes impersonales.",
+    });
+  }
+}
+
 async function buildStateAudit({ gameId = CANON_GAME_ID } = {}) {
   const gameState = await GameState.findOne({ gameId }).lean();
   if (!gameState) {
@@ -338,6 +444,7 @@ async function buildStateAudit({ gameId = CANON_GAME_ID } = {}) {
   await auditMissions({ gameState, issues, checks });
   await auditEvents({ gameState, gameId, issues, checks });
   await auditMagic({ gameState, issues, checks });
+  await auditCommitments({ gameState, gameId, issues, checks });
   auditCombatSchema({ issues, checks });
 
   return {

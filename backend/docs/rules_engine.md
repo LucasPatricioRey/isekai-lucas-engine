@@ -2004,7 +2004,15 @@ No dejar promesas, citas, planes importantes u obligaciones futuras solo como Ev
 
 Cerrar el compromiso con `op:fulfill`, `op:fail`, `op:cancel` u `op:expire` cuando se cumpla, falle, se cancele o venza. No crear compromiso por cada frase casual: usarlo para continuidad real, consecuencias sociales, trabajo, misiones, secretos, citas, planes de viaje o decisiones diferidas.
 
+Las promesas o estimaciones de NPCs tambien se formalizan si pueden afectar decisiones futuras de Lucas. Usar `promiseType` y `promiseStrength`: `hard_promise`/`binding` para compromisos claros, `soft_estimate`/`soft` para "probablemente", "durante la manana" o estimaciones cautas, y `administrative_process` para tramites como registros, verificaciones internas o permisos. Una estimacion blanda no debe castigarse como incumplimiento duro sin causa, pero debe tener `nextCheckDay`/`nextCheckTime` o cerrarse formalmente.
+
+Todo proceso pendiente importante debe tener responsable o fuente: `speakerNpcId`, `responsibleNpcId` o `responsibleFactionId` cuando corresponda. Si al revisar no se puede cumplir, actualizar el compromiso con `blockerSummary` y nuevo `nextCheckDay`/`nextCheckTime`, o cerrarlo con `fail`/`cancel`/`expire` si ya no aplica. No responder indefinidamente "sigue pendiente" sin guardar causa, responsable y proxima revision.
+
+Las promesas condicionales de largo plazo no deben convertirse en alerta diaria. Si dependen de un disparador futuro incierto ("cuando Lucas sea famoso", "si vuelve con permiso", "si consigue patrocinio"), guardar `conditionSummary` y, si conviene, `dormantUntilDay`/`dormantUntilTime`. Mientras esten `conditional_dormant`, se recuerdan como continuidad, pero no bloquean saltos de tiempo ni exigen cierre inmediato.
+
 Si el compromiso puede tener costo al incumplirse, guardar `failureSeverity`, `failureConsequence`, `graceMinutes` y `requiresExplicitResolution`. `getCompactContext` expone `pendingCommitments` y `commitmentAgenda`: si aparece `urgency:"consequence_ready"` o alerta `commitments_consequence_ready`, no saltar escenas largas sin resolverlo, reprogramarlo o cerrarlo formalmente.
+
+Si `getCompactContext` muestra `urgency:"review_due"`, `urgency:"review_overdue"` o alerta `commitments_review_due`, la escena debe revisar el pendiente: cumplirlo, explicar bloqueo, reprogramar `nextCheck` o cerrarlo. Si muestra `urgency:"needs_schedule"` o alerta `commitments_need_schedule`, falta fecha objetivo o proxima revision; no avanzar tiempo largo hasta ordenar ese seguimiento.
 
 El backend no debe aplicar castigos sociales automaticamente solo por vencer una hora. El vencimiento abre una consecuencia pendiente; el narrador debe cerrarla con el resultado correcto y, si corresponde, aplicar `npcRelationshipPatches`, `jobContractPatch`, `missionPatch` o `worldEventPatches` en el mismo turno.
 
@@ -2124,7 +2132,7 @@ No subir confianza automáticamente.
 13. Cartelera activa de misiones vive en MongoDB; reglas/pool base viven en archivos/seed.
 14. No loot/recompensa automática.
 15. Comida de contrato no consume raciones ni se aplica automaticamente; requiere decision explicita de comer.
-16. Promesas, citas, planes importantes y obligaciones futuras usan `commitmentPatches`; si vencen con `consequence_ready`, se cierran formalmente antes de saltar escenas largas.
+16. Promesas, estimaciones, tramites, citas, planes importantes y obligaciones futuras usan `commitmentPatches`; si vencen, requieren revision o no tienen agenda, se cumplen, explican, reprograman o cierran formalmente antes de saltar escenas largas.
 17. Acciones relevantes de 10+ minutos deben evaluarse para EXP, pero no toda acción da EXP.
 18. Cansancio extremo no es farmeo eficiente.
 19. Compañeros pueden morir permanentemente si la situación lo justifica.

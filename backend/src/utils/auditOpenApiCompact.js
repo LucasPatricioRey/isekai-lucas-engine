@@ -247,6 +247,17 @@ function main() {
     "successConsequence",
     "graceMinutes",
     "requiresExplicitResolution",
+    "promiseType",
+    "promiseStrength",
+    "nextCheckDay",
+    "nextCheckTime",
+    "blockerSummary",
+    "conditionSummary",
+    "dormantUntilDay",
+    "dormantUntilTime",
+    "speakerNpcId",
+    "responsibleNpcId",
+    "responsibleFactionId",
   ]) {
     assertCondition(
       issues,

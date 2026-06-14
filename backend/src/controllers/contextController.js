@@ -576,12 +576,25 @@ function commitmentAgendaEntry(commitment) {
     commitmentId: commitment.commitmentId,
     title: commitment.title,
     type: commitment.type,
+    promiseType: commitment.promiseType || "none",
+    promiseStrength: commitment.promiseStrength || "none",
     status: commitment.status,
     priority: commitment.priority,
     dueDay: commitment.dueDay,
     dueTime: commitment.dueTime || "",
     dueStatus: commitment.dueStatus,
     urgency: commitment.urgency,
+    nextCheckDay: commitment.nextCheckDay,
+    nextCheckTime: commitment.nextCheckTime || "",
+    nextCheckStatus: commitment.nextCheckStatus || "none",
+    blockerSummary: commitment.blockerSummary || "",
+    conditionSummary: commitment.conditionSummary || "",
+    dormantUntilDay: commitment.dormantUntilDay,
+    dormantUntilTime: commitment.dormantUntilTime || "",
+    dormantStatus: commitment.dormantStatus || "none",
+    speakerNpcId: commitment.speakerNpcId || "",
+    responsibleNpcId: commitment.responsibleNpcId || "",
+    responsibleFactionId: commitment.responsibleFactionId || "",
     targetNpcIds: commitment.targetNpcIds || [],
     relatedEventIds: commitment.relatedEventIds || [],
     relatedMissionIds: commitment.relatedMissionIds || [],
@@ -606,6 +619,10 @@ function buildCommitmentAgenda(commitments = []) {
     overdue: byUrgency("consequence_ready").concat(byUrgency("overdue_in_grace")).map(commitmentAgendaEntry),
     dueNow: byUrgency("due_now").map(commitmentAgendaEntry),
     dueSoon: byUrgency("due_soon").concat(byUrgency("upcoming")).map(commitmentAgendaEntry),
+    reviewDue: byUrgency("review_overdue").concat(byUrgency("review_due")).map(commitmentAgendaEntry),
+    reviewSoon: byUrgency("review_soon").map(commitmentAgendaEntry),
+    needsSchedule: byUrgency("needs_schedule").map(commitmentAgendaEntry),
+    conditionalDormant: byUrgency("conditional_dormant").map(commitmentAgendaEntry),
     unscheduledImportant: commitments.filter(
       (commitment) =>
         commitment.dueStatus === "unscheduled" && ["critical", "high"].includes(commitment.priority)
@@ -613,6 +630,15 @@ function buildCommitmentAgenda(commitments = []) {
     needsResolution: needsResolution.map(commitmentAgendaEntry),
     next: commitments.slice(0, 5).map(commitmentAgendaEntry),
   };
+}
+
+function commitmentScheduleAbs(commitment) {
+  const candidates = [];
+  if (commitment?.dueDay) candidates.push(toAbsoluteMinutes(commitment.dueDay, commitment.dueTime || "23:59"));
+  if (commitment?.nextCheckDay) {
+    candidates.push(toAbsoluteMinutes(commitment.nextCheckDay, commitment.nextCheckTime || "23:59"));
+  }
+  return candidates.length > 0 ? Math.min(...candidates) : Number.MAX_SAFE_INTEGER;
 }
 
 function missionAgendaEntry(mission) {
@@ -1368,7 +1394,15 @@ async function getCompactContext(req, res) {
             gameId,
             status: { $in: ["pending", "active"] },
           })
-            .sort({ dueDay: 1, dueTime: 1, priority: -1, createdDay: -1, createdTime: -1 })
+            .sort({
+              dueDay: 1,
+              dueTime: 1,
+              nextCheckDay: 1,
+              nextCheckTime: 1,
+              priority: -1,
+              createdDay: -1,
+              createdTime: -1,
+            })
             .limit(Math.max(limits.commitmentLimit * 4, limits.commitmentLimit))
             .lean()
         : Promise.resolve([]),
@@ -1415,10 +1449,8 @@ async function getCompactContext(req, res) {
     const pendingCommitmentSummaries = pendingCommitments
       .map((commitment) => responseShaping.summarizeCommitment(commitment, gameState.currentDay, gameState.time))
       .sort((left, right) => {
-        const leftDue = left.dueDay ? toAbsoluteMinutes(left.dueDay, left.dueTime || "23:59") : Number.MAX_SAFE_INTEGER;
-        const rightDue = right.dueDay
-          ? toAbsoluteMinutes(right.dueDay, right.dueTime || "23:59")
-          : Number.MAX_SAFE_INTEGER;
+        const leftDue = commitmentScheduleAbs(left);
+        const rightDue = commitmentScheduleAbs(right);
         if (leftDue !== rightDue) return leftDue - rightDue;
         return (priorityWeight[right.priority] || 0) - (priorityWeight[left.priority] || 0);
       })
@@ -1660,6 +1692,28 @@ async function getCompactContext(req, res) {
       });
     }
 
+    if (commitmentAgenda.reviewDue.length > 0) {
+      alerts.push({
+        type: "commitments_review_due",
+        severity: "warning",
+        message: "Hay promesas, estimaciones o procesos cuya proxima revision ya corresponde.",
+        commitmentIds: commitmentAgenda.reviewDue.map((commitment) => commitment.commitmentId),
+        recommendedAction:
+          "Usar commitmentPatches para fulfill/fail/cancel/expire, explicar bloqueo o fijar nuevo nextCheck.",
+      });
+    }
+
+    if (commitmentAgenda.needsSchedule.length > 0) {
+      alerts.push({
+        type: "commitments_need_schedule",
+        severity: "warning",
+        message: "Hay compromisos o procesos importantes sin fecha objetivo ni proxima revision.",
+        commitmentIds: commitmentAgenda.needsSchedule.map((commitment) => commitment.commitmentId),
+        recommendedAction:
+          "Agregar dueDay/dueTime o nextCheckDay/nextCheckTime, o cerrarlos formalmente si ya no aplican.",
+      });
+    }
+
     const dueNowCommitments = pendingCommitmentSummaries.filter((commitment) => commitment.dueStatus === "due_now");
     if (dueNowCommitments.length > 0) {
       alerts.push({
@@ -1677,6 +1731,15 @@ async function getCompactContext(req, res) {
         severity: "info",
         message: "Hay compromisos cercanos; conviene no saltar tiempo largo sin atenderlos o reprogramarlos.",
         commitmentIds: dueSoonCommitments.map((commitment) => commitment.commitmentId),
+      });
+    }
+
+    if (commitmentAgenda.reviewSoon.length > 0) {
+      alerts.push({
+        type: "commitments_review_soon",
+        severity: "info",
+        message: "Hay revisiones cercanas de promesas, estimaciones o procesos.",
+        commitmentIds: commitmentAgenda.reviewSoon.map((commitment) => commitment.commitmentId),
       });
     }
 

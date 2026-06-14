@@ -82,6 +82,17 @@ const VALID_COMMITMENT_STATUSES = new Set(["pending", "active", "fulfilled", "fa
 const VALID_COMMITMENT_PRIORITIES = new Set(["low", "normal", "high", "critical"]);
 const VALID_COMMITMENT_FAILURE_SEVERITIES = new Set(["none", "minor", "moderate", "major", "critical"]);
 const VALID_COMMITMENT_VISIBILITIES = new Set(["hidden", "private", "local", "public"]);
+const VALID_COMMITMENT_PROMISE_TYPES = new Set([
+  "none",
+  "hard_promise",
+  "soft_estimate",
+  "administrative_process",
+  "npc_offer",
+  "debt_or_favor",
+  "warning_or_condition",
+  "follow_up",
+]);
+const VALID_COMMITMENT_PROMISE_STRENGTHS = new Set(["none", "soft", "normal", "binding"]);
 const VALID_EVIDENCE_OPS = new Set(["create", "collect", "update", "report", "hand_over", "lose", "discard", "destroy"]);
 const VALID_EVIDENCE_TYPES = new Set(["sample", "trace", "note", "object", "document", "testimony", "other"]);
 const VALID_EVIDENCE_STATUSES = new Set([
@@ -2601,6 +2612,16 @@ function normalizeCommitmentPayloadArray(value) {
   return unique(Array.isArray(value) ? value : []);
 }
 
+function validateOptionalCommitmentString(patch, field, maxLength = 500) {
+  if (patch[field] === undefined || patch[field] === null) return;
+  if (typeof patch[field] !== "string") {
+    throw validationError(`commitmentPatches.${field} debe ser string.`);
+  }
+  if (patch[field].length > maxLength) {
+    throw validationError(`commitmentPatches.${field} excede ${maxLength} caracteres.`);
+  }
+}
+
 function validateCommitmentPatchShape(patch = {}) {
   if (patch.type && !VALID_COMMITMENT_TYPES.has(patch.type)) {
     throw validationError("commitmentPatches.type invalido.", {
@@ -2653,9 +2674,39 @@ function validateCommitmentPatchShape(patch = {}) {
     });
   }
 
+  if (patch.promiseType && !VALID_COMMITMENT_PROMISE_TYPES.has(patch.promiseType)) {
+    throw validationError("commitmentPatches.promiseType invalido.", {
+      promiseType: patch.promiseType,
+      allowed: Array.from(VALID_COMMITMENT_PROMISE_TYPES),
+    });
+  }
+
+  if (patch.promiseStrength && !VALID_COMMITMENT_PROMISE_STRENGTHS.has(patch.promiseStrength)) {
+    throw validationError("commitmentPatches.promiseStrength invalido.", {
+      promiseStrength: patch.promiseStrength,
+      allowed: Array.from(VALID_COMMITMENT_PROMISE_STRENGTHS),
+    });
+  }
+
+  for (const field of [
+    "speakerNpcId",
+    "responsibleNpcId",
+    "responsibleFactionId",
+    "blockerSummary",
+    "conditionSummary",
+  ]) {
+    validateOptionalCommitmentString(
+      patch,
+      field,
+      ["blockerSummary", "conditionSummary"].includes(field) ? 700 : 160
+    );
+  }
+
   validateCommitmentDayTime({ day: patch.dueDay, time: patch.dueTime, fieldPrefix: "due" });
   validateCommitmentDayTime({ day: patch.windowStartDay, time: patch.windowStartTime, fieldPrefix: "windowStart" });
   validateCommitmentDayTime({ day: patch.windowEndDay, time: patch.windowEndTime, fieldPrefix: "windowEnd" });
+  validateCommitmentDayTime({ day: patch.nextCheckDay, time: patch.nextCheckTime, fieldPrefix: "nextCheck" });
+  validateCommitmentDayTime({ day: patch.dormantUntilDay, time: patch.dormantUntilTime, fieldPrefix: "dormantUntil" });
 }
 
 function commitmentSnapshot(commitment) {
@@ -2665,6 +2716,8 @@ function commitmentSnapshot(commitment) {
     title: commitment.title,
     summary: commitment.summary || "",
     type: commitment.type,
+    promiseType: commitment.promiseType || "none",
+    promiseStrength: commitment.promiseStrength || "none",
     status: commitment.status,
     priority: commitment.priority,
     failureSeverity: commitment.failureSeverity || "",
@@ -2681,11 +2734,20 @@ function commitmentSnapshot(commitment) {
     windowStartTime: commitment.windowStartTime || "",
     windowEndDay: commitment.windowEndDay,
     windowEndTime: commitment.windowEndTime || "",
+    nextCheckDay: commitment.nextCheckDay,
+    nextCheckTime: commitment.nextCheckTime || "",
+    blockerSummary: commitment.blockerSummary || "",
+    conditionSummary: commitment.conditionSummary || "",
+    dormantUntilDay: commitment.dormantUntilDay,
+    dormantUntilTime: commitment.dormantUntilTime || "",
     targetNpcIds: commitment.targetNpcIds || [],
     relatedNpcIds: commitment.relatedNpcIds || [],
     relatedLocationIds: commitment.relatedLocationIds || [],
     relatedMissionIds: commitment.relatedMissionIds || [],
     relatedEventIds: commitment.relatedEventIds || [],
+    speakerNpcId: commitment.speakerNpcId || "",
+    responsibleNpcId: commitment.responsibleNpcId || "",
+    responsibleFactionId: commitment.responsibleFactionId || "",
     resolution: commitment.resolution || {},
     tags: commitment.tags || [],
   };
@@ -2696,6 +2758,8 @@ function applyCommitmentPatchFields(commitment, patch = {}) {
     "title",
     "summary",
     "type",
+    "promiseType",
+    "promiseStrength",
     "status",
     "priority",
     "failureSeverity",
@@ -2710,7 +2774,16 @@ function applyCommitmentPatchFields(commitment, patch = {}) {
     "windowStartTime",
     "windowEndDay",
     "windowEndTime",
+    "nextCheckDay",
+    "nextCheckTime",
+    "blockerSummary",
+    "conditionSummary",
+    "dormantUntilDay",
+    "dormantUntilTime",
     "ownerCharacterId",
+    "speakerNpcId",
+    "responsibleNpcId",
+    "responsibleFactionId",
     "sourceEventLogId",
   ]) {
     if (patch[field] !== undefined) commitment[field] = patch[field];
@@ -2767,6 +2840,18 @@ function buildCommitmentDisplayLines({ op, before, after }) {
     lines.push(`Objetivo: Dia ${after.dueDay}${after.dueTime ? ` ${after.dueTime}` : ""}.`);
   }
 
+  if (after?.nextCheckDay) {
+    lines.push(`Proxima revision: Dia ${after.nextCheckDay}${after.nextCheckTime ? ` ${after.nextCheckTime}` : ""}.`);
+  }
+
+  if (after?.blockerSummary) {
+    lines.push(`Bloqueo/estado: ${after.blockerSummary}`);
+  }
+
+  if (after?.conditionSummary) {
+    lines.push(`Condicion: ${after.conditionSummary}`);
+  }
+
   if (["fail", "expire"].includes(op) && after?.failureConsequence) {
     lines.push(`Consecuencia prevista: ${after.failureConsequence}`);
   }
@@ -2811,6 +2896,8 @@ async function applyCommitmentPatches(gameState, commitmentPatches, session = nu
         title: String(patch.title).trim(),
         summary: patch.summary || "",
         type: patch.type || "plan",
+        promiseType: patch.promiseType || "none",
+        promiseStrength: patch.promiseStrength || "none",
         status: patch.status || "pending",
         priority: patch.priority || "normal",
         failureSeverity: patch.failureSeverity || undefined,
@@ -2827,7 +2914,16 @@ async function applyCommitmentPatches(gameState, commitmentPatches, session = nu
         windowStartTime: patch.windowStartTime || "",
         windowEndDay: patch.windowEndDay ?? null,
         windowEndTime: patch.windowEndTime || "",
+        nextCheckDay: patch.nextCheckDay ?? null,
+        nextCheckTime: patch.nextCheckTime || "",
+        blockerSummary: patch.blockerSummary || "",
+        conditionSummary: patch.conditionSummary || "",
+        dormantUntilDay: patch.dormantUntilDay ?? null,
+        dormantUntilTime: patch.dormantUntilTime || "",
         ownerCharacterId: patch.ownerCharacterId || gameState.characterId || "char_lucas",
+        speakerNpcId: patch.speakerNpcId || "",
+        responsibleNpcId: patch.responsibleNpcId || "",
+        responsibleFactionId: patch.responsibleFactionId || "",
         targetNpcIds: normalizeCommitmentPayloadArray(patch.targetNpcIds),
         relatedNpcIds: normalizeCommitmentPayloadArray(patch.relatedNpcIds),
         relatedLocationIds: normalizeCommitmentPayloadArray(patch.relatedLocationIds),

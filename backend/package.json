@@ -63,6 +63,7 @@
     "repair:live-continuity-bugs": "node src/utils/repairLiveContinuityBugs.js",
     "repair:lucas-morning-shift-exit": "node src/utils/repairLucasMorningShiftExit.js",
     "repair:forest-evidence-progress": "node src/utils/repairForestEvidenceProgress.js",
+    "repair:commitment-followups": "node src/utils/repairCommitmentFollowups.js",
     "ensure:combat-training-skills": "node src/utils/ensureCombatTrainingSkills.js"
   },
   "keywords": [],
