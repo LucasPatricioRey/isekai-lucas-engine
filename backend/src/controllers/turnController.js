@@ -1727,6 +1727,7 @@ const DRY_RUN_SUPPORTED_TOP_LEVEL_KEYS = new Set([
   "magicPractice",
   "magicPatches",
   "shopStockPatches",
+  "jobContractPatch",
   "eventLogs",
 ]);
 
@@ -1746,11 +1747,93 @@ function getUnsupportedDryRunKeys(body = {}) {
   return unsupported.sort();
 }
 
+function normalizePatchArray(value, fieldName) {
+  if (value === undefined || value === null) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === "object") return [value];
+  throw validationError(`${fieldName} debe ser objeto o array.`);
+}
+
+function previewJobContractPatchChanges(gameState, patches) {
+  const patchList = normalizePatchArray(patches, "jobContractPatch");
+  const results = [];
+
+  for (const patch of patchList) {
+    const op = patch.op || "update_shift_schedule";
+    if (!patch.contractId && op !== "create_contract") {
+      throw validationError("jobContractPatch.contractId es obligatorio.");
+    }
+    if (["update_shift_schedule", "record_shift_absence", "record_shift_late", "record_work_segment"].includes(op) && !patch.shiftId) {
+      throw validationError("jobContractPatch.shiftId es obligatorio.");
+    }
+    if (op === "record_work_segment") {
+      if (!Number.isInteger(patch.minutes) || patch.minutes <= 0) {
+        throw validationError("jobContractPatch.minutes debe ser entero mayor a cero para record_work_segment.");
+      }
+      results.push({
+        op,
+        contractId: patch.contractId,
+        shiftId: patch.shiftId,
+        work: {
+          shiftId: patch.shiftId,
+          shiftName: patch.shiftName || patch.shiftId,
+          day: patch.day || gameState.currentDay,
+          totalMinutes: patch.minutes,
+          segment: {
+            startTime: patch.startTime || "",
+            endTime: patch.endTime || "",
+            minutes: patch.minutes,
+            category: patch.category || "trabajo_normal",
+            intensity: patch.intensity || "normal",
+            reason: patch.reason || "",
+          },
+        },
+        reason: patch.reason || "",
+        displayLines: [`Trabajo parcial: ${patch.minutes} min registrados para ${patch.shiftName || patch.shiftId}.`],
+      });
+      continue;
+    }
+
+    if (op === "record_shift_late" || op === "record_shift_absence") {
+      results.push({
+        op,
+        contractId: patch.contractId,
+        shiftId: patch.shiftId,
+        attendance: {
+          shiftId: patch.shiftId,
+          status: op === "record_shift_late" ? "late" : "absent",
+          day: patch.day || gameState.currentDay,
+          time: patch.time || gameState.time,
+          minutesLate: Math.max(0, Number(patch.minutesLate) || 0),
+          consequenceLevel: patch.consequenceLevel || "",
+        },
+        reason: patch.reason || "",
+        displayLines: [
+          op === "record_shift_late"
+            ? `Asistencia laboral: llegada tarde prevista para ${patch.shiftId}.`
+            : `Asistencia laboral: ausencia prevista para ${patch.shiftId}.`,
+        ],
+      });
+      continue;
+    }
+
+    results.push({
+      op,
+      contractId: patch.contractId || "",
+      shiftId: patch.shiftId || "",
+      reason: patch.reason || "",
+      displayLines: [`Contrato laboral: preview ${op}.`],
+    });
+  }
+
+  return results;
+}
+
 async function previewApplyTurnDryRun({ body = {}, gameId, clientTurnId = "", includeDebug = false } = {}) {
   const unsupportedPatchKeys = getUnsupportedDryRunKeys(body);
   if (unsupportedPatchKeys.length > 0) {
     throw validationError(
-      "applyTurn dryRun solo cubre timeAdvance/activityCost/activitySegments/gameStatePatch.locationId/lucasPatch/inventoryPatch/moneyPatch/skillPatch/magicPractice/magicPatches/shopStockPatches en esta fase.",
+      "applyTurn dryRun solo cubre timeAdvance/activityCost/activitySegments/gameStatePatch.locationId/lucasPatch/inventoryPatch/moneyPatch/skillPatch/magicPractice/magicPatches/shopStockPatches/jobContractPatch en esta fase.",
       {
         unsupportedPatchKeys,
         supportedPatchKeys: Array.from(DRY_RUN_SUPPORTED_TOP_LEVEL_KEYS).sort(),
@@ -2105,6 +2188,11 @@ async function previewApplyTurnDryRun({ body = {}, gameId, clientTurnId = "", in
     if (shopStockChanges.length > 0) changes.shopStocks = shopStockChanges;
   } else if (body.shopStockPatches !== undefined) {
     throw validationError("shopStockPatches debe ser un array.");
+  }
+
+  if (body.jobContractPatch !== undefined) {
+    const jobContractChanges = previewJobContractPatchChanges(gameState, body.jobContractPatch);
+    if (jobContractChanges.length > 0) changes.jobContracts = jobContractChanges;
   }
 
   attachMechanicalChangeDisplay(changes);
