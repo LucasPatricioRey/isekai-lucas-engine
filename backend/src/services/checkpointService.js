@@ -59,9 +59,35 @@ const RESTORE_COLLECTIONS = [
 ];
 
 const DEFAULT_AUTO_CHECKPOINT_RETENTION = 40;
+const GAME_SCOPED_RESTORE_COLLECTION_KEYS = new Set([
+  "worldEvents",
+  "eventLogs",
+  "combatEncounters",
+  "combatantStates",
+  "combatActionPreviews",
+  "combatLogEntries",
+  "injuryRecords",
+  "npcSocialLedger",
+  "evidence",
+]);
 
 function withSession(query, session) {
   return session ? query.session(session) : query;
+}
+
+function checkpointSnapshotMetadata({ mode = "full", gameId = "" } = {}) {
+  return {
+    snapshotMode: mode,
+    gameId,
+    scopedCollections: mode === "game_scoped" ? Array.from(GAME_SCOPED_RESTORE_COLLECTION_KEYS).sort() : [],
+  };
+}
+
+function snapshotFind(Model, collectionKey, { gameId = "", mode = "full", session = null } = {}) {
+  const filter = mode === "game_scoped" && GAME_SCOPED_RESTORE_COLLECTION_KEYS.has(collectionKey)
+    ? { gameId }
+    : {};
+  return withSession(Model.find(filter).lean(), session);
 }
 
 function createCheckpointId(gameState, prefix = "checkpoint") {
@@ -81,6 +107,7 @@ function checkpointReference(checkpoint) {
     time: value.time,
     auto: Boolean(value.auto),
     triggerKey: value.triggerKey || "",
+    metadata: value.metadata || {},
     createdAt: value.createdAt,
   };
 }
@@ -117,13 +144,20 @@ async function pruneAutomaticCheckpoints({
   };
 }
 
-async function buildFullSnapshot(gameId, { session = null } = {}) {
+async function buildFullSnapshot(gameId, { session = null, mode = "full" } = {}) {
   const gameState = await withSession(GameState.findOne({ gameId }).lean(), session);
 
   if (!gameState) {
     const error = new Error(`No existe GameState para gameId: ${gameId}`);
     error.statusCode = 404;
     throw error;
+  }
+
+  if (mode === "game_state_only") {
+    return {
+      gameState,
+      collections: {},
+    };
   }
 
   const [
@@ -155,33 +189,33 @@ async function buildFullSnapshot(gameId, { session = null } = {}) {
     weatherStates,
     evidence,
   ] = await Promise.all([
-    withSession(Character.find({}).lean(), session),
-    withSession(Npc.find({}).lean(), session),
-    withSession(NpcMemory.find({}).lean(), session),
-    withSession(Rumor.find({}).lean(), session),
-    withSession(Location.find({}).lean(), session),
-    withSession(WorldEvent.find({}).lean(), session),
-    withSession(Mission.find({}).lean(), session),
-    withSession(EventLog.find({}).lean(), session),
-    withSession(Shop.find({}).lean(), session),
-    withSession(ShopStock.find({}).lean(), session),
-    withSession(Item.find({}).lean(), session),
-    withSession(Faction.find({}).lean(), session),
-    withSession(RoutineOverride.find({}).lean(), session),
-    withSession(CombatEncounter.find({}).lean(), session),
-    withSession(CombatantState.find({}).lean(), session),
-    withSession(CombatActionPreview.find({}).lean(), session),
-    withSession(CombatLogEntry.find({}).lean(), session),
-    withSession(InjuryRecord.find({}).lean(), session),
-    withSession(WeaponProfile.find({}).lean(), session),
-    withSession(NpcRelationship.find({}).lean(), session),
-    withSession(NpcSocialLedger.find({}).lean(), session),
-    withSession(CharacterMagicKnowledge.find({}).lean(), session),
-    withSession(MagicDiscipline.find({}).lean(), session),
-    withSession(MagicTechnique.find({}).lean(), session),
-    withSession(TravelRoute.find({}).lean(), session),
-    withSession(WeatherState.find({}).lean(), session),
-    withSession(Evidence.find({}).lean(), session),
+    snapshotFind(Character, "characters", { gameId, mode, session }),
+    snapshotFind(Npc, "npcs", { gameId, mode, session }),
+    snapshotFind(NpcMemory, "npcMemories", { gameId, mode, session }),
+    snapshotFind(Rumor, "rumors", { gameId, mode, session }),
+    snapshotFind(Location, "locations", { gameId, mode, session }),
+    snapshotFind(WorldEvent, "worldEvents", { gameId, mode, session }),
+    snapshotFind(Mission, "missions", { gameId, mode, session }),
+    snapshotFind(EventLog, "eventLogs", { gameId, mode, session }),
+    snapshotFind(Shop, "shops", { gameId, mode, session }),
+    snapshotFind(ShopStock, "shopStocks", { gameId, mode, session }),
+    snapshotFind(Item, "items", { gameId, mode, session }),
+    snapshotFind(Faction, "factions", { gameId, mode, session }),
+    snapshotFind(RoutineOverride, "routineOverrides", { gameId, mode, session }),
+    snapshotFind(CombatEncounter, "combatEncounters", { gameId, mode, session }),
+    snapshotFind(CombatantState, "combatantStates", { gameId, mode, session }),
+    snapshotFind(CombatActionPreview, "combatActionPreviews", { gameId, mode, session }),
+    snapshotFind(CombatLogEntry, "combatLogEntries", { gameId, mode, session }),
+    snapshotFind(InjuryRecord, "injuryRecords", { gameId, mode, session }),
+    snapshotFind(WeaponProfile, "weaponProfiles", { gameId, mode, session }),
+    snapshotFind(NpcRelationship, "npcRelationships", { gameId, mode, session }),
+    snapshotFind(NpcSocialLedger, "npcSocialLedger", { gameId, mode, session }),
+    snapshotFind(CharacterMagicKnowledge, "characterMagicKnowledge", { gameId, mode, session }),
+    snapshotFind(MagicDiscipline, "magicDisciplines", { gameId, mode, session }),
+    snapshotFind(MagicTechnique, "magicTechniques", { gameId, mode, session }),
+    snapshotFind(TravelRoute, "travelRoutes", { gameId, mode, session }),
+    snapshotFind(WeatherState, "weatherStates", { gameId, mode, session }),
+    snapshotFind(Evidence, "evidence", { gameId, mode, session }),
   ]);
 
   return {
@@ -245,7 +279,10 @@ async function createCheckpointFromCurrentState({
         notes,
         auto,
         triggerKey,
-        metadata,
+        metadata: {
+          ...checkpointSnapshotMetadata({ mode: "full", gameId }),
+          ...metadata,
+        },
       },
     ],
     session ? { session } : {}
@@ -267,10 +304,15 @@ async function createAutomaticCheckpoint({
   notes = "",
   triggerKey = "auto",
   metadata = {},
+  snapshotMode = "game_scoped",
   session = null,
 } = {}) {
-  const snapshot = await buildFullSnapshot(gameId, { session });
-  const gameState = snapshot.gameState;
+  const gameState = await withSession(GameState.findOne({ gameId }).lean(), session);
+  if (!gameState) {
+    const error = new Error(`No existe GameState para gameId: ${gameId}`);
+    error.statusCode = 404;
+    throw error;
+  }
   const existing = await withSession(
     Checkpoint.findOne({
       gameId,
@@ -293,6 +335,7 @@ async function createAutomaticCheckpoint({
     };
   }
 
+  const snapshot = await buildFullSnapshot(gameId, { session, mode: snapshotMode });
   const docs = await Checkpoint.create(
     [
       {
@@ -307,7 +350,10 @@ async function createAutomaticCheckpoint({
         notes,
         auto: true,
         triggerKey,
-        metadata,
+        metadata: {
+          ...checkpointSnapshotMetadata({ mode: snapshotMode, gameId }),
+          ...metadata,
+        },
       },
     ],
     session ? { session } : {}
@@ -323,6 +369,7 @@ async function createAutomaticCheckpoint({
 }
 
 module.exports = {
+  GAME_SCOPED_RESTORE_COLLECTION_KEYS,
   RESTORE_COLLECTIONS,
   buildFullSnapshot,
   checkpointReference,

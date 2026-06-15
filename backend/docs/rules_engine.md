@@ -27,6 +27,7 @@ Actualizacion C24B: `previewSkillProgression`, `applyTurn.skillPatch`, `applyTur
 Actualizacion C24C: `applyTurn` devuelve `mechanicalChangeDisplay` y `displayLines` canonicas para dinero, inventario, stock, biologia, estado fisico, evidencia y registro del gremio; el GPT debe copiarlas en `Cambios relevantes`.
 Actualizacion C24D: amplia las rule cards criticas consultables por Mongo/searchDocs para formato HUD/dialogo, tiempo/eventos, EXP/anti-farmeo, social/romance, economia/stock/propiedad, misiones/gremio, viaje/friccion, trabajo/asistencia, salud, magia autodidacta, presencia/agencia NPC, rumores/reputacion/facciones, inventario/evidencia, checkpoints y recovery.
 Actualizacion C24E: `applyTurn` y `completeJobShift` pueden devolver `displayBundle`/`renderLines` como contrato unificado de HUD final. Si existe, el GPT debe copiarlo y no reconstruir deltas desde fuentes dispersas.
+Actualizacion C28: `applyTurn dryRun:true` cubre `magicPractice` y `magicPatches`; los turnos compuestos deben preferir un solo `applyTurn` con `activitySegments` cuando mezclan viaje, chequeo, descanso, entrenamiento, comida o magia.
 Actualizacion C25: `context/compact` expone `scene.narrationContract` como contrato obligatorio de escena/NPC. Este contrato consolida Mongo vivo, capsulas, voz, relacion, conocimiento y limites de improvisacion para evitar dialogo generico y NPCs omniscientes.
 Actualizacion C26: `context/compact` expone `ruleLookupContract` como contrato obligatorio de busqueda de reglas. El GPT debe leer las rule cards indicadas por `ruleLookupContract.searchBatches` antes de previews o mutaciones cuando la accion toque esos dominios.
 Actualizacion C27: `context/compact` expone `profileContract` y `hudContract`. Las instrucciones del GPT pasan a ser bootloader minimo: obligan a leer contexto, contratos y `searchDocs`, pero el canon expandido vive en MongoDB/backend. `minimal_header` y `debug_audit` no son perfiles validos para narracion visible de partida.
@@ -265,7 +266,8 @@ Regla estricta:
 - antes de toda respuesta final visible de partida, el GPT debe leer las reglas core y activas indicadas por `ruleLookupContract` salvo que ya vengan cubiertas por `displayBundle` y no haya escena nueva;
 - si Lucas pide una accion que cambia estado, el GPT debe cruzar la intencion con `ruleLookupContract`;
 - si hay ruleId aplicable, debe llamar `searchDocs` por `ruleId` antes de `applyTurn`, `completeJobShift` o Action de combate;
-- para turnos con EXP/reloj/actividad, puede llamar `applyTurn` con `dryRun:true` y los mismos patches antes de mutar; esta llamada no guarda estado, logs, checkpoints ni TurnTrace;
+- para turnos con EXP/reloj/actividad/economia/magia, puede llamar `applyTurn` con `dryRun:true` y los mismos patches antes de mutar; esta llamada no guarda estado, logs, checkpoints ni TurnTrace;
+- si una accion mezcla varias actividades secuenciales, debe preferir un solo `applyTurn` con `activitySegments` y todos los patches compatibles en vez de fragmentar en varios turnos reales;
 - si no consulta las reglas necesarias, no debe mutar: puede narrar solo lectura, preview o pedir una validacion tecnica;
 - despues de mutar, debe releer `context/compact` y copiar `displayBundle/renderLines` cuando existan.
 
@@ -1180,7 +1182,7 @@ Un elemento hijo no debe superar a su rama padre por más de una fase completa s
 
 ### 14.8 Desbloqueo formal por `magicPatches`
 
-Desde C18, la teoria simple puede seguir usando `skillPatch` si no proyecta efecto real. La practica magica real debe usar `applyTurn.magicPractice`: requiere `timeAdvance` positivo, `activityCost` de la misma categoria de la tecnica, MP suficiente y habilidades vivas. `magicPractice` puede consumir MP y dar EXP validada, pero nunca aprende hechizos ni desbloquea ramas por si sola.
+Desde C18/C28, la teoria simple puede seguir usando `skillPatch` si no proyecta efecto real. La practica magica real debe usar `applyTurn.magicPractice`: requiere `timeAdvance` positivo y `activityCost` de la misma categoria de la tecnica o `activitySegments` con minutos suficientes de esa categoria. Requiere MP suficiente y habilidades vivas. `magicPractice` puede consumir MP y dar EXP validada, pero nunca aprende hechizos ni desbloquea ramas por si sola.
 
 Narracion C18: antes de `changes.magic`, `knownSpells` o `changes.magicPractice[].canProduceVisibleEffect === true`, narrar estructura, intuicion, teoria, control o fracaso parcial; no narrar fuego, luz, dano, defensa, curacion ni efecto externo como exito real.
 

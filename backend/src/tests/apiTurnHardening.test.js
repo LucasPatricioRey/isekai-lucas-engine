@@ -2191,6 +2191,112 @@ describe("turn hardening coverage", () => {
     assert.ok((after.biologicalClock.pendingAccumulations || []).some((entry) => entry.category === "descanso_sentado"));
   });
 
+  it("applies a composite turn with travel segments and partial magic practice in one mutation", async () => {
+    const fixtureState = await GameState.findOne({ gameId: tempGameId });
+    fixtureState.currentDay = 10;
+    fixtureState.time = "12:00";
+    fixtureState.block = "Tarde";
+    fixtureState.locationId = "loc_hoshimori_grulla_azul";
+    fixtureState.characterId = "char_lucas";
+    fixtureState.lucasStatus.mp.current = 200;
+    fixtureState.lucasStatus.energy.current = 80;
+    fixtureState.lucasStatus.energy.label = "rendimiento normal";
+    fixtureState.skills = (fixtureState.skills || []).filter((skill) => skill.skillId !== "skill_magia_ofensiva");
+    for (const skill of fixtureState.skills) {
+      if (["skill_mana", "skill_magia"].includes(skill.skillId)) {
+        skill.phase = "Principiante";
+        skill.level = 2;
+        skill.exp = 0;
+        skill.expToNext = 100;
+      }
+    }
+    fixtureState.biologicalClock = {
+      lastProcessedTime: "12:00",
+      currentHourBlock: "12:00-13:00",
+      pendingAccumulation: [],
+      pendingAccumulations: [],
+    };
+    fixtureState.markModified("skills");
+    await fixtureState.save();
+
+    const applied = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      clientTurnId: `test-composite-magic-${Date.now()}`,
+      actionFamily: "magic_practice",
+      actionSummary: "Test controlado: turno compuesto con traslado, chequeo, meditacion y practica contenida.",
+      timeAdvance: {
+        from: "12:00",
+        to: "12:50",
+      },
+      gameStatePatch: {
+        locationId: "loc_hoshimori_forest_whispers_edge",
+      },
+      activitySegments: [
+        {
+          category: "viaje_caminata_suave",
+          minutes: 20,
+          reason: "Tramo de viaje controlado.",
+        },
+        {
+          category: "actividad_normal",
+          minutes: 5,
+          reason: "Chequeo del entorno inmediato.",
+        },
+        {
+          category: "descanso_sentado",
+          minutes: 20,
+          reason: "Meditacion de mana sin efecto externo.",
+        },
+        {
+          category: "actividad_normal",
+          minutes: 5,
+          reason: "Practica magica contenida sin conjuro real.",
+        },
+      ],
+      magicPractice: [
+        {
+          techniqueId: "technique_internal_flow_sense",
+          minutes: 20,
+          reason: "Lucas percibe el flujo interno de mana sin proyectarlo.",
+          modifiers: { newTechnique: true },
+        },
+      ],
+      skillPatch: [
+        {
+          skillId: "skill_magia",
+          expDelta: 1,
+          category: "practica_sin_maestro",
+          durationMinutes: 5,
+          reason: "Estructura magica contenida sin descarga real.",
+        },
+      ],
+      magicPatches: [
+        {
+          op: "unlock_skill",
+          skillId: "skill_magia_ofensiva",
+          reason: "Lucas reconoce una ruta ofensiva teorica sin aprender hechizo real.",
+        },
+      ],
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de turno compuesto con magia parcial.",
+          visibility: "hidden",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+    });
+
+    assert.equal(applied.status, 200, JSON.stringify(applied.data));
+    assert.equal(applied.data.changes.time.elapsedMinutes, 50);
+    assert.equal(applied.data.changes.location.after, "loc_hoshimori_forest_whispers_edge");
+    assert.equal(applied.data.changes.magicPractice[0].techniqueId, "technique_internal_flow_sense");
+    assert.ok(applied.data.changes.magic.some((change) => change.skillId === "skill_magia_ofensiva"));
+    assert.ok(applied.data.changes.skills.some((change) => change.skillId === "skill_mana"));
+    assert.ok(applied.data.changes.skills.some((change) => change.skillId === "skill_magia"));
+    assert.equal(applied.data.gameState.locationId, "loc_hoshimori_forest_whispers_edge");
+  });
+
   it("applies formal magic patches and blocks unsafe spell unlocks", async () => {
     await CharacterMagicKnowledge.deleteMany({ characterId: tempMagicCharacterId });
     const fixtureState = await GameState.findOne({ gameId: tempGameId });

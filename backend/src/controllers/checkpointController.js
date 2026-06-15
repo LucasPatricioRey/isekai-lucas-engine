@@ -3,6 +3,7 @@
 const Checkpoint = require("../models/Checkpoint");
 const GameState = require("../models/GameState");
 const {
+  GAME_SCOPED_RESTORE_COLLECTION_KEYS,
   RESTORE_COLLECTIONS,
   checkpointReference,
   createCheckpointFromCurrentState,
@@ -174,7 +175,16 @@ function validateRollbackSnapshot(gameStateSnapshot, snapshot) {
   return issues;
 }
 
-async function restoreCollection(Model, collectionKey, docs, session) {
+function checkpointScopedCollections(checkpoint = {}) {
+  const metadata = checkpoint.metadata || {};
+  if (metadata.snapshotMode !== "game_scoped") return new Set();
+  const configured = Array.isArray(metadata.scopedCollections)
+    ? metadata.scopedCollections
+    : Array.from(GAME_SCOPED_RESTORE_COLLECTION_KEYS);
+  return new Set(configured.filter((key) => GAME_SCOPED_RESTORE_COLLECTION_KEYS.has(key)));
+}
+
+async function restoreCollection(Model, collectionKey, docs, session, { gameId = "", scopedCollections = new Set() } = {}) {
   if (docs === undefined || docs === null) {
     return {
       collection: collectionKey,
@@ -183,7 +193,8 @@ async function restoreCollection(Model, collectionKey, docs, session) {
     };
   }
 
-  await Model.deleteMany({}).session(session);
+  const scoped = scopedCollections.has(collectionKey);
+  await Model.deleteMany(scoped ? { gameId } : {}).session(session);
 
   if (docs.length > 0) {
     await Model.insertMany(docs, { session, ordered: true });
@@ -191,7 +202,7 @@ async function restoreCollection(Model, collectionKey, docs, session) {
 
   return {
     collection: collectionKey,
-    action: "restored",
+    action: scoped ? "restored_game_scoped" : "restored",
     restoredCount: docs.length,
   };
 }
@@ -218,6 +229,7 @@ async function rollbackCheckpoint(req, res) {
 
     const snapshot = checkpoint.changedCollectionsSnapshot || {};
     const gameStateSnapshot = checkpoint.gameStateSnapshot;
+    const scopedCollections = checkpointScopedCollections(checkpoint);
 
     if (!gameStateSnapshot || !gameStateSnapshot.gameId) {
       return res.status(400).json({
@@ -246,7 +258,10 @@ async function rollbackCheckpoint(req, res) {
 
         for (const [collectionKey, Model] of RESTORE_COLLECTIONS) {
           restoreSummary.push(
-            await restoreCollection(Model, collectionKey, snapshot[collectionKey], session)
+            await restoreCollection(Model, collectionKey, snapshot[collectionKey], session, {
+              gameId: gameStateSnapshot.gameId,
+              scopedCollections,
+            })
           );
         }
       });

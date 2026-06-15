@@ -734,6 +734,9 @@ function buildApplyTurnAutoCheckpointPlan(changes = {}) {
   const magicPracticeEffects = Array.isArray(changes.magicPractice)
     ? changes.magicPractice.map((practice) => practice.mechanicalEffect).filter(Boolean)
     : [];
+  const hasTechniqueKnowledgeMagicChange = Array.isArray(changes.magic)
+    ? changes.magic.some((change) => change?.op === "set_technique")
+    : false;
   const lifeDelta = Number(changes.lucasStatus?.life?.delta) || 0;
 
   if (changes.time?.crossesMidnight) {
@@ -829,14 +832,32 @@ function buildApplyTurnAutoCheckpointPlan(changes = {}) {
   const primary = triggers
     .slice()
     .sort((left, right) => priority.indexOf(left.key) - priority.indexOf(right.key))[0];
+  const collectionSnapshotTriggers = new Set([
+    "injury",
+    "mission",
+    "world_event",
+    "major_social",
+    "commitment",
+    "evidence",
+    "knowledge",
+    "faction",
+    "job_contract",
+    "economy",
+  ]);
+  const requiresCollectionSnapshot =
+    triggers.some((trigger) => collectionSnapshotTriggers.has(trigger.key)) ||
+    hasTechniqueKnowledgeMagicChange;
+  const snapshotMode = requiresCollectionSnapshot ? "game_scoped" : "game_state_only";
 
   return {
     triggerKey: `apply_turn:${primary.key}`,
     title: `Auto checkpoint - ${primary.label}`,
     reason: `Checkpoint automático tras ${triggers.map((trigger) => trigger.label).join(", ")}.`,
+    snapshotMode,
     metadata: {
       source: "applyTurn",
       triggers: triggers.map((trigger) => trigger.key),
+      snapshotMode,
       elapsedMinutes,
       moneyDelta,
       socialDelta,
@@ -900,6 +921,54 @@ function normalizeMagicPatches(patches) {
 function normalizeMagicPracticePatches(patches) {
   if (patches === undefined || patches === null) return [];
   return Array.isArray(patches) ? patches : [patches];
+}
+
+function hasActivitySegments(body = {}) {
+  return Array.isArray(body.activitySegments) && body.activitySegments.length > 0;
+}
+
+function buildActivityMinutesByCategory(body = {}) {
+  const entries = hasActivitySegments(body)
+    ? body.activitySegments
+    : body.activityCost
+      ? [body.activityCost]
+      : [];
+  const byCategory = new Map();
+
+  for (const [index, entry] of entries.entries()) {
+    if (!entry?.category) continue;
+    const category = normalizeCategory(entry.category);
+    const minutes = Number(entry.minutes || 0);
+    if (!Number.isInteger(minutes) || minutes <= 0) {
+      throw validationError("activityCost/activitySegments minutes debe ser entero mayor a cero.", {
+        index,
+        category,
+      });
+    }
+    byCategory.set(category, (byCategory.get(category) || 0) + minutes);
+  }
+
+  return byCategory;
+}
+
+function buildDryRunMagicPracticeMechanicalEffect(preview = {}) {
+  const technique = preview.technique || {};
+  const effectType = technique.effectProfile?.effectType || "none";
+  const canProduceVisibleEffect = Boolean(preview.selfTrainingGuidance?.canProduceVisibleEffect);
+
+  if (!canProduceVisibleEffect) return null;
+
+  return {
+    dryRun: true,
+    applied: false,
+    effectType,
+    techniqueId: technique.techniqueId,
+    techniqueName: technique.name,
+    policy: [
+      "DryRun no aplica efectos mecanicos ni escribe subdocumentos.",
+      "La mutacion real debe resolver objetivo, coste, dano, curacion o efecto preparado.",
+    ],
+  };
 }
 
 function createMagicKnowledgeId(characterId, techniqueId) {
@@ -1652,6 +1721,8 @@ const DRY_RUN_SUPPORTED_TOP_LEVEL_KEYS = new Set([
   "inventoryPatch",
   "moneyPatch",
   "skillPatch",
+  "magicPractice",
+  "magicPatches",
   "shopStockPatches",
   "eventLogs",
 ]);
@@ -1676,7 +1747,7 @@ async function previewApplyTurnDryRun({ body = {}, gameId, clientTurnId = "", in
   const unsupportedPatchKeys = getUnsupportedDryRunKeys(body);
   if (unsupportedPatchKeys.length > 0) {
     throw validationError(
-      "applyTurn dryRun solo cubre timeAdvance/activityCost/activitySegments/gameStatePatch.locationId/lucasPatch/inventoryPatch/moneyPatch/skillPatch/shopStockPatches en esta fase.",
+      "applyTurn dryRun solo cubre timeAdvance/activityCost/activitySegments/gameStatePatch.locationId/lucasPatch/inventoryPatch/moneyPatch/skillPatch/magicPractice/magicPatches/shopStockPatches en esta fase.",
       {
         unsupportedPatchKeys,
         supportedPatchKeys: Array.from(DRY_RUN_SUPPORTED_TOP_LEVEL_KEYS).sort(),
@@ -1989,6 +2060,34 @@ async function previewApplyTurnDryRun({ body = {}, gameId, clientTurnId = "", in
     if (skillChanges.length > 0) {
       changes.skills = skillChanges;
     }
+  }
+
+  if (Array.isArray(changes.skills) && changes.skills.length > 0) {
+    changes.skills = changes.skills.map((change) => withSkillProgressDisplay(change));
+    changes.skillProgressDisplay = buildSkillProgressDisplay(changes.skills);
+  }
+
+  if (body.magicPractice !== undefined) {
+    const magicPracticeChanges = await applyMagicPracticePatches({
+      gameState,
+      magicPractice: body.magicPractice,
+      body,
+      timeChange: changes.time || null,
+      session: null,
+      dryRun: true,
+    });
+
+    if (magicPracticeChanges.practices.length > 0) {
+      changes.magicPractice = magicPracticeChanges.practices;
+    }
+    if (magicPracticeChanges.skills.length > 0) {
+      changes.skills = [...(changes.skills || []), ...magicPracticeChanges.skills];
+    }
+  }
+
+  if (body.magicPatches !== undefined) {
+    const magicChanges = await applyMagicPatches(gameState, body.magicPatches, null, { dryRun: true });
+    if (magicChanges.length > 0) changes.magic = magicChanges;
   }
 
   if (Array.isArray(changes.skills) && changes.skills.length > 0) {
@@ -4081,6 +4180,7 @@ async function applyMagicPracticePatches({
   body = {},
   timeChange = null,
   session = null,
+  dryRun = false,
 }) {
   const patches = normalizeMagicPracticePatches(magicPractice);
   if (patches.length === 0) return { practices: [], skills: [] };
@@ -4089,20 +4189,29 @@ async function applyMagicPracticePatches({
     throw validationError("magicPractice requiere timeAdvance positivo para evitar practica instantanea.");
   }
 
-  if (!body.activityCost) {
+  const usesActivitySegments = hasActivitySegments(body);
+  if (!body.activityCost && !usesActivitySegments) {
     throw validationError("magicPractice requiere activityCost formal para registrar coste biologico.");
   }
 
   const totalMinutes = patches.reduce((total, patch) => total + Number(patch?.minutes || 0), 0);
-  if (totalMinutes !== timeChange.elapsedMinutes) {
+  if (!usesActivitySegments && totalMinutes !== timeChange.elapsedMinutes) {
     throw validationError("magicPractice.minutes debe coincidir con el tiempo avanzado en esta llamada.", {
       expectedMinutes: timeChange.elapsedMinutes,
+      receivedMinutes: totalMinutes,
+    });
+  }
+  if (usesActivitySegments && totalMinutes > timeChange.elapsedMinutes) {
+    throw validationError("magicPractice.minutes no puede exceder el tiempo total del turno compuesto.", {
+      elapsedMinutes: timeChange.elapsedMinutes,
       receivedMinutes: totalMinutes,
     });
   }
 
   const practiceChanges = [];
   const skillChanges = [];
+  const activityMinutesByCategory = buildActivityMinutesByCategory(body);
+  const claimedActivityMinutesByCategory = new Map();
 
   for (const patch of patches) {
     const techniqueId = String(patch?.techniqueId || "").trim();
@@ -4136,13 +4245,30 @@ async function applyMagicPracticePatches({
     }
 
     const expectedCategory = normalizeCategory(preview.technique.activityCategory || "");
-    const receivedCategory = normalizeCategory(body.activityCost.category || "");
-    if (expectedCategory !== receivedCategory) {
-      throw validationError("activityCost.category debe coincidir con la categoria de la tecnica magica.", {
-        techniqueId,
-        expectedCategory,
-        receivedCategory,
-      });
+    if (usesActivitySegments) {
+      const availableMinutes = activityMinutesByCategory.get(expectedCategory) || 0;
+      const claimedMinutes = claimedActivityMinutesByCategory.get(expectedCategory) || 0;
+      if (claimedMinutes + minutes > availableMinutes) {
+        throw validationError(
+          "activitySegments debe incluir minutos suficientes de la categoria de la tecnica magica.",
+          {
+            techniqueId,
+            expectedCategory,
+            requiredMinutes: claimedMinutes + minutes,
+            availableMinutes,
+          }
+        );
+      }
+      claimedActivityMinutesByCategory.set(expectedCategory, claimedMinutes + minutes);
+    } else {
+      const receivedCategory = normalizeCategory(body.activityCost.category || "");
+      if (expectedCategory !== receivedCategory) {
+        throw validationError("activityCost.category debe coincidir con la categoria de la tecnica magica.", {
+          techniqueId,
+          expectedCategory,
+          receivedCategory,
+        });
+      }
     }
 
     const mpBefore = gameState.lucasStatus?.mp?.current ?? 0;
@@ -4162,12 +4288,14 @@ async function applyMagicPracticePatches({
           after: mpBefore,
           labelAfter: gameState.lucasStatus?.mp?.label || "",
         };
-    const mechanicalEffect = await applyMagicPracticeMechanicalEffect({
-      gameState,
-      patch,
-      preview,
-      session,
-    });
+    const mechanicalEffect = dryRun
+      ? buildDryRunMagicPracticeMechanicalEffect(preview)
+      : await applyMagicPracticeMechanicalEffect({
+          gameState,
+          patch,
+          preview,
+          session,
+        });
 
     const appliedSkills = [];
     for (const skillPreview of preview.skillPreviews || []) {
@@ -4224,7 +4352,9 @@ async function applyMagicPracticePatches({
     }
 
     if (appliedSkills.length > 0) {
-      gameState.markModified("skills");
+      if (typeof gameState.markModified === "function") {
+        gameState.markModified("skills");
+      }
     }
 
     practiceChanges.push({
@@ -4330,7 +4460,7 @@ async function applyMagicSkillUnlock({ gameState, patch, session = null }) {
   };
 }
 
-async function applyMagicTechniqueKnowledge({ gameState, patch, session = null }) {
+async function applyMagicTechniqueKnowledge({ gameState, patch, session = null, dryRun = false }) {
   const techniqueId = patch.techniqueId;
   const ownerCharacterId = gameState.characterId || "char_lucas";
   const characterId = patch.characterId || ownerCharacterId;
@@ -4393,7 +4523,8 @@ async function applyMagicTechniqueKnowledge({ gameState, patch, session = null }
     });
   }
 
-  const existing = await CharacterMagicKnowledge.findOne({ characterId, techniqueId }).session(session);
+  const existingQuery = CharacterMagicKnowledge.findOne({ characterId, techniqueId }).session(session);
+  const existing = dryRun ? await existingQuery.lean() : await existingQuery;
   const before = summarizeMagicKnowledge(existing);
   const payload = {
     knowledgeId: existing?.knowledgeId || patch.knowledgeId || createMagicKnowledgeId(characterId, techniqueId),
@@ -4412,7 +4543,12 @@ async function applyMagicTechniqueKnowledge({ gameState, patch, session = null }
   };
 
   let saved;
-  if (existing) {
+  if (dryRun) {
+    saved = {
+      ...(existing || {}),
+      ...payload,
+    };
+  } else if (existing) {
     existing.status = payload.status;
     existing.learnedDay = payload.learnedDay;
     existing.learnedTime = payload.learnedTime;
@@ -4446,7 +4582,7 @@ async function applyMagicTechniqueKnowledge({ gameState, patch, session = null }
   };
 }
 
-async function applyMagicPatches(gameState, magicPatches, session = null) {
+async function applyMagicPatches(gameState, magicPatches, session = null, { dryRun = false } = {}) {
   const patches = normalizeMagicPatches(magicPatches);
   const results = [];
 
@@ -4465,7 +4601,7 @@ async function applyMagicPatches(gameState, magicPatches, session = null) {
     }
 
     if (op === "set_technique") {
-      results.push(await applyMagicTechniqueKnowledge({ gameState, patch, session }));
+      results.push(await applyMagicTechniqueKnowledge({ gameState, patch, session, dryRun }));
     }
   }
 
@@ -5773,6 +5909,7 @@ async function applyTurn(req, res) {
           title: autoCheckpointPlan.title,
           reason: autoCheckpointPlan.reason,
           triggerKey: autoCheckpointPlan.triggerKey,
+          snapshotMode: autoCheckpointPlan.snapshotMode,
           metadata: {
             ...(autoCheckpointPlan.metadata || {}),
             sourceEventLogId: primarySourceEventLogId,

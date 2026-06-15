@@ -193,6 +193,90 @@ describe("preview and rejection API coverage", () => {
     assert.equal(await TurnTrace.countDocuments({ clientTurnId }), 0);
   });
 
+  it("applyTurn dryRun previews composite travel and magic practice without splitting turns", async () => {
+    const beforeState = await getCanonicalState();
+    assertCanonState(beforeState);
+
+    const { toDay, to } = addMinutesToStateTime(beforeState, 50);
+    const clientTurnId = `test-dryrun-composite-magic-${Date.now()}`;
+    const dryRun = await post("/api/turn/apply", {
+      gameId: "isekai_lucas_main",
+      dryRun: true,
+      clientTurnId,
+      actionFamily: "magic_practice",
+      actionSummary: "Preview seca compuesta: traslado, chequeo, meditacion y practica magica contenida.",
+      timeAdvance: {
+        fromDay: beforeState.currentDay,
+        from: beforeState.time,
+        toDay,
+        to,
+      },
+      activitySegments: [
+        {
+          category: "viaje_caminata_suave",
+          minutes: 20,
+          reason: "Tramo de viaje controlado para preview compuesta.",
+        },
+        {
+          category: "actividad_normal",
+          minutes: 5,
+          reason: "Chequeo breve del entorno inmediato.",
+        },
+        {
+          category: "descanso_sentado",
+          minutes: 20,
+          reason: "Meditacion sentada de mana sin efecto externo.",
+        },
+        {
+          category: "actividad_normal",
+          minutes: 5,
+          reason: "Practica final contenida sin conjuro real.",
+        },
+      ],
+      magicPractice: [
+        {
+          techniqueId: "technique_internal_flow_sense",
+          minutes: 20,
+          reason: "Lucas percibe el flujo interno de mana durante la meditacion.",
+          modifiers: {
+            newTechnique: true,
+          },
+        },
+      ],
+      skillPatch: [
+        {
+          skillId: "skill_magia",
+          expDelta: 1,
+          category: "practica_sin_maestro",
+          durationMinutes: 5,
+          reason: "Preview de estructura magica contenida sin descargar energia.",
+        },
+      ],
+      magicPatches: [
+        {
+          op: "unlock_skill",
+          skillId: "skill_magia_ofensiva",
+          reason: "Preview de desbloqueo de rama ofensiva sin aprender hechizo real.",
+        },
+      ],
+    });
+
+    assert.equal(dryRun.status, 200, JSON.stringify(dryRun.data));
+    assert.equal(dryRun.data.ok, true);
+    assert.equal(dryRun.data.dryRun, true);
+    assert.equal(dryRun.data.mutation.willMutateGameState, false);
+    assert.equal(dryRun.data.mutation.willCreateTurnTrace, false);
+    assert.equal(dryRun.data.changes.magicPractice[0].techniqueId, "technique_internal_flow_sense");
+    assert.equal(dryRun.data.changes.magicPractice[0].mp.delta, 0);
+    assert.ok(dryRun.data.changes.magic.some((change) => change.op === "unlock_skill"));
+    assert.ok(dryRun.data.changes.skillProgressDisplay.displayLines.length >= 1);
+    assert.ok(dryRun.data.displayBundle.renderLines.includes("## Estado actual"));
+
+    const afterState = await getCanonicalState();
+    assertSameState(beforeState, afterState);
+    assert.equal(await TurnTrace.countDocuments({ clientTurnId }), 0);
+  });
+
   it("social preview applies NPC-specific profile friction without mutating canonical state", async () => {
     const beforeState = await getCanonicalState();
     assertCanonState(beforeState);

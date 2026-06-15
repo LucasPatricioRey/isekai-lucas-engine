@@ -130,7 +130,8 @@ const criticalRuleCards = [
       "Use profileContract to reject minimal_header/debug_audit as final narration sources.",
       "Use ruleLookupContract.searchBatches before final gameplay response and before previews/mutations.",
       "Use previews/details when outcome, cost or legality is uncertain.",
-      "Use applyTurn with dryRun:true and the same patches for exact EXP/time/activity preview before mutating those turns.",
+      "Use applyTurn with dryRun:true and the same patches for exact EXP/time/activity/economy/magic preview before mutating those turns.",
+      "For composite actions, prefer one applyTurn with activitySegments plus all compatible patches instead of splitting travel/rest/training/magic into several real turns.",
       "Use applyTurn only when state changes; use completeJobShift for full job shifts and combat Action for real advanced combat.",
       "Read compact context again after mutation before final narration.",
     ],
@@ -140,7 +141,7 @@ const criticalRuleCards = [
     ],
     template: "read -> ruleIds -> preview/dryRun -> mutate if needed -> reread -> narrate saved state",
     content:
-      "Action flow rule. Normal gameplay starts with player_scene compact context and searches the rule cards listed by ruleLookupContract. Pure reads and previews do not mutate. For EXP/time/activity patches, applyTurn dryRun:true previews the same payload without saving. State-changing actions use the proper mutator, then the narrator rereads compact context and narrates the saved result.",
+      "Action flow rule. Normal gameplay starts with player_scene compact context and searches the rule cards listed by ruleLookupContract. Pure reads and previews do not mutate. For EXP/time/activity/economy/magic patches, applyTurn dryRun:true previews the same payload without saving. Composite actions should use one activitySegments applyTurn when possible. State-changing actions use the proper mutator, then the narrator rereads compact context and narrates the saved result.",
     tags: ["rule_card", "actions", "flow", "applyTurn", "preview"],
   },
   {
@@ -191,6 +192,7 @@ const criticalRuleCards = [
     must: [
       "Use knownSpells as the authority for castable spells.",
       "Use magicPractice for allowed practice and MP/EXP effects.",
+      "In composite turns, magicPractice can occupy only the matching activitySegments minutes instead of the whole timeAdvance.",
       "Use magicPatches for formal unlocks of branches, skills, techniques or spells.",
       "Treat locked_template as existing design, not learned spell.",
     ],
