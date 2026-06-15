@@ -1,5 +1,6 @@
 const { after, before, describe, it } = require("node:test");
 
+const ShopStock = require("../models/ShopStock");
 const TurnTrace = require("../models/TurnTrace");
 const {
   assert,
@@ -10,6 +11,15 @@ const {
   startApi,
   stopApi,
 } = require("./apiTestClient");
+
+function addMinutesToStateTime(state, minutes) {
+  const [hours, currentMinutes] = String(state.time || "00:00").split(":").map(Number);
+  const absolute = (Number(state.currentDay || 1) - 1) * 1440 + hours * 60 + currentMinutes + minutes;
+  const toDay = Math.floor(absolute / 1440) + 1;
+  const dayMinutes = ((absolute % 1440) + 1440) % 1440;
+  const to = `${String(Math.floor(dayMinutes / 60)).padStart(2, "0")}:${String(dayMinutes % 60).padStart(2, "0")}`;
+  return { toDay, to };
+}
 
 describe("preview and rejection API coverage", () => {
   before(startApi);
@@ -112,6 +122,74 @@ describe("preview and rejection API coverage", () => {
 
     const afterState = await getCanonicalState();
     assertSameState(beforeState, afterState);
+    assert.equal(await TurnTrace.countDocuments({ clientTurnId }), 0);
+  });
+
+  it("applyTurn dryRun previews money, stock and activity segments without mutating", async () => {
+    const beforeState = await getCanonicalState();
+    assertCanonState(beforeState);
+    const beforeStock = await ShopStock.findOne({
+      shopId: "shop_grulla_azul_inn",
+      itemId: "item_comida_normal",
+    }).lean();
+    assert.ok(beforeStock);
+
+    const { toDay, to } = addMinutesToStateTime(beforeState, 20);
+    const clientTurnId = `test-dryrun-meal-${Date.now()}`;
+    const dryRun = await post("/api/turn/apply", {
+      gameId: "isekai_lucas_main",
+      dryRun: true,
+      clientTurnId,
+      actionFamily: "meal",
+      actionSummary: "Preview seca de compra y comida normal.",
+      timeAdvance: {
+        fromDay: beforeState.currentDay,
+        from: beforeState.time,
+        toDay,
+        to,
+      },
+      activitySegments: [
+        {
+          category: "comer_tranquilo",
+          minutes: 20,
+          reason: "Comer un plato normal sentado.",
+        },
+      ],
+      lucasPatch: {
+        satietyDelta: 1,
+      },
+      moneyPatch: {
+        deltaCopper: -1,
+        reason: "Preview de pago minimo controlado.",
+      },
+      shopStockPatches: [
+        {
+          shopId: "shop_grulla_azul_inn",
+          itemId: "item_comida_normal",
+          deltaQuantity: -1,
+          reason: "Preview de compra de comida normal.",
+        },
+      ],
+    });
+
+    assert.equal(dryRun.status, 200, JSON.stringify(dryRun.data));
+    assert.equal(dryRun.data.dryRun, true);
+    assert.equal(dryRun.data.mutation.willMutateGameState, false);
+    assert.equal(dryRun.data.changes.money.delta, -1);
+    assert.equal(dryRun.data.changes.shopStocks[0].after.quantity, beforeStock.quantity - 1);
+    assert.ok(
+      dryRun.data.changes.shopStocks[0].displayLines.some((line) =>
+        line.includes("La Grulla Azul/Comida normal")
+      )
+    );
+
+    const afterState = await getCanonicalState();
+    const afterStock = await ShopStock.findOne({
+      shopId: "shop_grulla_azul_inn",
+      itemId: "item_comida_normal",
+    }).lean();
+    assertSameState(beforeState, afterState);
+    assert.equal(afterStock.quantity, beforeStock.quantity);
     assert.equal(await TurnTrace.countDocuments({ clientTurnId }), 0);
   });
 

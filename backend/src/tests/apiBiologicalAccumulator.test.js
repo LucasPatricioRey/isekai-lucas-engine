@@ -1,5 +1,6 @@
 const { after, before, describe, it } = require("node:test");
 
+const BiologicalAccumulationArchive = require("../models/BiologicalAccumulationArchive");
 const EventLog = require("../models/EventLog");
 const GameState = require("../models/GameState");
 const WorldEvent = require("../models/WorldEvent");
@@ -69,6 +70,7 @@ describe("persistent biological accumulators", () => {
     if (tempGameIds.length > 0) {
       await GameState.deleteMany({ gameId: { $in: tempGameIds } });
       await WorldEvent.deleteMany({ gameId: { $in: tempGameIds } });
+      await BiologicalAccumulationArchive.deleteMany({ gameId: { $in: tempGameIds } });
     }
     await EventLog.deleteMany({
       $or: [
@@ -225,7 +227,14 @@ describe("persistent biological accumulators", () => {
     const processed = stateAfterClose.biologicalClock.pendingAccumulations.filter(
       (entry) => entry.status === "processed"
     );
-    assert.equal(processed.length, 1);
+    assert.equal(processed.length, 0);
+    const archived = await BiologicalAccumulationArchive.find({
+      gameId,
+      category: "esfuerzo_fuerte",
+      blockStart: "13:00",
+      blockEnd: "14:00",
+    }).lean();
+    assert.equal(archived.length, 1);
 
     const nextPending = await post("/api/turn/apply", {
       gameId,
@@ -281,6 +290,40 @@ describe("persistent biological accumulators", () => {
     assert.equal(closeBlock.data.changes.activityCost.energy.delta, -6);
     assert.equal(closeBlock.data.gameState.lucasStatus.satiety.current, 84);
     assert.equal(closeBlock.data.gameState.lucasStatus.energy.current, 63);
+  });
+
+  it("applies mixed activitySegments in one turn and carries the remainder pending", async () => {
+    const gameId = await createBiologyTestGame({ time: "13:35", satiety: 88, energy: 69 });
+
+    const response = await post("/api/turn/apply", {
+      gameId,
+      actionSummary: "Test biologico: caminar, comer y descansar en una secuencia.",
+      timeAdvance: { from: "13:35", to: "14:20" },
+      activitySegments: [
+        {
+          category: "viaje_caminata_suave",
+          minutes: 25,
+          reason: "Caminar hasta cerrar el bloque.",
+        },
+        {
+          category: "descanso_sentado",
+          minutes: 20,
+          reason: "Descanso sentado posterior.",
+        },
+      ],
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.changes.biologicalClock.processedBlocks.length, 1);
+    assert.equal(response.data.changes.biologicalClock.processedBlocks[0].activities[0].category, "viaje_caminata_suave");
+    assert.equal(response.data.changes.biologicalClock.processedBlocks[0].activities[0].minutes, 25);
+    assert.equal(response.data.changes.biologicalClock.pendingCreated.length, 1);
+    assert.equal(response.data.changes.biologicalClock.pendingCreated[0].category, "descanso_sentado");
+    assert.equal(response.data.changes.biologicalClock.pendingCreated[0].minutes, 20);
+
+    const state = await getGameState(gameId);
+    assert.equal(state.biologicalClock.pendingAccumulations.length, 1);
+    assert.equal(state.biologicalClock.pendingAccumulations[0].category, "descanso_sentado");
   });
 
   it("rejects crossing an hour boundary without cost or exemption", async () => {

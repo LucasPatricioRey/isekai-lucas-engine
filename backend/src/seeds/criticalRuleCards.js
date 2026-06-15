@@ -459,6 +459,25 @@ const criticalRuleCards = [
     tags: ["rule_card", "economy", "stock", "property", "inventory"],
   },
   {
+    ruleId: "economy.stock_purchase",
+    domain: "economy",
+    priority: "critical",
+    appliesTo: ["moneyPatch", "shopStockPatches", "buy", "food", "meal", "purchase"],
+    must: [
+      "Treat this as the purchase alias for economy.trade_stock_property.",
+      "Verify shop stock, item catalog, price, available money and seller/location before purchase mutation.",
+      "For buy-and-consume turns, use the same applyTurn dryRun payload as the real mutation, including moneyPatch/shopStockPatches/lucasPatch/activityCost or activitySegments.",
+    ],
+    never: [
+      "Invent stock, free food, discounts or debt without a rule-backed reason.",
+      "Apply hunger/energy bonuses without the matching money/stock change when the food is bought.",
+    ],
+    template: "purchase = stock + price + money + item + dryRun exact before real applyTurn",
+    content:
+      "Stock purchase alias. Use for ordinary purchases such as buying a meal: validate shop stock and item price, subtract money, decrement stock and apply consumption effects only through the same canonical turn payload.",
+    tags: ["rule_card", "economy", "stock", "purchase", "food"],
+  },
+  {
     ruleId: "missions.guild_rewards_registration",
     domain: "missions_events",
     priority: "critical",

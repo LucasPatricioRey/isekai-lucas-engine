@@ -11,6 +11,7 @@ const NpcSocialLedger = require("../models/NpcSocialLedger");
 const Rumor = require("../models/Rumor");
 const WorldEvent = require("../models/WorldEvent");
 const Location = require("../models/Location");
+const Shop = require("../models/Shop");
 const ShopStock = require("../models/ShopStock");
 const Item = require("../models/Item");
 const Mission = require("../models/Mission");
@@ -24,6 +25,9 @@ const MagicTechnique = require("../models/MagicTechnique");
 const InjuryRecord = require("../models/InjuryRecord");
 const { syncNpcRoutines } = require("../services/routineService");
 const { calculateActivityCost, normalizeCategory } = require("../services/biologicalClockService");
+const {
+  archiveProcessedBiologicalAccumulations,
+} = require("../services/biologicalAccumulationArchiveService");
 const { reconcileDailyEventsForGameState } = require("../services/dailyEventSchedulerService");
 const { buildWorldEventSocialConsequencePlan } = require("../services/dailyEventSocialService");
 const { expireAvailableMissionsForGameState } = require("../services/missionService");
@@ -379,7 +383,9 @@ async function buildTurnDisplayContext(gameState, session = null) {
         .session(session)
         .lean()
     : null;
-  const staticNpcIds = new Set([...(location?.visibleNpcIds || []), ...(location?.probableNpcIds || [])]);
+  const visibleStaticNpcIds = new Set(location?.visibleNpcIds || []);
+  const probableStaticNpcIds = new Set(location?.probableNpcIds || []);
+  const staticNpcIds = new Set([...visibleStaticNpcIds, ...probableStaticNpcIds]);
   const npcClauses = [];
 
   if (locationId) npcClauses.push({ currentLocationId: locationId });
@@ -406,10 +412,25 @@ async function buildTurnDisplayContext(gameState, session = null) {
   ]);
 
   const nearbyNpcs = rawNearbyNpcs
-    .slice()
+    .map((npc) => {
+      const exactLocation = npc.currentLocationId === locationId;
+      const staticVisibleWithoutLiveLocation = !npc.currentLocationId && visibleStaticNpcIds.has(npc.npcId);
+      const presenceScope = exactLocation || staticVisibleWithoutLiveLocation ? "visible" : "nearby";
+      return {
+        ...npc,
+        presenceScope,
+        presenceReason: exactLocation
+          ? "current_location"
+          : visibleStaticNpcIds.has(npc.npcId)
+            ? "location_visible_static"
+            : probableStaticNpcIds.has(npc.npcId)
+              ? "location_probable_static"
+              : "parent_location",
+      };
+    })
     .sort((left, right) => {
-      const leftScore = left.currentLocationId === locationId ? 0 : staticNpcIds.has(left.npcId) ? 1 : 2;
-      const rightScore = right.currentLocationId === locationId ? 0 : staticNpcIds.has(right.npcId) ? 1 : 2;
+      const leftScore = left.presenceScope === "visible" ? 0 : 1;
+      const rightScore = right.presenceScope === "visible" ? 0 : 1;
       if (leftScore !== rightScore) return leftScore - rightScore;
       return String(left.name || left.npcId || "").localeCompare(String(right.name || right.npcId || ""));
     })
@@ -1625,9 +1646,13 @@ const DRY_RUN_SUPPORTED_TOP_LEVEL_KEYS = new Set([
   "timeAdvance",
   "lucasPatch",
   "activityCost",
+  "activitySegments",
   "gameStatePatch",
   "biologicalCostExemptReason",
+  "inventoryPatch",
+  "moneyPatch",
   "skillPatch",
+  "shopStockPatches",
   "eventLogs",
 ]);
 
@@ -1651,7 +1676,7 @@ async function previewApplyTurnDryRun({ body = {}, gameId, clientTurnId = "", in
   const unsupportedPatchKeys = getUnsupportedDryRunKeys(body);
   if (unsupportedPatchKeys.length > 0) {
     throw validationError(
-      "applyTurn dryRun solo cubre timeAdvance/activityCost/gameStatePatch.locationId/lucasPatch/skillPatch en esta fase.",
+      "applyTurn dryRun solo cubre timeAdvance/activityCost/activitySegments/gameStatePatch.locationId/lucasPatch/inventoryPatch/moneyPatch/skillPatch/shopStockPatches en esta fase.",
       {
         unsupportedPatchKeys,
         supportedPatchKeys: Array.from(DRY_RUN_SUPPORTED_TOP_LEVEL_KEYS).sort(),
@@ -1763,9 +1788,17 @@ async function previewApplyTurnDryRun({ body = {}, gameId, clientTurnId = "", in
   }
 
   if (body.gameStatePatch?.locationId) {
-    const location = await Location.findOne({ locationId: body.gameStatePatch.locationId })
-      .select("locationId name")
-      .lean();
+    const before = gameState.locationId;
+    const [location, beforeLocation] = await Promise.all([
+      Location.findOne({ locationId: body.gameStatePatch.locationId })
+        .select("locationId name")
+        .lean(),
+      before
+        ? Location.findOne({ locationId: before })
+            .select("locationId name")
+            .lean()
+        : Promise.resolve(null),
+    ]);
 
     if (!location) {
       throw validationError("gameStatePatch.locationId no existe.", {
@@ -1773,12 +1806,39 @@ async function previewApplyTurnDryRun({ body = {}, gameId, clientTurnId = "", in
       });
     }
 
-    const before = gameState.locationId;
     gameState.locationId = body.gameStatePatch.locationId;
     changes.location = {
       before,
+      beforeName: beforeLocation?.name || before,
       after: gameState.locationId,
       locationName: location.name,
+    };
+  }
+
+  if (body.moneyPatch) {
+    const { deltaCopper, reason } = body.moneyPatch;
+
+    if (!Number.isInteger(deltaCopper)) {
+      throw validationError("moneyPatch.deltaCopper debe ser un número entero.");
+    }
+
+    const before = gameState.moneyCopper;
+    const after = before + deltaCopper;
+
+    if (after < 0) {
+      throw validationError("El dinero no puede quedar negativo.", {
+        currentMoneyCopper: before,
+        attemptedDelta: deltaCopper,
+      });
+    }
+
+    gameState.moneyCopper = after;
+
+    changes.money = {
+      before,
+      delta: deltaCopper,
+      after,
+      reason: reason || "",
     };
   }
 
@@ -1818,7 +1878,7 @@ async function previewApplyTurnDryRun({ body = {}, gameId, clientTurnId = "", in
     }
   }
 
-  if (body.activityCost || changes.time) {
+  if (body.activityCost || body.activitySegments || changes.time) {
     const biologicalClockChange = applyBiologicalClockForTurn(
       gameState,
       body,
@@ -1871,6 +1931,20 @@ async function previewApplyTurnDryRun({ body = {}, gameId, clientTurnId = "", in
     }
   }
 
+  if (Array.isArray(body.inventoryPatch)) {
+    const inventoryChanges = [];
+
+    for (const patch of body.inventoryPatch) {
+      inventoryChanges.push(await applyInventoryPatch(gameState.inventory, patch, null));
+    }
+
+    if (inventoryChanges.length > 0) {
+      changes.inventory = inventoryChanges;
+    }
+  } else if (body.inventoryPatch !== undefined) {
+    throw validationError("inventoryPatch debe ser un array.");
+  }
+
   if (body.skillPatch !== undefined && !Array.isArray(body.skillPatch)) {
     throw validationError("skillPatch debe ser un array.");
   }
@@ -1920,6 +1994,13 @@ async function previewApplyTurnDryRun({ body = {}, gameId, clientTurnId = "", in
   if (Array.isArray(changes.skills) && changes.skills.length > 0) {
     changes.skills = changes.skills.map((change) => withSkillProgressDisplay(change));
     changes.skillProgressDisplay = buildSkillProgressDisplay(changes.skills);
+  }
+
+  if (Array.isArray(body.shopStockPatches)) {
+    const shopStockChanges = await applyShopStockPatches(body.shopStockPatches, null, { dryRun: true });
+    if (shopStockChanges.length > 0) changes.shopStocks = shopStockChanges;
+  } else if (body.shopStockPatches !== undefined) {
+    throw validationError("shopStockPatches debe ser un array.");
   }
 
   attachMechanicalChangeDisplay(changes);
@@ -2963,8 +3044,9 @@ async function applyLocationPatches(patches, session = null) {
   return results;
 }
 
-async function applyShopStockPatches(patches, session = null) {
+async function applyShopStockPatches(patches, session = null, { dryRun = false } = {}) {
   const results = [];
+  const stockCache = new Map();
 
   for (const patch of patches) {
     if (!patch.shopId) {
@@ -2979,10 +3061,16 @@ async function applyShopStockPatches(patches, session = null) {
       throw validationError("shopStockPatch.deltaQuantity debe ser un entero distinto de cero.");
     }
 
-    const stock = await ShopStock.findOne({
-      shopId: patch.shopId,
-      itemId: patch.itemId,
-    }).session(session);
+    const stockKey = `${patch.shopId}:${patch.itemId}`;
+    let stock = stockCache.get(stockKey);
+    if (!stock) {
+      const query = ShopStock.findOne({
+        shopId: patch.shopId,
+        itemId: patch.itemId,
+      }).session(session);
+      stock = dryRun ? await query.lean() : await query;
+      if (stock) stockCache.set(stockKey, stock);
+    }
 
     if (!stock) {
       throw validationError("No existe stock para ese shopId/itemId.", {
@@ -2990,6 +3078,17 @@ async function applyShopStockPatches(patches, session = null) {
         itemId: patch.itemId,
       });
     }
+
+    const [shop, item] = await Promise.all([
+      Shop.findOne({ shopId: patch.shopId })
+        .select("shopId name")
+        .session(session)
+        .lean(),
+      Item.findOne({ itemId: patch.itemId })
+        .select("itemId name")
+        .session(session)
+        .lean(),
+    ]);
 
     const before = toPlain(stock);
     const afterQuantity = stock.quantity + patch.deltaQuantity;
@@ -3025,11 +3124,15 @@ async function applyShopStockPatches(patches, session = null) {
       );
     }
 
-    await stock.save({ session });
+    if (!dryRun) {
+      await stock.save({ session });
+    }
 
     results.push({
       shopId: stock.shopId,
+      shopName: shop?.name || stock.shopId,
       itemId: stock.itemId,
+      itemName: item?.name || stock.itemId,
       before: {
         quantity: before.quantity,
         currentPriceCopper: before.currentPriceCopper,
@@ -4448,7 +4551,9 @@ function validateHourBoundaryCost({ timeAdvance, currentTime, currentDay = 1, bo
 
   if (minutes <= 0) return;
 
-  const hasActivityCost = Boolean(body.activityCost);
+  const hasActivityCost =
+    Boolean(body.activityCost) ||
+    (Array.isArray(body.activitySegments) && body.activitySegments.length > 0);
   const hasExemption = String(body.biologicalCostExemptReason || "").trim().length >= 8;
 
   if (!hasActivityCost && !hasExemption) {
@@ -4467,7 +4572,11 @@ function validateHourBoundaryCost({ timeAdvance, currentTime, currentDay = 1, bo
 }
 
 function validateActivityCostMinutes({ timeAdvance, currentTime, currentDay = 1, body }) {
-  if (!timeAdvance || !body.activityCost) return;
+  if (!timeAdvance) return;
+  if (body.activityCost && Array.isArray(body.activitySegments) && body.activitySegments.length > 0) {
+    throw validationError("Usar activityCost o activitySegments, no ambos en el mismo applyTurn.");
+  }
+  if (!body.activityCost && (!Array.isArray(body.activitySegments) || body.activitySegments.length === 0)) return;
 
   const from = timeAdvance.from || currentTime;
   const to = timeAdvance.to;
@@ -4479,11 +4588,13 @@ function validateActivityCostMinutes({ timeAdvance, currentTime, currentDay = 1,
   const expectedMinutes = diffAdvanceMinutes({ fromDay, from, toDay, to });
   if (expectedMinutes <= 0) return;
 
-  const actualMinutes = body.activityCost.minutes;
+  const actualMinutes = body.activityCost
+    ? body.activityCost.minutes
+    : body.activitySegments.reduce((sum, segment) => sum + (Number(segment?.minutes) || 0), 0);
   const hasExemption = Boolean(String(body.biologicalCostExemptReason || "").trim());
   const hasValidatedOverride =
-    body.activityCost.allowMinutesMismatch === true &&
-    String(body.activityCost.overrideReason || "").trim().length >= 8;
+    body.activityCost?.allowMinutesMismatch === true &&
+    String(body.activityCost?.overrideReason || "").trim().length >= 8;
 
   if (actualMinutes !== expectedMinutes && !hasExemption && !hasValidatedOverride) {
     throw validationError("activityCost.minutes debe coincidir con la diferencia real de timeAdvance.", {
@@ -4539,35 +4650,68 @@ function ensureBiologicalClock(gameState) {
   return gameState.biologicalClock;
 }
 
-function splitActivitySegments({ fromDay = 1, from, toDay = fromDay, to, activityCost }) {
-  if (!activityCost) return [];
+function normalizeActivitySegmentInput(segment, index = 0) {
+  if (!segment || typeof segment !== "object" || Array.isArray(segment)) {
+    throw validationError("activitySegments debe contener objetos de actividad.", { index });
+  }
+
+  if (!segment.category) {
+    throw validationError("activitySegments.category es obligatorio.", { index });
+  }
+
+  if (!Number.isInteger(segment.minutes) || segment.minutes <= 0) {
+    throw validationError("activitySegments.minutes debe ser entero mayor a cero.", { index });
+  }
+
+  return {
+    category: normalizeCategory(segment.category),
+    minutes: segment.minutes,
+    reason: segment.reason || "",
+    sourceEventLogId: segment.sourceEventLogId || "",
+  };
+}
+
+function splitActivitySegments({ fromDay = 1, from, toDay = fromDay, to, activityCost, activitySegments }) {
+  const activityInputs = activitySegments?.length > 0
+    ? activitySegments.map(normalizeActivitySegmentInput)
+    : activityCost
+      ? [normalizeActivitySegmentInput(activityCost, 0)]
+      : [];
+  if (activityInputs.length === 0) return [];
 
   const fromMinutes = toAbsoluteMinutes(fromDay, from);
   const toMinutes = toAbsoluteMinutes(toDay, to);
   const segments = [];
   let cursor = fromMinutes;
 
-  while (cursor < toMinutes) {
-    const blockStartMinutes = Math.floor(cursor / 60) * 60;
-    const blockEndMinutes = blockStartMinutes + 60;
-    const segmentEnd = Math.min(toMinutes, blockEndMinutes);
-    const blockStart = minutesToTime(blockStartMinutes);
-    const blockEnd = minutesToTime(blockEndMinutes);
-    const blockDay = dayFromAbsoluteMinutes(blockStartMinutes);
+  for (const input of activityInputs) {
+    let remaining = input.minutes;
 
-    segments.push({
-      day: blockDay,
-      category: normalizeCategory(activityCost.category),
-      minutes: segmentEnd - cursor,
-      reason: activityCost.reason || "",
-      start: minutesToTime(cursor),
-      end: minutesToTime(segmentEnd),
-      blockStart,
-      blockEnd,
-      closesBlock: segmentEnd === blockEndMinutes,
-    });
+    while (remaining > 0 && cursor < toMinutes) {
+      const blockStartMinutes = Math.floor(cursor / 60) * 60;
+      const blockEndMinutes = blockStartMinutes + 60;
+      const segmentEnd = Math.min(toMinutes, blockEndMinutes, cursor + remaining);
+      const blockStart = minutesToTime(blockStartMinutes);
+      const blockEnd = minutesToTime(blockEndMinutes);
+      const blockDay = dayFromAbsoluteMinutes(blockStartMinutes);
+      const minutes = segmentEnd - cursor;
 
-    cursor = segmentEnd;
+      segments.push({
+        day: blockDay,
+        category: input.category,
+        minutes,
+        reason: input.reason,
+        sourceEventLogId: input.sourceEventLogId,
+        start: minutesToTime(cursor),
+        end: minutesToTime(segmentEnd),
+        blockStart,
+        blockEnd,
+        closesBlock: segmentEnd === blockEndMinutes,
+      });
+
+      cursor = segmentEnd;
+      remaining -= minutes;
+    }
   }
 
   return segments;
@@ -4624,7 +4768,7 @@ function createPendingAccumulation(gameState, segment, body) {
     minutes: segment.minutes,
     reason: segment.reason,
     sourceActionSummary: body.actionSummary || "",
-    sourceEventLogId: body.activityCost?.sourceEventLogId || "",
+    sourceEventLogId: segment.sourceEventLogId || body.activityCost?.sourceEventLogId || "",
     status: "pending",
     createdAt: new Date(),
     processedAt: null,
@@ -4732,12 +4876,13 @@ function processBiologicalBlock(gameState, block, activities) {
 
 function applyBiologicalClockForTurn(gameState, body, turnTimeAdvance) {
   const clock = ensureBiologicalClock(gameState);
+  const hasActivitySegments = Array.isArray(body.activitySegments) && body.activitySegments.length > 0;
 
-  if (!body.activityCost && !turnTimeAdvance) {
+  if (!body.activityCost && !hasActivitySegments && !turnTimeAdvance) {
     return null;
   }
 
-  if (!turnTimeAdvance && body.activityCost) {
+  if (!turnTimeAdvance && (body.activityCost || hasActivitySegments)) {
     throw validationError("activityCost requiere timeAdvance para guardar acumuladores biologicos formales.");
   }
 
@@ -4745,7 +4890,14 @@ function applyBiologicalClockForTurn(gameState, body, turnTimeAdvance) {
   const from = turnTimeAdvance.from;
   const toDay = turnTimeAdvance.toDay || fromDay;
   const to = turnTimeAdvance.to;
-  const segments = splitActivitySegments({ fromDay, from, toDay, to, activityCost: body.activityCost });
+  const segments = splitActivitySegments({
+    fromDay,
+    from,
+    toDay,
+    to,
+    activityCost: body.activityCost,
+    activitySegments: body.activitySegments,
+  });
   const closedBlocks = getClosedHourBlocks({ fromDay, from, toDay, to });
   const pendingCreated = [];
   const processedBlocks = [];
@@ -5075,10 +5227,19 @@ async function applyTurn(req, res) {
       }
 
       if (body.gameStatePatch?.locationId) {
-        const location = await Location.findOne({ locationId: body.gameStatePatch.locationId })
-          .select("locationId name")
-          .session(session)
-          .lean();
+        const before = gameState.locationId;
+        const [location, beforeLocation] = await Promise.all([
+          Location.findOne({ locationId: body.gameStatePatch.locationId })
+            .select("locationId name")
+            .session(session)
+            .lean(),
+          before
+            ? Location.findOne({ locationId: before })
+                .select("locationId name")
+                .session(session)
+                .lean()
+            : Promise.resolve(null),
+        ]);
 
         if (!location) {
           throw validationError("gameStatePatch.locationId no existe.", {
@@ -5086,10 +5247,10 @@ async function applyTurn(req, res) {
           });
         }
 
-        const before = gameState.locationId;
         gameState.locationId = body.gameStatePatch.locationId;
         changes.location = {
           before,
+          beforeName: beforeLocation?.name || before,
           after: gameState.locationId,
           locationName: location.name,
         };
@@ -5213,7 +5374,7 @@ async function applyTurn(req, res) {
         }
       }
 
-      if (body.activityCost || changes.time) {
+      if (body.activityCost || body.activitySegments || changes.time) {
         const biologicalClockChange = applyBiologicalClockForTurn(
           gameState,
           body,
@@ -5558,6 +5719,13 @@ async function applyTurn(req, res) {
 
       await validateEventLogsForInsert(logsToCreate, session);
       normalizePendingAccumulationIdentities(gameState);
+      const biologicalArchive = await archiveProcessedBiologicalAccumulations(gameState, { session });
+      if (biologicalArchive.archivedCount > 0) {
+        changes.biologicalClock = {
+          ...(changes.biologicalClock || {}),
+          archivedProcessed: biologicalArchive,
+        };
+      }
       await gameState.save({ session });
 
       if (changes.time && gameId === "isekai_lucas_main") {

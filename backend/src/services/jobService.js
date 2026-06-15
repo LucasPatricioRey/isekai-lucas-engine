@@ -15,6 +15,9 @@ const {
 const { expireAvailableMissionsForGameState } = require("./missionService");
 const { createAutomaticCheckpoint } = require("./checkpointService");
 const {
+  archiveProcessedBiologicalAccumulations,
+} = require("./biologicalAccumulationArchiveService");
+const {
   ACTION_FAMILIES,
   attachNarrativeTrackingToLogDrafts,
   buildNarrativeHints,
@@ -903,6 +906,7 @@ async function completeShift({
       };
 
       gameState.markModified("biologicalClock");
+      const biologicalArchive = await archiveProcessedBiologicalAccumulations(gameState, { session });
       contract.markModified("flags");
       await gameState.save({ session });
       await contract.save({ session });
@@ -940,6 +944,7 @@ async function completeShift({
         physicalBreakdown,
         biologicalClock: {
           coveredPendingAccumulations,
+          archivedProcessed: biologicalArchive.archivedCount > 0 ? biologicalArchive : undefined,
         },
         missionExpiry,
         ledger: shiftLedger[shift.shiftId],

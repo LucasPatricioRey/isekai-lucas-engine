@@ -87,8 +87,9 @@ function buildTimeAndLocationLines(changes = {}) {
     lines.push(`Tiempo: ${dayPrefix}${changes.time.before || "?"}\u2192${daySuffix}${changes.time.after || "?"}.`);
   }
   if (changes.location?.before || changes.location?.after) {
+    const before = changes.location.beforeName || changes.location.before || "?";
     const after = changes.location.locationName || changes.location.after || "?";
-    lines.push(`Traslado: ${changes.location.before || "?"}\u2192${after}.`);
+    lines.push(`Traslado: ${before}\u2192${after}.`);
   }
   return lines;
 }
@@ -232,8 +233,25 @@ function formatSituationSentence(value = "", fallback = "turno actualizado") {
 function buildStateLines({ gameState = {}, location = null, nearbyNpcs = [], activeEvents = [], actionSummary = "" } = {}) {
   const status = gameState.lucasStatus || {};
   const date = formatDiegeticDate(gameState.diegeticDate || {});
-  const npcNames = uniqueLines(nearbyNpcs.map((npc) => npc.name || npc.npcId));
+  const visibleNpcNames = uniqueLines(
+    nearbyNpcs
+      .filter((npc) => !npc.presenceScope || npc.presenceScope === "visible")
+      .map((npc) => npc.name || npc.npcId)
+  );
+  const nearbyNpcNames = uniqueLines(
+    nearbyNpcs
+      .filter((npc) => npc.presenceScope && npc.presenceScope !== "visible")
+      .map((npc) => npc.name || npc.npcId)
+  );
   const activeEventNames = uniqueLines(activeEvents.map((event) => event.title || event.eventId));
+  const npcPresenceText = (() => {
+    if (visibleNpcNames.length > 0 && nearbyNpcNames.length > 0) {
+      return `${visibleNpcNames.join(", ")}; cerca/probables: ${nearbyNpcNames.join(", ")}`;
+    }
+    if (visibleNpcNames.length > 0) return visibleNpcNames.join(", ");
+    if (nearbyNpcNames.length > 0) return `cerca/probables: ${nearbyNpcNames.join(", ")}`;
+    return "ninguno confirmado por el bundle";
+  })();
 
   return [
     `D\u00eda: ${gameState.currentDay ?? "?"}\u2014${date}`,
@@ -247,7 +265,7 @@ function buildStateLines({ gameState = {}, location = null, nearbyNpcs = [], act
     `Dinero: ${formatCopper(gameState.moneyCopper || 0)}`,
     `Evento activo: ${activeEventNames.length > 0 ? activeEventNames.join(", ") : "ninguno"}`,
     `Situaci\u00f3n: ${formatSituationSentence(actionSummary)}`,
-    `NPCs visibles/cerca: ${npcNames.length > 0 ? npcNames.join(", ") : "ninguno confirmado por el bundle"}.`,
+    `NPCs visibles/cerca: ${npcPresenceText}.`,
   ];
 }
 

@@ -57,7 +57,7 @@ function buildInventoryDisplayLines(change = {}) {
 }
 
 function buildShopStockDisplayLines(change = {}) {
-  const label = `${change.shopId || "shop"}/${change.itemId || "item"}`;
+  const label = `${change.shopName || change.shopId || "shop"}/${change.itemName || change.itemId || "item"}`;
   const lines = [];
   const beforeQty = numberOrZero(change.before?.quantity);
   const afterQty = numberOrZero(change.after?.quantity);

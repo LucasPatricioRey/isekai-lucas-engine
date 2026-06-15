@@ -245,3 +245,54 @@ test("normalizes situation punctuation in HUD state lines", () => {
   assert.ok(bundle.stateLines.includes("Situaci\u00f3n: Lucas completo el entrenamiento real."));
   assert.equal(bundle.stateLines.some((line) => line.includes("real..")), false);
 });
+
+test("uses human location names and classifies nearby NPCs in HUD", () => {
+  const bundle = buildTurnDisplayBundle({
+    changes: {
+      time: {
+        before: "10:05",
+        after: "10:30",
+      },
+      location: {
+        before: "loc_hoshimori_guild_patio",
+        beforeName: "Patio del gremio",
+        after: "loc_hoshimori_grulla_azul",
+        locationName: "La Grulla Azul",
+      },
+    },
+    gameState: {
+      currentDay: 19,
+      diegeticDate: {
+        day: 19,
+        month: "Roc\u00edo Nuevo",
+        year: 1,
+      },
+      block: "Ma\u00f1ana",
+      time: "10:30",
+      locationId: "loc_hoshimori_grulla_azul",
+      moneyCopper: 1463,
+      lucasStatus: {
+        life: { current: 100, max: 100 },
+        satiety: { current: 76, max: 100, label: "satisfecho" },
+        energy: { current: 77, max: 100, label: "rendimiento normal" },
+        mp: { current: 190, max: 200 },
+      },
+    },
+    location: {
+      locationId: "loc_hoshimori_grulla_azul",
+      name: "La Grulla Azul",
+    },
+    nearbyNpcs: [
+      { npcId: "npc_fern", name: "Fern", presenceScope: "visible" },
+      { npcId: "npc_joren_pell", name: "Joren Pell", presenceScope: "visible" },
+      { npcId: "npc_yara_mils", name: "Yara Mils", presenceScope: "nearby" },
+    ],
+    actionSummary: "Lucas vuelve a La Grulla Azul.",
+  });
+
+  assert.ok(bundle.changeLines.includes("Traslado: Patio del gremio\u2192La Grulla Azul."));
+  assert.equal(bundle.changeLines.some((line) => line.includes("loc_hoshimori_guild_patio")), false);
+  assert.ok(
+    bundle.stateLines.includes("NPCs visibles/cerca: Fern, Joren Pell; cerca/probables: Yara Mils.")
+  );
+});

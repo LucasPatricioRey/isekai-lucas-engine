@@ -240,6 +240,7 @@ function main() {
     "npcRelationshipPatches",
     "gameStatePatch",
     "activityCost",
+    "activitySegments",
     "biologicalCostExemptReason",
     "actionFamily",
     "dryRun",

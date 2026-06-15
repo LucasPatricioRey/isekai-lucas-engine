@@ -1,5 +1,6 @@
 const { after, before, describe, it } = require("node:test");
 
+const BiologicalAccumulationArchive = require("../models/BiologicalAccumulationArchive");
 const Checkpoint = require("../models/Checkpoint");
 const CombatEncounter = require("../models/CombatEncounter");
 const Commitment = require("../models/Commitment");
@@ -295,6 +296,7 @@ async function createIsolatedGameState() {
 
 async function cleanupIsolatedState() {
   if (tempGameId) await GameState.deleteOne({ gameId: tempGameId });
+  if (tempGameId) await BiologicalAccumulationArchive.deleteMany({ gameId: tempGameId });
   if (tempGameId) await Checkpoint.deleteMany({ gameId: tempGameId });
   if (tempGameId) await CombatEncounter.deleteMany({ gameId: tempGameId });
   if (tempGameId) await Commitment.deleteMany({ gameId: tempGameId });
@@ -796,8 +798,13 @@ describe("turn hardening coverage", () => {
     const coveredAccumulation = stateAfterComplete.biologicalClock.pendingAccumulations.find(
       (entry) => entry.accumulationId === "bioacc_test_shift_overlap"
     );
-    assert.equal(coveredAccumulation.status, "processed");
-    assert.equal(coveredAccumulation.processedMode, "covered_by_complete_job_shift");
+    assert.equal(coveredAccumulation, undefined);
+    const archivedCoveredAccumulation = await BiologicalAccumulationArchive.findOne({
+      gameId: tempGameId,
+      accumulationId: "bioacc_test_shift_overlap",
+    }).lean();
+    assert.equal(archivedCoveredAccumulation.status, "processed");
+    assert.equal(archivedCoveredAccumulation.raw.processedMode, "covered_by_complete_job_shift");
     const expiredMission = await Mission.findOne({ missionId: tempExpiredMissionId }).lean();
     assert.equal(expiredMission.status, "expired");
     const shiftCheckpoint = await Checkpoint.findOne({

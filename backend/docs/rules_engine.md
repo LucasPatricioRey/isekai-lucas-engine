@@ -214,7 +214,7 @@ Uso obligatorio:
 - si hay duda de EXP, novedad, riesgo real o anti-farmeo, usar `ruleId=skills.exp_evaluation_antifarm`;
 - si hay cambio social, usar `ruleId=format.social_changes` o copiar `changes.npcRelationships[].displayLines`;
 - si hay confianza, familiaridad, respeto, deuda, romance, contacto fisico o consentimiento, usar `ruleId=social.relationship_logic` y/o `ruleId=social.romance_consent_contact`;
-- si hay compra, venta, comida, stock, propiedad o loot, usar `ruleId=economy.trade_stock_property`;
+- si hay compra, venta, comida, stock, propiedad o loot, usar `ruleId=economy.trade_stock_property`; para compra simple tambien existe el alias `ruleId=economy.stock_purchase`;
 - si hay viaje, ruta larga, peligro o friccion de mundo, usar `ruleId=travel.world_friction_preview`;
 - si hay mision, registro de gremio, MG o recompensa, usar `ruleId=missions.guild_rewards_registration`;
 - si hay turno laboral, comida de contrato, tardanza o ausencia, usar `ruleId=jobs.attendance_consequences`;
