@@ -89,7 +89,9 @@ function buildTimeAndLocationLines(changes = {}) {
   if (changes.location?.before || changes.location?.after) {
     const before = changes.location.beforeName || changes.location.before || "?";
     const after = changes.location.locationName || changes.location.after || "?";
-    lines.push(`Traslado: ${before}\u2192${after}.`);
+    if (before !== after && changes.location.before !== changes.location.after) {
+      lines.push(`Traslado: ${before}\u2192${after}.`);
+    }
   }
   return lines;
 }

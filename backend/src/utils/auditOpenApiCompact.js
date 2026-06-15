@@ -318,6 +318,12 @@ function main() {
   );
   assertCondition(
     issues,
+    "compact JobContractPatchItem supports record_work_segment",
+    compact.components?.schemas?.JobContractPatchItem?.properties?.op?.enum?.includes("record_work_segment") &&
+      Boolean(compact.components?.schemas?.JobContractPatchItem?.properties?.minutes)
+  );
+  assertCondition(
+    issues,
     "full has CommitmentPatchItem",
     Boolean(full.components?.schemas?.CommitmentPatchItem)
   );
@@ -490,6 +496,22 @@ function main() {
     issues,
     "compact actionFamily supports report",
     compact.components?.schemas?.ApplyTurnRequest?.properties?.actionFamily?.enum?.includes("report")
+  );
+  assertCondition(
+    issues,
+    "compact resolveTurn actionFamily aligns with job_shift",
+    compact.components?.schemas?.ResolveTurnRequest?.properties?.actionFamily?.enum?.includes("job_shift") &&
+      !compact.components?.schemas?.ResolveTurnRequest?.properties?.actionFamily?.enum?.includes("work")
+  );
+  assertCondition(
+    issues,
+    "compact resolveTurn supports work_segment",
+    compact.components?.schemas?.ResolveTurnStep?.properties?.type?.enum?.includes("work_segment")
+  );
+  assertCondition(
+    issues,
+    "compact resolveTurn work_segment supports intensity",
+    Boolean(compact.components?.schemas?.ResolveTurnStep?.properties?.intensity)
   );
   assertCondition(
     issues,

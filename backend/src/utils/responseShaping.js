@@ -1677,6 +1677,18 @@ function buildRuleLookupContract({
     mustSearchBeforeFinalRuleIds: CORE_RULE_LOOKUP_IDS,
     mustSearchBeforeMutationRuleIds: mustSearchRuleIds,
     searchBatches,
+    turnRoutingPolicy: {
+      pureQuestionOrTalk: "read/no mutation",
+      simpleTimedActivity: "resolveTurn.sequence[type=activity]",
+      travelRestWaitCheck: "resolveTurn.sequence[type=travel/rest/wait/environment_check]",
+      partialWork: "resolveTurn actionFamily=job_shift sequence[type=work_segment]",
+      attendanceOrLateness: "resolveTurn sequence[type=job_attendance/job_late]",
+      fullJobShift: "completeJobShift",
+      economyStockInventory: "applyTurn/economy tools",
+      magicPractice: "magic preview/applyTurn",
+      missionOrEvidence: "missionPatch/evidencePatches",
+      combat: "combat Action",
+    },
     preFinalResponseOrder: "getCompactContext(player_scene)->contracts->searchDocs core/active->scene+HUD",
     preMutationOrder: "getCompactContext->searchDocs->preview/details->mutate->reread->displayBundle/HUD",
   };

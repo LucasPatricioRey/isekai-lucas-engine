@@ -779,7 +779,10 @@ function buildApplyTurnAutoCheckpointPlan(changes = {}) {
     addAutoCheckpointTrigger(triggers, "major_social", "avance social significativo");
   }
 
-  if (Array.isArray(changes.jobContracts) && changes.jobContracts.length > 0) {
+  const checkpointWorthyJobContractChange =
+    Array.isArray(changes.jobContracts) &&
+    changes.jobContracts.some((entry) => entry?.op !== "record_work_segment");
+  if (checkpointWorthyJobContractChange) {
     addAutoCheckpointTrigger(triggers, "job_contract", "cambio formal de contrato laboral");
   }
 
@@ -1877,13 +1880,15 @@ async function previewApplyTurnDryRun({ body = {}, gameId, clientTurnId = "", in
       });
     }
 
-    gameState.locationId = body.gameStatePatch.locationId;
-    changes.location = {
-      before,
-      beforeName: beforeLocation?.name || before,
-      after: gameState.locationId,
-      locationName: location.name,
-    };
+    if (body.gameStatePatch.locationId !== before) {
+      gameState.locationId = body.gameStatePatch.locationId;
+      changes.location = {
+        before,
+        beforeName: beforeLocation?.name || before,
+        after: gameState.locationId,
+        locationName: location.name,
+      };
+    }
   }
 
   if (body.moneyPatch) {
@@ -4876,8 +4881,46 @@ function getClosedHourBlocks({ fromDay = 1, from, toDay = fromDay, to }) {
   return blocks;
 }
 
+function blockEndAbsoluteMinutes({ day, blockStart, blockEnd }) {
+  const start = toAbsoluteMinutes(day || 1, blockStart);
+  let end = toAbsoluteMinutes(day || 1, blockEnd);
+  if (end <= start) end += 1440;
+  return end;
+}
+
+function mergeClosedHourBlocks(blocks = []) {
+  const byKey = new Map();
+  for (const block of blocks) {
+    if (!block?.blockStart || !block?.blockEnd) continue;
+    const key = `${block.day || 1}:${block.blockStart}:${block.blockEnd}`;
+    byKey.set(key, {
+      day: block.day || 1,
+      blockStart: block.blockStart,
+      blockEnd: block.blockEnd,
+    });
+  }
+  return Array.from(byKey.values()).sort((left, right) => {
+    const leftAbs = blockEndAbsoluteMinutes(left);
+    const rightAbs = blockEndAbsoluteMinutes(right);
+    return leftAbs - rightAbs;
+  });
+}
+
 function isUnprocessedAccumulation(entry) {
   return entry && entry.status !== "processed" && !entry.processedAt;
+}
+
+function getClosedPendingAccumulationBlocks(gameState, { toDay, to }) {
+  const clock = ensureBiologicalClock(gameState);
+  const toAbs = toAbsoluteMinutes(toDay || gameState.currentDay, to);
+  return clock.pendingAccumulations
+    .filter(isUnprocessedAccumulation)
+    .filter((entry) => blockEndAbsoluteMinutes(entry) <= toAbs)
+    .map((entry) => ({
+      day: entry.day || gameState.currentDay,
+      blockStart: entry.blockStart,
+      blockEnd: entry.blockEnd,
+    }));
 }
 
 function getPendingAccumulationsForBlock(gameState, { day, blockStart, blockEnd }) {
@@ -5034,7 +5077,10 @@ function applyBiologicalClockForTurn(gameState, body, turnTimeAdvance) {
     activityCost: body.activityCost,
     activitySegments: body.activitySegments,
   });
-  const closedBlocks = getClosedHourBlocks({ fromDay, from, toDay, to });
+  const closedBlocks = mergeClosedHourBlocks([
+    ...getClosedPendingAccumulationBlocks(gameState, { toDay, to }),
+    ...getClosedHourBlocks({ fromDay, from, toDay, to }),
+  ]);
   const pendingCreated = [];
   const processedBlocks = [];
 
@@ -5383,13 +5429,15 @@ async function applyTurn(req, res) {
           });
         }
 
-        gameState.locationId = body.gameStatePatch.locationId;
-        changes.location = {
-          before,
-          beforeName: beforeLocation?.name || before,
-          after: gameState.locationId,
-          locationName: location.name,
-        };
+        if (body.gameStatePatch.locationId !== before) {
+          gameState.locationId = body.gameStatePatch.locationId;
+          changes.location = {
+            before,
+            beforeName: beforeLocation?.name || before,
+            after: gameState.locationId,
+            locationName: location.name,
+          };
+        }
       }
 
       if (body.gameStatePatch?.formalGuildRegistrationPending !== undefined) {

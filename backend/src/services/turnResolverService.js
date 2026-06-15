@@ -2,6 +2,7 @@ const GameState = require("../models/GameState");
 const JobContract = require("../models/JobContract");
 const Location = require("../models/Location");
 const Npc = require("../models/Npc");
+const { getShiftScheduleStatus } = require("./jobScheduleService");
 const {
   addMinutesToDayTime,
   isValidTime,
@@ -12,6 +13,23 @@ const {
 
 const DEFAULT_GAME_ID = "isekai_lucas_main";
 const DEFAULT_CHARACTER_ID = "char_lucas";
+const SUPPORTED_STEP_TYPES = [
+  "activity",
+  "rest",
+  "wait",
+  "environment_check",
+  "travel",
+  "job_attendance",
+  "job_late",
+  "work_segment",
+  "npc_memory",
+  "apology",
+];
+const ACTION_FAMILY_ALIASES = {
+  work: "job_shift",
+  job: "job_shift",
+  other: "general_action",
+};
 
 function resolverError(message, details = {}, statusCode = 400) {
   const error = new Error(message);
@@ -45,10 +63,19 @@ function numberOrNull(value) {
 }
 
 function normalizeStepType(step = {}) {
-  return String(step.type || step.kind || step.action || "")
+  const normalized = String(step.type || step.kind || step.action || "")
     .trim()
     .toLowerCase()
     .replace(/[-\s]+/g, "_");
+  if (["partial_work", "work", "work_partial", "trabajo_parcial", "segmento_trabajo"].includes(normalized)) {
+    return "work_segment";
+  }
+  return normalized;
+}
+
+function normalizeResolverActionFamily(value = "") {
+  const normalized = String(value || "").trim().toLowerCase();
+  return ACTION_FAMILY_ALIASES[normalized] || normalized;
 }
 
 function normalizePace(value = "") {
@@ -170,7 +197,7 @@ function resolveSequence(body) {
   const sequence = body.sequence || body.intent?.sequence || body.turn?.sequence;
   if (!Array.isArray(sequence) || sequence.length === 0) {
     throw resolverError("resolveTurn requiere sequence[] con pasos estructurados.", {
-      supportedTypes: ["activity", "rest", "travel", "job_attendance", "npc_memory"],
+      supportedTypes: SUPPORTED_STEP_TYPES,
     });
   }
   if (sequence.length > 8) {
@@ -239,7 +266,7 @@ async function addJobAttendancePatch({
   gameState,
   cursor,
   step,
-  jobContractPatchRef,
+  jobContractPatches,
   warnings,
   resolverSteps,
 }) {
@@ -288,7 +315,7 @@ async function addJobAttendancePatch({
     body.intent?.summary ||
     `Llegada tarde calculada por resolveTurn: ${minutesLate} min tarde a ${shift.name}.`;
 
-  jobContractPatchRef.value = {
+  jobContractPatches.push({
     op: "record_shift_late",
     contractId: contract.contractId,
     shiftId: shift.shiftId,
@@ -302,7 +329,7 @@ async function addJobAttendancePatch({
       step.consequenceSummary ||
       `Lucas llega ${minutesLate} min tarde a ${shift.name}${targetNpcName ? ` y se disculpa ante ${targetNpcName}` : ""}.`,
     reason,
-  };
+  });
 
   resolverSteps.push({
     type: "job_attendance",
@@ -315,6 +342,193 @@ async function addJobAttendancePatch({
     targetNpcName,
     consequenceLevel,
   });
+}
+
+function normalizeWorkIntensity(value = "") {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[-\s]+/g, "_");
+
+  if (["fuerte", "intenso", "heavy", "hard", "alta"].includes(normalized)) return "strong";
+  if (["suave", "ligero", "light", "baja"].includes(normalized)) return "light";
+  return "normal";
+}
+
+function categoryForWorkSegment(step = {}, shift = {}) {
+  if (step.category) return step.category;
+  const intensity = normalizeWorkIntensity(step.intensity || step.pace || "");
+  if (intensity === "strong") return "trabajo_fuerte";
+  if (intensity === "light") return "actividad_normal";
+  return shift.activityCategory || "trabajo_normal";
+}
+
+function shiftWindowForDay(day, shift) {
+  const start = absoluteMinutes(day, shift.startTime);
+  let end = absoluteMinutes(day, shift.endTime);
+  if (end <= start) end += 1440;
+  return { start, end };
+}
+
+function chooseShiftForWorkSegment(contract, { day, time, shiftId = "" }) {
+  const shifts = contract?.shifts || [];
+  const current = absoluteMinutes(day, time);
+  const candidates = shifts
+    .filter((shift) => shift.status !== "inactive" && shift.status !== "ended")
+    .filter((shift) => !shiftId || shift.shiftId === shiftId)
+    .map((shift) => {
+      const window = shiftWindowForDay(day, shift);
+      return { shift, ...window };
+    })
+    .filter((entry) => current >= entry.start && current < entry.end)
+    .sort((left, right) => left.end - right.end);
+
+  return candidates[0] || null;
+}
+
+async function addWorkSegmentPatch({
+  body,
+  gameState,
+  cursor,
+  step,
+  activitySegments,
+  jobContractPatches,
+  warnings,
+  resolverSteps,
+  actionSummary,
+}) {
+  const contractId = step.contractId || body.intent?.jobContractId || "";
+  const contract = await JobContract.findOne({
+    ...(contractId ? { contractId } : {}),
+    characterId: gameState.characterId || DEFAULT_CHARACTER_ID,
+    status: "active",
+  })
+    .sort({ startDay: -1 })
+    .lean();
+
+  if (!contract) {
+    throw resolverError("work_segment requiere un contrato laboral activo.", {
+      errorCode: "NO_ACTIVE_JOB_CONTRACT",
+      suggestedPayload: {
+        actionFamily: "job_shift",
+        sequence: [
+          {
+            type: "activity",
+            minutes: resolveMinutes(step),
+            category: step.category || "trabajo_normal",
+            reason: step.reason || actionSummary,
+          },
+        ],
+      },
+    });
+  }
+
+  const chosen = chooseShiftForWorkSegment(contract, {
+    day: cursor.day,
+    time: cursor.time,
+    shiftId: step.shiftId || body.intent?.shiftId || "",
+  });
+
+  if (!chosen) {
+    throw resolverError("work_segment requiere estar dentro de un turno laboral activo.", {
+      errorCode: "NO_ACTIVE_JOB_SHIFT_AT_TIME",
+      currentDay: cursor.day,
+      currentTime: cursor.time,
+      contractId: contract.contractId,
+      allowedShiftIds: (contract.shifts || []).map((shift) => shift.shiftId),
+      suggestedPayload: {
+        actionFamily: "job_shift",
+        sequence: [
+          {
+            type: "job_attendance",
+            contractId: contract.contractId,
+            shiftId: step.shiftId || "",
+          },
+        ],
+      },
+    });
+  }
+
+  const scheduleStatus = getShiftScheduleStatus(contract, chosen.shift, cursor.day);
+  if (!scheduleStatus.active) {
+    throw resolverError("work_segment apunta a un turno inactivo.", {
+      errorCode: "INACTIVE_JOB_SHIFT",
+      contractId: contract.contractId,
+      shiftId: chosen.shift.shiftId,
+      status: scheduleStatus.status,
+      reason: scheduleStatus.reason,
+    });
+  }
+
+  const minutes = resolveMinutes(step);
+  const current = absoluteMinutes(cursor.day, cursor.time);
+  const maxMinutes = chosen.end - current;
+  if (minutes > maxMinutes && !step.allowTruncate) {
+    throw resolverError("work_segment excede el tiempo restante del turno.", {
+      errorCode: "WORK_SEGMENT_EXCEEDS_SHIFT",
+      requestedMinutes: minutes,
+      maxMinutes,
+      contractId: contract.contractId,
+      shiftId: chosen.shift.shiftId,
+      suggestedPayload: {
+        actionFamily: "job_shift",
+        sequence: [
+          {
+            type: "work_segment",
+            minutes: maxMinutes,
+            intensity: step.intensity || "normal",
+            contractId: contract.contractId,
+            shiftId: chosen.shift.shiftId,
+          },
+        ],
+      },
+    });
+  }
+
+  const appliedMinutes = Math.min(minutes, maxMinutes);
+  const category = categoryForWorkSegment(step, chosen.shift);
+  const intensity = normalizeWorkIntensity(step.intensity || "");
+  const before = { day: cursor.day, time: cursor.time };
+  const after = addActivitySegment({
+    activitySegments,
+    cursor,
+    step: { ...step, minutes: appliedMinutes },
+    category,
+    reason: step.reason || step.summary || actionSummary,
+  });
+  cursor.day = after.day;
+  cursor.time = after.time;
+
+  jobContractPatches.push({
+    op: "record_work_segment",
+    contractId: contract.contractId,
+    shiftId: chosen.shift.shiftId,
+    day: before.day,
+    startTime: before.time,
+    endTime: after.time,
+    minutes: appliedMinutes,
+    category,
+    intensity,
+    reason: step.reason || actionSummary,
+    source: "resolveTurn.work_segment",
+  });
+
+  resolverSteps.push({
+    index: step.index,
+    type: "work_segment",
+    category,
+    intensity,
+    minutes: appliedMinutes,
+    from: before,
+    to: after,
+    contractId: contract.contractId,
+    shiftId: chosen.shift.shiftId,
+    shiftName: chosen.shift.name,
+  });
+
+  if (appliedMinutes < minutes) {
+    warnings.push(`work_segment truncado a ${appliedMinutes} min por fin de turno.`);
+  }
 }
 
 function buildNpcMemoryPatch({ body, gameState, cursor, step }) {
@@ -372,7 +586,7 @@ async function buildResolveTurnPayload(body = {}, { forceDryRun = null } = {}) {
   const warnings = [];
   const resolverSteps = [];
   const routePreviews = [];
-  const jobContractPatchRef = { value: null };
+  const jobContractPatches = [];
 
   for (const [index, step] of sequence.entries()) {
     const type = normalizeStepType(step);
@@ -504,9 +718,24 @@ async function buildResolveTurnPayload(body = {}, { forceDryRun = null } = {}) {
         gameState,
         cursor,
         step,
-        jobContractPatchRef,
+        jobContractPatches,
         warnings,
         resolverSteps,
+      });
+      continue;
+    }
+
+    if (type === "work_segment") {
+      await addWorkSegmentPatch({
+        body,
+        gameState,
+        cursor,
+        step: { ...step, index },
+        activitySegments,
+        jobContractPatches,
+        warnings,
+        resolverSteps,
+        actionSummary,
       });
       continue;
     }
@@ -538,7 +767,7 @@ async function buildResolveTurnPayload(body = {}, { forceDryRun = null } = {}) {
     throw resolverError("Tipo de paso no soportado por resolveTurn.", {
       index,
       type,
-      supportedTypes: ["activity", "rest", "travel", "job_attendance", "npc_memory", "apology"],
+      supportedTypes: SUPPORTED_STEP_TYPES,
     });
   }
 
@@ -553,14 +782,15 @@ async function buildResolveTurnPayload(body = {}, { forceDryRun = null } = {}) {
   }
 
   const locationNames = await resolveLocationNames([start.locationId, cursor.locationId]);
+  const hasJobStep = resolverSteps.some((step) => ["job_attendance", "work_segment"].includes(step.type));
   const actionFamily =
-    body.actionFamily ||
-    (resolverSteps.some((step) => step.type === "job_attendance") ? "travel" : resolverSteps.some((step) => step.type === "travel") ? "travel" : "social");
+    normalizeResolverActionFamily(body.actionFamily) ||
+    (hasJobStep ? "job_shift" : resolverSteps.some((step) => step.type === "travel") ? "travel" : "social");
   const eventType = body.eventLogType || `resolve_${resolverSteps.map((step) => step.type).join("_")}`.slice(0, 80);
   const involvedNpcIds = unique([
     ...(body.involvedNpcIds || []),
     ...npcMemoryPatches.map((patch) => patch.npcId),
-    jobContractPatchRef.value?.targetNpcId,
+    ...jobContractPatches.map((patch) => patch.targetNpcId),
     body.intent?.targetNpcId,
   ]);
   const eventLog = {
@@ -591,14 +821,17 @@ async function buildResolveTurnPayload(body = {}, { forceDryRun = null } = {}) {
       to: cursor.time,
     },
     activitySegments,
-    gameStatePatch: {
-      locationId: cursor.locationId,
-    },
     eventLogs: [eventLog],
   };
 
+  if (cursor.locationId !== start.locationId) {
+    applyTurnPayload.gameStatePatch = {
+      locationId: cursor.locationId,
+    };
+  }
+
   if (skillPatch.length > 0) applyTurnPayload.skillPatch = skillPatch;
-  if (jobContractPatchRef.value) applyTurnPayload.jobContractPatch = jobContractPatchRef.value;
+  if (jobContractPatches.length > 0) applyTurnPayload.jobContractPatch = jobContractPatches;
   if (npcMemoryPatches.length > 0) applyTurnPayload.npcMemoryPatches = npcMemoryPatches;
 
   if (body.applyTurnOverrides && typeof body.applyTurnOverrides === "object") {
@@ -634,7 +867,8 @@ async function buildResolveTurnPayload(body = {}, { forceDryRun = null } = {}) {
       generated: {
         activitySegments,
         skillPatchCount: skillPatch.length,
-        hasJobContractPatch: Boolean(jobContractPatchRef.value),
+        hasJobContractPatch: jobContractPatches.length > 0,
+        jobContractPatchCount: jobContractPatches.length,
         npcMemoryPatchCount: npcMemoryPatches.length,
       },
       warnings: unique(warnings),

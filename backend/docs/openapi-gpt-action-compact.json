@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Compact",
-    "version": "2.20.0",
-    "description": "Schema compacto con resolveTurn/previewResolveTurn para acciones compuestas en una sola Action y ApplyTurn con dryRun/activitySegments. resolveTurn arma viaje, descanso, actividad, tardanza laboral, memoria NPC y EXP fisica conservadora desde sequence[]; devuelve resolverPlan y displayBundle. Checkpoints game_scoped ahora evitan snapshots globales pesados. Mongo/backend siguen como canon; searchDocs expone rule cards criticas; applyTurn/completeJobShift mantienen HUD canonico."
+    "version": "2.21.0",
+    "description": "Schema compacto con resolveTurn/previewResolveTurn para acciones compuestas en una sola Action y ApplyTurn con dryRun/activitySegments. resolveTurn arma viaje, descanso, actividad, work_segment/trabajo parcial, tardanza laboral, memoria NPC y EXP fisica conservadora desde sequence[]; devuelve resolverPlan y displayBundle. Checkpoints game_scoped evitan snapshots globales pesados y los traslados nulos no se renderizan. Mongo/backend siguen como canon; searchDocs expone rule cards criticas; applyTurn/completeJobShift mantienen HUD canonico."
   },
   "servers": [
     {
@@ -871,7 +871,8 @@
               "create_contract",
               "update_contract_status",
               "record_shift_absence",
-              "record_shift_late"
+              "record_shift_late",
+              "record_work_segment"
             ],
             "default": "update_shift_schedule"
           },
@@ -1120,6 +1121,31 @@
           "time": {
             "type": "string",
             "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          },
+          "startTime": {
+            "type": "string",
+            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          },
+          "endTime": {
+            "type": "string",
+            "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          },
+          "minutes": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Minutos trabajados para record_work_segment; no paga ni cierra turno."
+          },
+          "category": {
+            "type": "string",
+            "description": "Categoria biologica del tramo laboral parcial, normalmente trabajo_normal."
+          },
+          "intensity": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "light",
+              "strong"
+            ]
           },
           "minutesLate": {
             "type": "integer",
@@ -2473,10 +2499,11 @@
               "travel",
               "job_attendance",
               "job_late",
+              "work_segment",
               "npc_memory",
               "apology"
             ],
-            "description": "Paso estructurado que el backend transforma en applyTurn. Usar travel/rest/job_attendance/apology para turnos compuestos."
+            "description": "Paso estructurado que el backend transforma en applyTurn. Usar travel/rest/activity para tiempo general, work_segment para trabajo parcial dentro de turno activo, job_attendance/job_late para tardanza/asistencia, apology/npc_memory para memoria social simple."
           },
           "minutes": {
             "type": "integer",
@@ -2485,7 +2512,18 @@
           },
           "category": {
             "type": "string",
-            "description": "Categoria biologica opcional para activity/rest."
+            "description": "Categoria biologica opcional para activity/rest/work_segment. Para trabajo parcial normalmente omitir y usar intensity."
+          },
+          "intensity": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "light",
+              "strong",
+              "suave",
+              "fuerte"
+            ],
+            "description": "Intensidad para work_segment: normal=>trabajo_normal, light/suave=>actividad_normal, strong/fuerte=>trabajo_fuerte."
           },
           "reason": {
             "type": "string",
@@ -2671,17 +2709,21 @@
           "actionFamily": {
             "type": "string",
             "enum": [
-              "travel",
-              "social",
-              "physical_training",
-              "magic_practice",
-              "mission",
+              "combat",
               "investigation",
-              "report",
-              "work",
+              "job_shift",
+              "magic_practice",
+              "meal",
+              "mission",
+              "physical_training",
               "rest",
-              "other"
-            ]
+              "report",
+              "shopping",
+              "social",
+              "travel",
+              "general_action"
+            ],
+            "description": "Familia narrativa alineada con applyTurn. Para trabajo parcial usar job_shift + sequence[type=work_segment]. Alias legacy work/other se aceptan internamente pero no se recomiendan."
           },
           "actionSummary": {
             "type": "string",

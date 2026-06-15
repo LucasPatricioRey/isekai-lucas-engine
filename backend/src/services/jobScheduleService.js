@@ -28,6 +28,9 @@ function ensureFlags(contract) {
   if (!contract.flags.attendance || typeof contract.flags.attendance !== "object") {
     contract.flags.attendance = {};
   }
+  if (!contract.flags.workLedger || typeof contract.flags.workLedger !== "object") {
+    contract.flags.workLedger = {};
+  }
   if (!Array.isArray(contract.flags.statusHistory)) {
     contract.flags.statusHistory = [];
   }
@@ -263,8 +266,11 @@ function summarizeContractSchedule(contract, gameState = null) {
   if (!contract) return null;
   const day = Number(gameState?.currentDay || 1);
   const attendanceEntries = summarizeAttendanceEntries(contract);
+  const workEntries = summarizeWorkLedgerEntries(contract);
   const todayAttendance = attendanceEntries.filter((entry) => entry.day === day);
+  const todayWork = workEntries.filter((entry) => entry.day === day);
   const attendanceByShiftToday = new Map(todayAttendance.map((entry) => [entry.shiftId, entry]));
+  const workByShiftToday = new Map(todayWork.map((entry) => [entry.shiftId, entry]));
   const shifts = (toPlain(contract).shifts || []).map((shift) => {
     const scheduleStatus = getShiftScheduleStatus(contract, shift, day);
     return {
@@ -280,6 +286,7 @@ function summarizeContractSchedule(contract, gameState = null) {
       inactiveFromDay: scheduleStatus.schedule.inactiveFromDay,
       inactiveReason: scheduleStatus.schedule.inactiveReason || scheduleStatus.schedule.reason || "",
       attendanceToday: attendanceByShiftToday.get(shift.shiftId) || null,
+      workToday: workByShiftToday.get(shift.shiftId) || null,
     };
   });
 
@@ -302,6 +309,10 @@ function summarizeContractSchedule(contract, gameState = null) {
       today: todayAttendance,
       recent: attendanceEntries.slice(0, 6),
       unresolved: attendanceEntries.filter((entry) => entry.requiresFollowUp && !entry.consequenceApplied),
+    },
+    workLedger: {
+      today: todayWork,
+      recent: workEntries.slice(0, 6),
     },
   };
 }
@@ -334,6 +345,50 @@ function ensureAttendanceLedger(flags, day) {
     flags.attendance[key] = {};
   }
   return flags.attendance[key];
+}
+
+function ensureWorkLedger(flags, day) {
+  const key = dayKey(day);
+  if (!flags.workLedger[key] || typeof flags.workLedger[key] !== "object") {
+    flags.workLedger[key] = {};
+  }
+  return flags.workLedger[key];
+}
+
+function summarizeWorkLedgerEntries(contract) {
+  const plainContract = toPlain(contract) || {};
+  const flags = plainContract.flags || {};
+  const workLedger = flags.workLedger || {};
+  const shiftById = new Map((plainContract.shifts || []).map((shift) => [shift.shiftId, shift]));
+  const entries = [];
+
+  for (const [rawDayKey, dayEntries] of Object.entries(workLedger)) {
+    if (!dayEntries || typeof dayEntries !== "object") continue;
+    const ledgerDay = Number(String(rawDayKey).replace(/^day_/, "")) || null;
+
+    for (const [shiftId, entry] of Object.entries(dayEntries)) {
+      if (!entry || typeof entry !== "object") continue;
+      const shift = shiftById.get(entry.shiftId || shiftId) || {};
+      entries.push({
+        shiftId: entry.shiftId || shiftId,
+        shiftName: shift.name || entry.shiftName || entry.shiftId || shiftId,
+        day: Number(entry.day || ledgerDay || 1),
+        totalMinutes: Number(entry.totalMinutes) || 0,
+        category: entry.category || shift.activityCategory || "trabajo_normal",
+        intensity: entry.intensity || "normal",
+        segmentCount: Array.isArray(entry.segments) ? entry.segments.length : 0,
+        lastStartTime: entry.lastStartTime || "",
+        lastEndTime: entry.lastEndTime || "",
+        reason: entry.reason || "",
+      });
+    }
+  }
+
+  return entries.sort((a, b) => {
+    const dayDiff = b.day - a.day;
+    if (dayDiff !== 0) return dayDiff;
+    return timeToMinutes(b.lastEndTime) - timeToMinutes(a.lastEndTime);
+  });
 }
 
 function summarizeAttendanceEntries(contract) {
@@ -608,6 +663,77 @@ async function recordShiftAttendance(gameState, patch, session = null) {
   };
 }
 
+async function recordWorkSegment(gameState, patch, session = null) {
+  if (!patch.contractId) throw validationError("jobContractPatch.contractId es obligatorio.");
+  if (!patch.shiftId) throw validationError("jobContractPatch.shiftId es obligatorio.");
+  if (!patch.reason || !String(patch.reason).trim()) {
+    throw validationError("jobContractPatch.reason es obligatorio.");
+  }
+  if (!Number.isInteger(patch.minutes) || patch.minutes <= 0) {
+    throw validationError("jobContractPatch.minutes debe ser entero mayor a cero para record_work_segment.");
+  }
+
+  const contract = await JobContract.findOne({
+    contractId: patch.contractId,
+    characterId: patch.characterId || gameState.characterId || "char_lucas",
+  }).session(session);
+  if (!contract) throw validationError(`No existe contrato laboral: ${patch.contractId}`);
+  const shift = (contract.shifts || []).find((entry) => entry.shiftId === patch.shiftId);
+  if (!shift) throw validationError(`No existe turno laboral con id: ${patch.shiftId}`);
+
+  const flags = ensureFlags(contract);
+  const workLedger = ensureWorkLedger(flags, patch.day || gameState.currentDay);
+  const existing = workLedger[patch.shiftId] || {
+    shiftId: patch.shiftId,
+    shiftName: shift.name,
+    day: patch.day || gameState.currentDay,
+    totalMinutes: 0,
+    category: patch.category || shift.activityCategory || "trabajo_normal",
+    intensity: patch.intensity || "normal",
+    segments: [],
+  };
+  const segment = {
+    startTime: patch.startTime || "",
+    endTime: patch.endTime || "",
+    minutes: patch.minutes,
+    category: patch.category || shift.activityCategory || "trabajo_normal",
+    intensity: patch.intensity || "normal",
+    sourceEventLogId: patch.sourceEventLogId || "",
+    reason: patch.reason,
+    createdAt: new Date(),
+  };
+
+  existing.shiftName = shift.name;
+  existing.day = patch.day || gameState.currentDay;
+  existing.totalMinutes = Math.max(0, Number(existing.totalMinutes) || 0) + patch.minutes;
+  existing.category = segment.category;
+  existing.intensity = segment.intensity;
+  existing.lastStartTime = segment.startTime;
+  existing.lastEndTime = segment.endTime;
+  existing.reason = patch.reason;
+  existing.segments = Array.isArray(existing.segments) ? existing.segments : [];
+  existing.segments.push(segment);
+  workLedger[patch.shiftId] = existing;
+
+  contract.markModified("flags");
+  await contract.save({ session });
+
+  return {
+    op: "record_work_segment",
+    contractId: contract.contractId,
+    shiftId: patch.shiftId,
+    work: {
+      shiftId: patch.shiftId,
+      shiftName: shift.name,
+      day: existing.day,
+      totalMinutes: existing.totalMinutes,
+      segment,
+    },
+    reason: patch.reason,
+    displayLines: [`Trabajo parcial: ${patch.minutes} min registrados para ${shift.name}.`],
+  };
+}
+
 async function applyJobContractPatches(gameState, patches, session = null) {
   if (patches === undefined || patches === null) return [];
   const patchList = Array.isArray(patches) ? patches : [patches];
@@ -625,6 +751,10 @@ async function applyJobContractPatches(gameState, patches, session = null) {
     }
     if (op === "record_shift_absence" || op === "record_shift_late") {
       results.push(await recordShiftAttendance(gameState, patch, session));
+      continue;
+    }
+    if (op === "record_work_segment") {
+      results.push(await recordWorkSegment(gameState, patch, session));
       continue;
     }
     if (op !== "update_shift_schedule") {
@@ -683,4 +813,5 @@ module.exports = {
   getShiftScheduleStatus,
   summarizeContractSchedule,
   summarizeAttendanceEntries,
+  summarizeWorkLedgerEntries,
 };

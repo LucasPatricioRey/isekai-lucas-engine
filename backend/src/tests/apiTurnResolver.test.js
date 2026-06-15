@@ -85,6 +85,52 @@ async function createResolverFixture() {
   });
 }
 
+async function createWorkSegmentFixture() {
+  await createResolverFixture();
+  await GameState.updateOne(
+    { gameId: tempGameId },
+    {
+      $set: {
+        currentDay: 19,
+        time: "15:00",
+        block: "Tarde",
+        locationId: "loc_hoshimori_grulla_azul",
+        "lucasStatus.satiety.current": 63,
+        "lucasStatus.satiety.label": "hambre leve",
+        "lucasStatus.energy.current": 65,
+        "lucasStatus.energy.label": "cansancio leve/energia media",
+        biologicalClock: {
+          lastProcessedTime: "15:00",
+          currentHourBlock: "15:00-16:00",
+          pendingAccumulation: [],
+          pendingAccumulations: [],
+        },
+      },
+    }
+  );
+  await JobContract.updateOne(
+    { contractId: tempContractId },
+    {
+      $set: {
+        [`flags.attendance.day_19.shift_test_grulla_afternoon_1400_2030`]: {
+          shiftId: "shift_test_grulla_afternoon_1400_2030",
+          shiftName: "Turno tarde La Grulla Azul",
+          status: "late",
+          day: 19,
+          time: "15:00",
+          minutesLate: 60,
+          excused: false,
+          consequenceLevel: "minor",
+          requiresFollowUp: false,
+          consequenceApplied: true,
+          consequenceSummary: "Tardanza fixture ya registrada.",
+          reason: "Fixture de tardanza previa.",
+        },
+      },
+    }
+  );
+}
+
 async function cleanupResolverFixture() {
   if (!tempGameId) return;
 
@@ -226,5 +272,132 @@ describe("turn resolver API", () => {
       contract.flags.attendance.day_19.shift_test_grulla_afternoon_1400_2030;
     assert.equal(attendance.status, "late");
     assert.equal(attendance.minutesLate, 60);
+  });
+
+  it("resolves a partial work segment without re-registering lateness or creating travel noise", async () => {
+    await cleanupResolverFixture();
+    await createWorkSegmentFixture();
+
+    const clientTurnId = `test-resolve-work-segment-${Date.now()}`;
+    const response = await post("/api/turn/resolve", {
+      gameId: tempGameId,
+      clientTurnId,
+      actionFamily: "job_shift",
+      intent: {
+        summary:
+          "Lucas se incorpora al turno de tarde, trabaja 45 minutos con intensidad normal y evita seguir hablando de la tardanza.",
+      },
+      tags: [tempGameId],
+      sequence: [
+        {
+          type: "work_segment",
+          minutes: 45,
+          intensity: "normal",
+          contractId: tempContractId,
+          shiftId: "shift_test_grulla_afternoon_1400_2030",
+          reason: "Lucas trabaja un tramo parcial del turno tarde.",
+        },
+      ],
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.resolverPlan.elapsedMinutes, 45);
+    assert.equal(response.data.resolverPlan.generated.activitySegments.length, 1);
+    assert.equal(response.data.resolverPlan.generated.jobContractPatchCount, 1);
+    assert.equal(response.data.resolverPlan.steps[0].type, "work_segment");
+    assert.equal(response.data.changes.location, undefined);
+    assert.equal(response.data.changes.autoCheckpoint, undefined);
+    assert.ok(!response.data.displayBundle.renderLines.includes("Traslado: La Grulla Azul→La Grulla Azul."));
+
+    const afterState = await GameState.findOne({ gameId: tempGameId }).lean();
+    assert.equal(afterState.time, "15:45");
+    assert.equal(afterState.locationId, "loc_hoshimori_grulla_azul");
+
+    const contract = await JobContract.findOne({ contractId: tempContractId }).lean();
+    const attendance =
+      contract.flags.attendance.day_19.shift_test_grulla_afternoon_1400_2030;
+    assert.equal(attendance.status, "late");
+    assert.equal(attendance.minutesLate, 60);
+    const work =
+      contract.flags.workLedger.day_19.shift_test_grulla_afternoon_1400_2030;
+    assert.equal(work.totalMinutes, 45);
+    assert.equal(work.segments.length, 1);
+    assert.equal(work.segments[0].startTime, "15:00");
+    assert.equal(work.segments[0].endTime, "15:45");
+  });
+
+  it("processes stale pending biology before adding new partial activity", async () => {
+    await cleanupResolverFixture();
+    await createWorkSegmentFixture();
+
+    const staleAccumulationId = `bioacc_test_stale_${Date.now()}`;
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          "biologicalClock.pendingAccumulations": [
+            {
+              accumulationId: staleAccumulationId,
+              gameId: tempGameId,
+              characterId: tempCharacterId,
+              day: 19,
+              blockStart: "12:00",
+              blockEnd: "13:00",
+              category: "viaje_caminata_suave",
+              minutes: 55,
+              reason: "Fixture stale que debe procesarse antes del nuevo tramo.",
+              status: "pending",
+              processedAt: null,
+              processedDay: null,
+              processedTime: "",
+            },
+          ],
+        },
+      }
+    );
+
+    const response = await post("/api/turn/resolve", {
+      gameId: tempGameId,
+      clientTurnId: `test-resolve-stale-biology-${Date.now()}`,
+      actionFamily: "rest",
+      intent: {
+        summary: "Lucas ordena una mesa durante quince minutos.",
+      },
+      sequence: [
+        {
+          type: "activity",
+          minutes: 15,
+          category: "actividad_normal",
+          reason: "Lucas hace una tarea corta dentro de la posada.",
+        },
+      ],
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.ok(
+      response.data.changes.biologicalClock.processedBlocks.some(
+        (block) => block.blockStart === "12:00" && block.blockEnd === "13:00"
+      )
+    );
+
+    const afterState = await GameState.findOne({ gameId: tempGameId }).lean();
+    assert.ok(
+      !afterState.biologicalClock.pendingAccumulations.some(
+        (entry) => entry.accumulationId === staleAccumulationId
+      )
+    );
+    const archived = await BiologicalAccumulationArchive.findOne({
+      gameId: tempGameId,
+      accumulationId: staleAccumulationId,
+    }).lean();
+    assert.equal(archived.status, "processed");
+    assert.equal(archived.processedTime, "13:00");
+    assert.ok(
+      afterState.biologicalClock.pendingAccumulations.some(
+        (entry) => entry.status === "pending" && entry.blockStart === "15:00" && entry.blockEnd === "16:00"
+      )
+    );
   });
 });
