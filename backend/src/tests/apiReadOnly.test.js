@@ -23,7 +23,17 @@ describe("read-only API coverage", () => {
 
     const compact = await get("/api/context/compact");
     assert.equal(compact.status, 200);
+    const compactPayloadBytes = Buffer.byteLength(JSON.stringify(compact.data), "utf8");
+    assert.ok(
+      compactPayloadBytes < 100000,
+      `compact context payload is ${compactPayloadBytes} bytes and should stay under 100000`
+    );
     assert.ok(Array.isArray(compact.data.context.pendingBiology));
+    const narrationContract = compact.data.context.scene.narrationContract;
+    assert.equal(narrationContract?.schemaVersion, "scene_narration_contract_v1");
+    assert.equal(narrationContract?.contractStrength, "mandatory_for_player_scene");
+    assert.equal(narrationContract?.sourcePriority?.[0], "scene.narrationContract.npcContracts");
+    assert.ok((narrationContract?.npcContracts || []).length > 0);
     assert.ok(
       (compact.data.context.scene.nearbyNpcs || []).some(
         (npc) => npc.relationshipState?.schemaVersion === "social_state_v1"

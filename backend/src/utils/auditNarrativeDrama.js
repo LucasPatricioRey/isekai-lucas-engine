@@ -56,18 +56,31 @@ async function main() {
   const npcs = allNpcs.filter((npc) => !isDebugNpc(npc));
   const npcSummaries = npcs.map(responseShaping.summarizeNpc);
   const sameRoom = npcSummaries.filter((npc) => npc.currentLocationId === gameState?.locationId);
+  const npcPresence = {
+    visible: sameRoom,
+    sameRoom,
+    sameBuilding: [],
+  };
   const gameStateSummary = responseShaping.summarizeGameState(gameState);
   const lucasSummary = responseShaping.summarizeLucasState(gameState, lucas, []);
+  const dialogueSceneCapsules = responseShaping.buildDialogueSceneCapsules({
+    nearbyNpcs: npcSummaries.slice(0, 8),
+    npcPresence,
+    relevantNpcMemories: [],
+    maxNpcs: 3,
+  });
   const dramaticContext = responseShaping.buildDramaticContext({
     gameState: gameStateSummary,
     lucasSummary,
     currentLocation: responseShaping.summarizeLocation(currentLocation),
     nearbyNpcs: npcSummaries.slice(0, 8),
-    npcPresence: {
-      visible: sameRoom,
-      sameRoom,
-      sameBuilding: [],
-    },
+    npcPresence,
+  });
+  const narrationContract = responseShaping.buildSceneNarrationContract({
+    dialogueSceneCapsules,
+    nearbyNpcs: npcSummaries.slice(0, 8),
+    npcPresence,
+    dramaticContext,
   });
 
   section("Narrative Drama Audit");
@@ -210,6 +223,39 @@ async function main() {
     issues,
     "emotional scene director keeps mechanics boundary",
     /no mecanicas/.test(dramaticContext.emotionalScene?.boundary || "")
+  );
+
+  section("Scene Narration Contract");
+  assertCondition(
+    issues,
+    "scene narration contract schema is exposed",
+    narrationContract.schemaVersion === "scene_narration_contract_v1"
+  );
+  assertCondition(
+    issues,
+    "scene narration contract is mandatory for player scenes",
+    narrationContract.contractStrength === "mandatory_for_player_scene"
+  );
+  assertCondition(
+    issues,
+    "scene narration contract prioritizes NPC contracts",
+    narrationContract.sourcePriority?.[0] === "scene.narrationContract.npcContracts"
+  );
+  assertCondition(
+    issues,
+    "scene narration contract exposes per-NPC contracts",
+    (narrationContract.npcContracts || []).length > 0,
+    String((narrationContract.npcContracts || []).length)
+  );
+  assertCondition(
+    issues,
+    "per-NPC contracts include improvisation limits",
+    (narrationContract.npcContracts || []).every((npc) => npc.improvisationLimits?.cannotImprovise?.length > 0)
+  );
+  assertCondition(
+    issues,
+    "scene narration contract bans generic dialogue",
+    (narrationContract.genericDialogueBans || []).some((line) => /neutral/.test(line))
   );
 
   if (warnings.length > 0) {

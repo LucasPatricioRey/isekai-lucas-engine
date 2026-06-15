@@ -27,6 +27,7 @@ Actualizacion C24B: `previewSkillProgression`, `applyTurn.skillPatch`, `applyTur
 Actualizacion C24C: `applyTurn` devuelve `mechanicalChangeDisplay` y `displayLines` canonicas para dinero, inventario, stock, biologia, estado fisico, evidencia y registro del gremio; el GPT debe copiarlas en `Cambios relevantes`.
 Actualizacion C24D: amplia las rule cards criticas consultables por Mongo/searchDocs para formato HUD/dialogo, tiempo/eventos, EXP/anti-farmeo, social/romance, economia/stock/propiedad, misiones/gremio, viaje/friccion, trabajo/asistencia, salud, magia autodidacta, presencia/agencia NPC, rumores/reputacion/facciones, inventario/evidencia, checkpoints y recovery.
 Actualizacion C24E: `applyTurn` y `completeJobShift` pueden devolver `displayBundle`/`renderLines` como contrato unificado de HUD final. Si existe, el GPT debe copiarlo y no reconstruir deltas desde fuentes dispersas.
+Actualizacion C25: `context/compact` expone `scene.narrationContract` como contrato obligatorio de escena/NPC. Este contrato consolida Mongo vivo, capsulas, voz, relacion, conocimiento y limites de improvisacion para evitar dialogo generico y NPCs omniscientes.
 
 ---
 
@@ -1738,7 +1739,7 @@ Si `narrativeHints.scenePlan` pide escena comprimida, resumir la rutina y elegir
 
 Cuando el GPT use `applyTurn` debe enviar `actionFamily` si la accion tiene familia clara (`investigation`, `report`, `travel`, `social`, `physical_training`, `magic_practice`, `mission`, etc.). Este campo solo guia `narrativeHints`: no crea mecanicas ni reemplaza tags, pero evita que reportes, investigaciones o viajes se clasifiquen como compra/entrenamiento por inferencia.
 
-### 19.10 Narracion dramatica y dialogo vivo C14/C15/C16/C17/C21/C23
+### 19.10 Narracion dramatica y dialogo vivo C14/C15/C16/C17/C21/C23/C25
 
 `getCompactContext` debe exponer `dramaticContext` para cada escena jugable. Este bloque no cambia estado ni autoriza resultados; solo guia estilo:
 
@@ -1748,7 +1749,9 @@ Cuando el GPT use `applyTurn` debe enviar `actionFamily` si la accion tiene fami
 - la prosa puede dramatizar sensaciones, gestos, silencios, interrupciones, tareas y entorno, pero no crea dano, curacion, loot, EXP, dinero, relaciones ni resoluciones;
 - si no hay tension fuerte, el lugar, el cuerpo de Lucas y las agendas abiertas deben sostener una escena breve pero viva.
 
-Desde C21, si `scene.dialogueSceneCapsules` existe, debe usarse como prioridad para dialogo inmediato. Cada capsula resume voz, mascara publica, deseo visible, presion actual, gesto/ancla, memoria relevante y ejemplo de tono por NPC cercano. Es una guia compacta de puesta en escena: permite escribir mejor dialogo, pero no autoriza al GPT a revelar interioridad privada, inventar conocimiento ni decidir resultados mecanicos.
+Desde C25, si `scene.narrationContract` existe, es la primera fuente obligatoria para escribir la escena. Define autoridad, prioridad de fuentes, beats requeridos, prohibiciones contra dialogo generico, contratos por NPC, frontera de conocimiento e improvisacion permitida/prohibida. Si contradice un impulso narrativo del GPT, gana `scene.narrationContract`.
+
+Desde C21, si `scene.dialogueSceneCapsules` existe, debe usarse como prioridad para dialogo inmediato despues de `scene.narrationContract`. Cada capsula resume voz, mascara publica, deseo visible, presion actual, gesto/ancla, memoria relevante y ejemplo de tono por NPC cercano. Es una guia compacta de puesta en escena: permite escribir mejor dialogo, pero no autoriza al GPT a revelar interioridad privada, inventar conocimiento ni decidir resultados mecanicos.
 
 Desde C23, cada NPC importante puede exponer `dialogueDirector`, directo o dentro de `dialogueProfile`/`scene.dialogueSceneCapsules`. Este bloque no cambia reglas ni conocimiento: dirige **como** habla el NPC. Incluye:
 
@@ -1810,6 +1813,9 @@ Cada `scene.nearbyNpcs[]` tambien puede exponer `emotionalProfile`: `defaultMood
 
 Reglas de uso:
 
+- leer `scene.narrationContract.npcContracts` antes de escribir cualquier linea directa de NPC;
+- usar al menos un `mustUse` o equivalente visible por cada NPC que hable;
+- respetar `improvisationLimits`: improvisar textura, gesto, humor, cansancio o microdecision; no inventar cambio mecanico, secreto, romance, permiso, violencia fuera de personalidad ni dato sin fuente;
 - cada linea de dialogo debe tener intencion: medir, cuidar, presionar, ocultar, corregir, negociar, provocar o revelar algo permitido;
 - antes de explicar un hecho, el NPC debe reaccionar al tono de Lucas si el tono existe; una broma se responde como broma/herida social, no como formulario;
 - separar voz y mecanica: el NPC habla humano; el HUD/Cambios aclara regla exacta, coste, stock, comida de contrato, mision o consecuencia;

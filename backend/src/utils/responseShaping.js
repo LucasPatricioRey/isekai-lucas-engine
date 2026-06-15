@@ -883,7 +883,7 @@ function buildDialogueMovesForNpc(npc = {}, relationship = {}) {
     moves.push("En escenas importantes, acompanar el dialogo con un gesto o decision que revele el subtexto sin explicarlo.");
   }
 
-  return unique(moves).slice(0, 5);
+  return unique(moves).slice(0, 3);
 }
 
 function publicMaskForNpc(npc = {}) {
@@ -981,25 +981,25 @@ function buildNpcDramaticRole(npc = {}, relationshipInput = null) {
         : coreDrive
           ? `Quiere ${coreDrive}.`
           : "Quiere proteger su rol, su tiempo o su imagen publica.",
-      170
+      105
     ),
     hiddenPressure: truncateText(
       coreFear
-        ? `La escena puede rozar su miedo a ${coreFear}; mostrarlo solo como gesto, limite o cambio de tono.`
-        : "La escena debe insinuar presion sin explicar pensamientos privados.",
-      180
+        ? `gesto/limite si roza su miedo a ${coreFear}; no explicar pensamiento privado.`
+        : "gesto, limite o pausa: insinuar presion sin explicar pensamiento privado.",
+      95
     ),
-    resistanceMove: truncateText(resistance, 150),
-    vulnerabilityTell: truncateText(visibleTell, 120),
-    objectAnchor: truncateText(objectAnchorForNpc(npc), 150),
+    resistanceMove: truncateText(resistance, 90),
+    vulnerabilityTell: truncateText(visibleTell, 75),
+    objectAnchor: truncateText(objectAnchorForNpc(npc), 90),
     beatLadder: [
-      "1) Mascara: responder desde rol, tarea o defensa publica.",
-      `2) Friccion: si Lucas insiste, ${resistance}.`,
-      `3) Grieta: si toca ${softSpot}, mostrar un gesto o decision mas honesta sin confesion total.`,
-      sceneHook ? `4) Giro: ${sceneHook}.` : "4) Giro: ofrecer limite, condicion, pregunta o pequena apertura.",
+      "Mascara: rol, tarea o defensa publica.",
+      `Friccion: ${truncateText(resistance, 60)}.`,
+      `Grieta: si toca ${truncateText(softSpot, 45)}, gesto sin confesion.`,
+      sceneHook ? `Giro: ${truncateText(sceneHook, 60)}.` : "Giro: limite, condicion o apertura pequena.",
     ].slice(0, 4),
-    relationshipGate: truncateText(register.guidance, 150),
-    rule: "No narrar pensamiento privado como hecho: convertir deseo, miedo o contradiccion en gesto, silencio, objeto, decision o dialogo permitido.",
+    relationshipGate: truncateText(register.guidance, 90),
+    rule: "No narrar pensamiento privado; convertirlo en gesto, silencio, objeto o decision.",
   };
 }
 
@@ -1022,7 +1022,7 @@ function buildDialogueAvoidForNpc(npc = {}, relationship = {}) {
     avoids.push("no confundir miedo con ternura, respeto o confianza");
   }
 
-  return unique(avoids).slice(0, 5);
+  return unique(avoids).slice(0, 4);
 }
 
 function summarizeNpcDialogueDirector(npc = {}) {
@@ -1032,22 +1032,22 @@ function summarizeNpcDialogueDirector(npc = {}) {
   const speechPatterns = director.speechPatterns && typeof director.speechPatterns === "object"
     ? Object.fromEntries(
         Object.entries(director.speechPatterns)
-          .slice(0, 5)
-          .map(([key, value]) => [key, truncateText(value || "", 110)])
+          .slice(0, 2)
+          .map(([key, value]) => [key, truncateText(value || "", 65)])
       )
     : {};
 
   return {
     schemaVersion: "npc_dialogue_director_v1",
-    cadence: truncateText(director.cadence || "", 120),
-    emotionalRule: truncateText(director.emotionalRule || "", 150),
-    reactFirst: truncateText(director.reactFirst || "", 130),
+    cadence: truncateText(director.cadence || "", 75),
+    emotionalRule: truncateText(director.emotionalRule || "", 90),
+    reactFirst: truncateText(director.reactFirst || "", 80),
     speechPatterns,
-    sceneRules: unique(director.sceneRules || []).slice(0, 3).map((line) => truncateText(line, 120)),
-    sampleBeats: unique(director.sampleBeats || []).slice(0, 3).map((line) => truncateText(line, 130)),
-    avoid: unique(director.avoid || []).slice(0, 3).map((line) => truncateText(line, 100)),
+    sceneRules: unique(director.sceneRules || []).slice(0, 1).map((line) => truncateText(line, 80)),
+    sampleBeats: unique(director.sampleBeats || []).slice(0, 1).map((line) => truncateText(line, 80)),
+    avoid: unique(director.avoid || []).slice(0, 2).map((line) => truncateText(line, 70)),
     rule:
-      "El NPC reacciona primero al tono emocional de Lucas; el dato mecanico exacto va al HUD/Cambios, no como manual hablado.",
+      "Reacciona primero al tono de Lucas; mecanica exacta va al HUD/Cambios, no como manual.",
   };
 }
 
@@ -1104,10 +1104,10 @@ function buildNpcDialogueProfile(npc, relationshipInput = null) {
     emotionalSubtext: emotionalProfile
       ? {
           defaultMood: emotionalProfile.defaultMood,
-          coreDrives: emotionalProfile.coreDrives.slice(0, 2),
-          coreFears: emotionalProfile.coreFears.slice(0, 2),
-          visibleTells: emotionalProfile.visibleTells.slice(0, 3),
-          contradiction: emotionalProfile.contradiction,
+          coreDrives: emotionalProfile.coreDrives.slice(0, 1),
+          coreFears: emotionalProfile.coreFears.slice(0, 1),
+          visibleTells: emotionalProfile.visibleTells.slice(0, 2),
+          contradiction: truncateText(emotionalProfile.contradiction, 120),
           rule: emotionalProfile.rule,
         }
       : null,
@@ -1121,11 +1121,11 @@ function buildNpcDialogueProfile(npc, relationshipInput = null) {
       ]
         .filter(Boolean)
         .join("; "),
-      260
+      220
     ),
     dialogueMoves: buildDialogueMovesForNpc(npc, relationship),
     avoid: buildDialogueAvoidForNpc(npc, relationship),
-    rule: "Cada linea debe tener intencion: presionar, cuidar, medir, ocultar, provocar, corregir, negociar o revelar algo permitido por conocimiento.",
+    rule: "Cada linea debe tener intencion y conocimiento permitido.",
   };
 }
 
@@ -1264,6 +1264,230 @@ function buildDialogueSceneCapsules({
     guidance:
       "Prioridad: reaccion emocional visible -> voz del NPC -> dato. No usar NPC como manual; mecanica exacta va en HUD/Cambios.",
     capsules,
+  };
+}
+
+function findNpcKnowledgeEntry(npcId, npcKnowledgeContext = {}) {
+  return toArray(npcKnowledgeContext?.perNpc).find((entry) => entry?.npcId === npcId) || null;
+}
+
+function summarizeKnowledgeBoundaryForNpc(entry = null) {
+  const knownRecords = toArray(entry?.knownRecords).slice(0, 1).map((record) => ({
+    knowledgeId: record.knowledgeId,
+    factKey: record.factKey,
+    summary: truncateText(record.summary || record.fact || "", 80),
+    certainty: record.certainty || "",
+    canShare: Boolean(record.canShare),
+  }));
+  const knownMemories = toArray(entry?.knownMemories).slice(0, 1).map((memory) => ({
+    memoryId: memory.memoryId,
+    summary: truncateText(memory.summary || memory.fact || "", 80),
+    certainty: memory.certainty || "",
+    canShare: Boolean(memory.canShare),
+  }));
+  const exactSchedule = entry?.jobAvailability?.exactSchedule || null;
+  const warnings = [];
+
+  if (entry && Number(entry.knownRecordCount || 0) === 0 && Number(entry.knownMemoryCount || 0) === 0) {
+    warnings.push("Sin registro/memoria relevante: no afirmar datos privados, horarios exactos ni secretos.");
+  }
+  if (exactSchedule?.canInfer && !exactSchedule?.canStateAsFact) {
+    warnings.push("Puede inferir disponibilidad laboral, pero no decir horario exacto como hecho confirmado.");
+  }
+  if (toArray(knownRecords).some((record) => !record.canShare)) {
+    warnings.push("Hay datos que el NPC puede saber pero no compartir directamente.");
+  }
+
+  return {
+    knownRecords,
+    knownMemories,
+    canStateExactSchedule: Boolean(exactSchedule?.canStateAsFact),
+    warnings: warnings.slice(0, 2),
+    rule: "Certeza solo con fuente diegetica. Si falta fuente, escribir duda, pregunta, rumor o silencio; no omnisciencia.",
+  };
+}
+
+function capsuleByNpcId(dialogueSceneCapsules = null) {
+  const map = new Map();
+  for (const capsule of toArray(dialogueSceneCapsules?.capsules)) {
+    if (capsule?.npcId && !map.has(capsule.npcId)) map.set(capsule.npcId, capsule);
+  }
+  return map;
+}
+
+function orderedNpcsForNarration({ nearbyNpcs = [], npcPresence = {}, dialogueSceneCapsules = null, maxNpcs = 3 } = {}) {
+  const byNpcId = new Map(toArray(nearbyNpcs).filter(Boolean).map((npc) => [npc.npcId, npc]));
+  const orderedIds = [];
+
+  for (const capsule of toArray(dialogueSceneCapsules?.capsules)) {
+    if (capsule?.npcId && !orderedIds.includes(capsule.npcId)) orderedIds.push(capsule.npcId);
+  }
+  for (const group of [npcPresence?.sameRoom, npcPresence?.visible, npcPresence?.sameBuilding, npcPresence?.probable]) {
+    for (const entry of toArray(group)) {
+      if (entry?.npcId && !orderedIds.includes(entry.npcId)) orderedIds.push(entry.npcId);
+    }
+  }
+  for (const npc of toArray(nearbyNpcs)) {
+    if (npc?.npcId && !orderedIds.includes(npc.npcId)) orderedIds.push(npc.npcId);
+  }
+
+  return orderedIds
+    .map((npcId) => byNpcId.get(npcId))
+    .filter(Boolean)
+    .slice(0, maxNpcs);
+}
+
+function buildNpcNarrationContract(npc = {}, { capsule = null, npcKnowledgeContext = {}, socialRhythm = null } = {}) {
+  const dialogueProfile = npc.dialogueProfile || {};
+  const dialogueDirector = dialogueProfile.dialogueDirector || {};
+  const dramaticRole = dialogueProfile.dramaticRole || {};
+  const emotionalProfile = npc.emotionalProfile || {};
+  const relationshipState = npc.relationshipState || {};
+  const knowledgeEntry = findNpcKnowledgeEntry(npc.npcId, npcKnowledgeContext);
+  const saturated = toArray(socialRhythm?.saturatedNpcIds).includes(npc.npcId);
+
+  return {
+    npcId: npc.npcId,
+    name: npc.name,
+    presence: capsule?.presence || "nearby",
+    contractStrength: "mandatory_if_npc_speaks",
+    canonicalSource: "Mongo: dialogueSceneCapsules, profiles, relacion y conocimiento.",
+    mustUse: unique([
+      capsule?.reactFirst || dialogueDirector.reactFirst,
+      capsule?.gestureAnchor || dramaticRole.vulnerabilityTell || emotionalProfile.visibleTells?.[0],
+      capsule?.wantsNow || dramaticRole.sceneWant || npc.currentTask,
+      capsule?.pressure || dialogueProfile.currentPressure?.summary,
+      capsule?.sampleTone ? `sample tone: ${capsule.sampleTone}` : "",
+    ])
+      .filter(Boolean)
+      .slice(0, 3)
+      .map((line) => truncateText(line, 90)),
+    voiceRule: truncateText(
+      [
+        capsule?.voice || dialogueProfile.speechRhythm || npc.voiceProfile?.speechStyle,
+        capsule?.cadence || dialogueDirector.cadence,
+        dialogueProfile.relationshipRegister?.guidance,
+      ]
+        .filter(Boolean)
+        .join(" | "),
+      260
+    ),
+    relationshipGate: {
+      stance: relationshipState.stance?.key || "",
+      accessScore: relationshipState.accessScore,
+      guidance: truncateText(
+        relationshipState.narrativeGuidance?.[0] ||
+          dialogueProfile.relationshipRegister?.guidance ||
+          "El trato debe seguir confianza, respeto, sospecha, miedo y familiaridad actuales.",
+        180
+      ),
+    },
+    knowledgeBoundary: summarizeKnowledgeBoundaryForNpc(knowledgeEntry),
+    improvisationLimits: {
+      canImproviseWithin: [
+        "voz, gesto, silencio, humor, cansancio, tarea, objeto y microdecision coherente",
+      ],
+      cannotImprovise: [
+        "mecanicas, recompensas, romance, secretos, permisos, violencia fuera de personalidad o datos sin fuente",
+      ],
+    },
+    repetitionRule: saturated
+      ? "Interaccion social saturada hoy: usar continuidad, gesto o memoria; no repetir agradecimiento ni dar deltas rutinarios."
+      : "Si la escena se parece a una anterior, variar por objeto, tarea, limite, cansancio o subtexto; no repetir la misma frase.",
+    avoid: unique([
+      ...toArray(capsule?.avoid),
+      ...toArray(dialogueDirector.avoid),
+      ...toArray(dialogueProfile.avoid),
+      "no sonar intercambiable con otros NPCs",
+      "no explicar HUD, numeros, backend ni reglas como manual",
+      "no cerrar pedidos, bromas, conflicto o entrenamiento con una sola frase neutra",
+    ])
+      .filter(Boolean)
+      .slice(0, 4)
+      .map((line) => truncateText(line, 80)),
+  };
+}
+
+function buildSceneNarrationContract({
+  dialogueSceneCapsules = null,
+  nearbyNpcs = [],
+  npcPresence = {},
+  npcKnowledgeContext = null,
+  relationshipDynamics = null,
+  dramaticContext = null,
+  socialRhythm = null,
+  maxNpcs = 3,
+} = {}) {
+  const capsuleMap = capsuleByNpcId(dialogueSceneCapsules);
+  const selectedNpcs = orderedNpcsForNarration({
+    nearbyNpcs,
+    npcPresence,
+    dialogueSceneCapsules,
+    maxNpcs,
+  });
+  const npcContracts = selectedNpcs.map((npc) =>
+    buildNpcNarrationContract(npc, {
+      capsule: capsuleMap.get(npc.npcId) || null,
+      npcKnowledgeContext,
+      socialRhythm,
+    })
+  );
+
+  return {
+    schemaVersion: "scene_narration_contract_v1",
+    contractStrength: "mandatory_for_player_scene",
+    authority:
+      "Mongo/context compact is live canon for NPC voice, presence, relation, memory and knowledge.",
+    sourcePriority: [
+      "scene.narrationContract.npcContracts",
+      "scene.dialogueSceneCapsules",
+      "dialogueDirector/emotionalProfile/relationshipState",
+      "npcKnowledgeContext",
+      "scene.relationshipDynamics",
+      "dramaticContext/emotionalScene",
+    ],
+    lineIntentOptions: ["medir", "cuidar", "presionar", "ocultar", "corregir", "negociar", "provocar"],
+    usePolicy: {
+      ifNpcSpeaks:
+        "Use that NPC contract first. Short lines need gesture, condition, subtext or consequence.",
+      ifNpcPresentButSilent:
+        "Show task, glance, interruption, object, distance or refusal when relevant.",
+      ifNoNpcContract:
+        "Use body/place/object anchors; do not invent named NPCs or closeness.",
+      mechanicsBoundary:
+        "NPC prose cannot grant money, EXP, loot, wounds, healing, mission completion, romance, permissions or knowledge.",
+    },
+    requiredSceneBeats: [
+      "open with body/place/object pressure",
+      "answer Lucas tone before practical fact",
+      "speaking NPC uses one mustUse or visible equivalent",
+      "clear next decision, then HUD",
+    ],
+    genericDialogueBans: [
+      "no single neutral acknowledgement as whole NPC response",
+      "no interchangeable polite filler",
+      "no rule/manual speech in NPC mouth",
+      "no omniscient certainty without npcKnowledgeContext source",
+    ],
+    npcContracts,
+    groupContract: {
+      relationshipDynamicsAvailable: Boolean(relationshipDynamics?.count),
+      pairCount: Number(relationshipDynamics?.count) || 0,
+      rule: relationshipDynamics?.count
+        ? "Use at least one glance, interruption, alliance, correction or silence between NPCs when the pair is in the scene; never reveal privateSubtext as known fact."
+        : "Do not force group banter without nearby relationship data.",
+    },
+    dramaticMode: {
+      sceneMode: dramaticContext?.emotionalScene?.sceneMode || "",
+      paragraphTarget: dramaticContext?.emotionalScene?.paragraphTarget || "",
+      emotionalQuestion: dramaticContext?.emotionalScene?.emotionalQuestion || "",
+    },
+    preOutputChecklist: [
+      "HUD remains final and copied from displayBundle when available",
+      "no meta/backend/tool/action wording in player-facing scene",
+      "NPC names use Name: \"dialogue\" format for direct speech",
+      "every direct NPC line has intent or pressure",
+    ],
   };
 }
 
@@ -2057,6 +2281,7 @@ module.exports = {
   buildNpcDialogueProfile,
   buildNpcDramaticRole,
   buildDialogueSceneCapsules,
+  buildSceneNarrationContract,
   summarizeNpcEmotionalProfile,
   summarizeNpcRelationship,
   buildSceneRelationshipDynamics,
