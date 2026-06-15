@@ -48,7 +48,6 @@ describe("read-only API coverage", () => {
       "mandatory_for_final_response_and_blocking_before_mutation"
     );
     assert.ok(ruleLookupContract?.alwaysReadRuleIds?.includes("authority.backend_state"));
-    assert.ok(ruleLookupContract?.alwaysReadRuleIds?.includes("context.bootloader_contract"));
     assert.ok(ruleLookupContract?.mustSearchBeforeFinalRuleIds?.includes("format.response_hud_exact"));
     assert.ok(ruleLookupContract?.mustSearchBeforeMutationRuleIds?.includes("format.response_hud_exact"));
     assert.ok(

@@ -1526,7 +1526,6 @@ function buildSceneNarrationContract({
 
 const CORE_RULE_LOOKUP_IDS = [
   "authority.backend_state",
-  "context.bootloader_contract",
   "action.scene_flow",
   "format.response_hud_exact",
 ];

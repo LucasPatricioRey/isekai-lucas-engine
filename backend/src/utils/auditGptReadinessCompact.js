@@ -300,7 +300,7 @@ async function checkCompactEndpoints(issues) {
   assertCondition(
     issues,
     "rule lookup contract includes final response lookup set",
-    (context.context?.ruleLookupContract?.mustSearchBeforeFinalRuleIds || []).includes("context.bootloader_contract")
+    (context.context?.ruleLookupContract?.mustSearchBeforeFinalRuleIds || []).includes("format.response_hud_exact")
   );
   assertCondition(
     issues,

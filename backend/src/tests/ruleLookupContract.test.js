@@ -29,7 +29,6 @@ test("rule lookup contract exposes mandatory Mongo rule-card lookup before mutat
   assert.match(contract.policy, /before final gameplay/);
   assert.deepEqual(contract.alwaysReadRuleIds, [
     "authority.backend_state",
-    "context.bootloader_contract",
     "action.scene_flow",
     "format.response_hud_exact",
   ]);
@@ -57,8 +56,8 @@ test("rule lookup contract exposes mandatory Mongo rule-card lookup before mutat
     "core authority must be in the mutation lookup set"
   );
   assert.ok(
-    contract.mustSearchBeforeFinalRuleIds.includes("context.bootloader_contract"),
-    "bootloader card must be in the final response lookup set"
+    contract.mustSearchBeforeFinalRuleIds.includes("format.response_hud_exact"),
+    "HUD card must be in the final response lookup set"
   );
   assert.ok(
     contract.searchBatches.some((batch) => /\/api\/search\/docs\?ruleId=/.test(batch.path)),
