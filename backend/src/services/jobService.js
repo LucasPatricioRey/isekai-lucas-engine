@@ -3,6 +3,9 @@ const mongoose = require("mongoose");
 const EventLog = require("../models/EventLog");
 const GameState = require("../models/GameState");
 const JobContract = require("../models/JobContract");
+const Location = require("../models/Location");
+const Npc = require("../models/Npc");
+const WorldEvent = require("../models/WorldEvent");
 const {
   calculateActivityCost,
   getEnergyLabel,
@@ -17,6 +20,7 @@ const {
   buildNarrativeHints,
 } = require("./narrativeVariationService");
 const { getShiftAvailability } = require("./jobScheduleService");
+const { buildTurnDisplayBundle } = require("../utils/turnDisplayBundle");
 
 function timeToMinutes(time) {
   const [hours, minutes] = String(time || "00:00").split(":").map(Number);
@@ -69,6 +73,51 @@ function normalizeText(value) {
 
 function createLogId() {
   return `log_job_shift_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function buildJobDisplayContext({ gameState = {}, contract = {}, session = null } = {}) {
+  const locationId = gameState.locationId || contract.locationId || "";
+  const staticNpcIds = new Set([contract.employerNpcId].filter(Boolean));
+  const activeEventIds = (gameState.activeEventIds || []).filter(Boolean);
+  const location = locationId
+    ? await Location.findOne({ locationId })
+        .select("locationId name visibleNpcIds probableNpcIds parentLocationId")
+        .session(session)
+        .lean()
+    : null;
+
+  for (const npcId of [...(location?.visibleNpcIds || []), ...(location?.probableNpcIds || [])]) {
+    if (npcId) staticNpcIds.add(npcId);
+  }
+
+  const npcClauses = [];
+  if (locationId) npcClauses.push({ currentLocationId: locationId });
+  if (staticNpcIds.size > 0) npcClauses.push({ npcId: { $in: Array.from(staticNpcIds) } });
+
+  const [nearbyNpcs, activeEvents] = await Promise.all([
+    npcClauses.length > 0
+      ? Npc.find({ $or: npcClauses })
+          .select("npcId name currentLocationId currentTask availability")
+          .limit(12)
+          .session(session)
+          .lean()
+      : Promise.resolve([]),
+    activeEventIds.length > 0
+      ? WorldEvent.find({
+          eventId: { $in: activeEventIds },
+          status: "active",
+        })
+          .select("eventId title status eventLayer severity")
+          .session(session)
+          .lean()
+      : Promise.resolve([]),
+  ]);
+
+  return {
+    location,
+    nearbyNpcs,
+    activeEvents,
+  };
 }
 
 function dayKey(day) {
@@ -644,6 +693,25 @@ async function completeShift({
       };
 
       if (shiftLedger[shift.shiftId]) {
+        const displayChanges = {
+          mechanicalChangeDisplay: {
+            displayLines: [`Turno laboral ya completado: ${shift.name || shift.shiftId}. No se aplicaron cambios.`],
+          },
+        };
+        const displayContext = await buildJobDisplayContext({
+          gameState: gameState.toObject(),
+          contract: contract.toObject(),
+          session,
+        });
+        const displayBundle = buildTurnDisplayBundle({
+          changes: displayChanges,
+          gameState: gameState.toObject(),
+          location: displayContext.location,
+          nearbyNpcs: displayContext.nearbyNpcs,
+          activeEvents: displayContext.activeEvents,
+          actionSummary: `Turno laboral ya completado: ${shift.name || shift.shiftId}.`,
+        });
+
         result = {
           alreadyCompleted: true,
           gameId,
@@ -654,10 +722,13 @@ async function completeShift({
           before,
           after: before,
           changes: {
+            ...displayChanges,
             pay: { applied: false, reason: "shift_already_completed" },
             meals: [],
             activityCost: null,
+            displayBundle,
           },
+          displayBundle,
         };
         return;
       }
@@ -936,6 +1007,25 @@ async function completeShift({
         },
         session,
       });
+      const finalChanges = {
+        ...baseChanges,
+        eventLogId: log[0].logId,
+        autoCheckpoint,
+        narrativeHints,
+      };
+      const displayContext = await buildJobDisplayContext({
+        gameState: gameState.toObject(),
+        contract: contract.toObject(),
+        session,
+      });
+      const displayBundle = buildTurnDisplayBundle({
+        changes: finalChanges,
+        gameState: gameState.toObject(),
+        location: displayContext.location,
+        nearbyNpcs: displayContext.nearbyNpcs,
+        activeEvents: displayContext.activeEvents,
+        actionSummary: logDraft.summary,
+      });
 
       result = {
         alreadyCompleted: false,
@@ -946,11 +1036,10 @@ async function completeShift({
         before,
         after,
         changes: {
-          ...baseChanges,
-          eventLogId: log[0].logId,
-          autoCheckpoint,
-          narrativeHints,
+          ...finalChanges,
+          displayBundle,
         },
+        displayBundle,
         skillProgressionSuggestions: [
           {
             skillId: "skill_resistencia",

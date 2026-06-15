@@ -1777,7 +1777,8 @@ function buildEmotionalSceneDirector({
     dialogueShape: {
       importantNpcScene: "2-5 intervenciones con gesto/subtexto si hay respuesta emocional.",
       lineRule: "La linea puede ser breve, pero debe respirar: pausa, deseo, miedo, prueba, limite, oferta o consecuencia.",
-      noFlatReply: "No frase neutra/minima en pedido, broma, entrenamiento, conflicto o decision; reaccion emocional primero.",
+      noFlatReply:
+        "No una sola frase minima ni respuesta neutra en pedido, broma, entrenamiento, conflicto o decision; reaccion emocional primero.",
     },
     slowBurnRule: "Confianza, miedo, respeto o perdon avanzan por microcambios y backend.",
     boundary: "Solo estado confirmado/subtexto visible; no mecanicas, secretos ni mente privada.",

@@ -26,6 +26,7 @@ Actualizacion C24A: agrega tarjetas criticas de reglas (`rule cards`) indexadas 
 Actualizacion C24B: `previewSkillProgression`, `applyTurn.skillPatch`, `applyTurn.magicPractice` y combate avanzado devuelven `displayLine/displayLines` y `skillProgressDisplay` con el formato canonico de habilidades; el GPT debe copiarlos y no reconstruirlos.
 Actualizacion C24C: `applyTurn` devuelve `mechanicalChangeDisplay` y `displayLines` canonicas para dinero, inventario, stock, biologia, estado fisico, evidencia y registro del gremio; el GPT debe copiarlas en `Cambios relevantes`.
 Actualizacion C24D: amplia las rule cards criticas consultables por Mongo/searchDocs para formato HUD/dialogo, tiempo/eventos, EXP/anti-farmeo, social/romance, economia/stock/propiedad, misiones/gremio, viaje/friccion, trabajo/asistencia, salud, magia autodidacta, presencia/agencia NPC, rumores/reputacion/facciones, inventario/evidencia, checkpoints y recovery.
+Actualizacion C24E: `applyTurn` y `completeJobShift` pueden devolver `displayBundle`/`renderLines` como contrato unificado de HUD final. Si existe, el GPT debe copiarlo y no reconstruir deltas desde fuentes dispersas.
 
 ---
 
@@ -777,6 +778,8 @@ Fuerza P.N10 98/100→Novato N1 3/250(+5)
 Desde C24B, cuando el backend devuelva `changes.skillProgressDisplay`, `changes.skills[].displayLines`, `preview.displayLine` o `resolution.skillProgression[].displayLines`, el GPT debe copiar esas lineas. No debe reconstruir ni resumir como `Nivel 8 -> Nivel 9` si hay EXP disponible.
 
 Desde C24C, cuando el backend devuelva `changes.mechanicalChangeDisplay`, `changes.money.displayLines`, `changes.inventory[].displayLines`, `changes.shopStocks[].displayLines`, `changes.activityCost.displayLines`, `changes.biologicalClock.displayLines`, `changes.evidence[].displayLines` o `changes.guildRegistration.displayLines`, el GPT debe copiar esas lineas en `Cambios relevantes`. No debe reemplazarlas por texto vago como "dinero actualizado", "inventario cambiado" o "coste aplicado" si hay valores antes/despues/delta disponibles.
+
+Desde C24E, cuando el backend devuelva `displayBundle.renderLines` o `changes.displayBundle.renderLines`, esas lineas son el contrato principal del HUD final: incluyen encabezado, cambios relevantes, progreso, vinculos, magia y estado actual. El GPT debe copiarlas como base y solo agregar prosa novelada antes del HUD; no debe reconstruir ni omitir secciones por preferencia narrativa.
 
 ### 10.4 Multiplicadores
 

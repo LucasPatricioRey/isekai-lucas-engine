@@ -39,6 +39,7 @@ const {
   attachMechanicalChangeDisplay,
   withInventoryDisplay,
 } = require("../utils/mechanicalChangeDisplay");
+const { buildTurnDisplayBundle } = require("../utils/turnDisplayBundle");
 const {
   ACTION_FAMILIES,
   attachNarrativeTrackingToLogDrafts,
@@ -362,6 +363,47 @@ function addAutoCheckpointTrigger(triggers, key, label) {
   if (!triggers.some((trigger) => trigger.key === key)) {
     triggers.push({ key, label });
   }
+}
+
+async function buildTurnDisplayContext(gameState, session = null) {
+  const locationId = gameState?.locationId || "";
+  const activeEventIds = (gameState?.activeEventIds || []).filter(Boolean);
+  const location = locationId
+    ? await Location.findOne({ locationId })
+        .select("locationId name visibleNpcIds probableNpcIds parentLocationId")
+        .session(session)
+        .lean()
+    : null;
+  const staticNpcIds = new Set([...(location?.visibleNpcIds || []), ...(location?.probableNpcIds || [])]);
+  const npcClauses = [];
+
+  if (locationId) npcClauses.push({ currentLocationId: locationId });
+  if (staticNpcIds.size > 0) npcClauses.push({ npcId: { $in: Array.from(staticNpcIds) } });
+
+  const [nearbyNpcs, activeEvents] = await Promise.all([
+    npcClauses.length > 0
+      ? Npc.find({ $or: npcClauses })
+          .select("npcId name currentLocationId currentTask availability")
+          .limit(12)
+          .session(session)
+          .lean()
+      : Promise.resolve([]),
+    activeEventIds.length > 0
+      ? WorldEvent.find({
+          eventId: { $in: activeEventIds },
+          status: "active",
+        })
+          .select("eventId title status eventLayer severity")
+          .session(session)
+          .lean()
+      : Promise.resolve([]),
+  ]);
+
+  return {
+    location,
+    nearbyNpcs,
+    activeEvents,
+  };
 }
 
 function buildApplyTurnAutoCheckpointPlan(changes = {}) {
@@ -4741,13 +4783,24 @@ async function applyTurn(req, res) {
       }
 
       updatedGameState = gameState.toObject();
+      const displayContext = await buildTurnDisplayContext(updatedGameState, session);
+      const displayBundle = buildTurnDisplayBundle({
+        changes,
+        gameState: updatedGameState,
+        location: displayContext.location,
+        nearbyNpcs: displayContext.nearbyNpcs,
+        activeEvents: displayContext.activeEvents,
+        actionSummary: body.actionSummary || "",
+      });
+      changes.displayBundle = displayBundle;
 
       responsePayload = {
-      ok: true,
-      message: "Turno aplicado correctamente.",
-      changes,
-      gameState: updatedGameState,
-      eventLogsCreated: logsToCreate.length,
+        ok: true,
+        message: "Turno aplicado correctamente.",
+        changes,
+        displayBundle,
+        gameState: updatedGameState,
+        eventLogsCreated: logsToCreate.length,
       };
     });
 

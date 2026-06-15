@@ -85,6 +85,7 @@ async function completeShiftController(req, res) {
     return res.json({
       ok: true,
       result,
+      displayBundle: result.displayBundle || result.changes?.displayBundle || null,
     });
   } catch (error) {
     return res.status(error.statusCode || 500).json({
