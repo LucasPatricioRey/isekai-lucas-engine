@@ -23,6 +23,7 @@ const Commitment = require("../models/Commitment");
 const Evidence = require("../models/Evidence");
 const KnowledgeRecord = require("../models/KnowledgeRecord");
 const responseShaping = require("../utils/responseShaping");
+const { buildContextHudContract } = require("../utils/turnDisplayBundle");
 const { buildNarrativeContextSummary } = require("../services/narrativeVariationService");
 const { buildNpcKnowledgeContext } = require("../services/knowledgeService");
 const { buildStateAudit } = require("../services/stateAuditService");
@@ -2040,6 +2041,18 @@ async function getCompactContext(req, res) {
       pendingBiology: pendingBiologicalAccumulations,
       alerts,
     });
+    const profileContract = responseShaping.buildCompactProfileContract({
+      profile,
+      includeTechnicalSummary,
+    });
+    const hudContract = buildContextHudContract({
+      gameState,
+      location: currentLocationSummary,
+      nearbyNpcs: nearbyNpcSummariesForResponse,
+      activeEvents: activeEventSummaries,
+      latestEventLog: responseShaping.summarizeEventLog(recentEventLogs[0], { summaryMaxLength: 140 }),
+      profile,
+    });
     const technicalSummary = includeTechnicalSummary
       ? summarizeTechnicalReadiness({
           gameState,
@@ -2069,8 +2082,10 @@ async function getCompactContext(req, res) {
       profile,
       limits,
       context: {
+        profileContract,
         gameState: gameStateSummary,
         lucas: lucasSummary,
+        hudContract,
         scene: {
           currentLocation: currentLocationSummary,
           parentLocation: parentLocationSummary,
@@ -2087,11 +2102,11 @@ async function getCompactContext(req, res) {
           recentEventSummaries: recentEventLogs.map((log) => responseShaping.summarizeEventLog(log)),
         },
         relevantNpcMemories: relevantNpcMemories.map(responseShaping.summarizeNpcMemory),
-        mainEvent: mainEventSummary,
+        mainEvent: slimWorldEventForProfile(mainEventSummary, profile),
         eventForStatusLine: eventStatusLineForProfile(mainEventSummary, profile),
         activeEvents: activeEventSummaries.map((event) => slimWorldEventForProfile(event, profile)),
         scheduledEvents: scheduledEventSummaries.map((event) => slimWorldEventForProfile(event, profile)),
-        currentDailyEvent: currentDailyEventSummary,
+        currentDailyEvent: slimWorldEventForProfile(currentDailyEventSummary, profile),
         dailyEvents: dailyEvents
           .map(responseShaping.summarizeWorldEvent)
           .map((event) => slimWorldEventForProfile(event, profile)),

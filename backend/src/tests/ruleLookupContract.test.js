@@ -24,16 +24,17 @@ test("rule lookup contract exposes mandatory Mongo rule-card lookup before mutat
   });
 
   assert.equal(contract.schemaVersion, "rule_lookup_contract_v1");
-  assert.equal(contract.contractStrength, "mandatory_before_preview_or_mutation");
+  assert.equal(contract.contractStrength, "mandatory_for_final_response_and_blocking_before_mutation");
   assert.match(contract.source, /WorldDocumentIndex/);
-  assert.match(contract.policy, /before preview\/mutation/);
+  assert.match(contract.policy, /before final gameplay/);
   assert.deepEqual(contract.alwaysReadRuleIds, [
     "authority.backend_state",
+    "context.bootloader_contract",
     "action.scene_flow",
     "format.response_hud_exact",
   ]);
 
-  const activeRuleIds = new Set(contract.activeRuleLookups.map((entry) => entry.ruleId));
+  const activeRuleIds = new Set(contract.activeRuleLookups);
   for (const ruleId of [
     "format.dialogue_direct",
     "narration.dialogue_hud_boundary",
@@ -56,10 +57,15 @@ test("rule lookup contract exposes mandatory Mongo rule-card lookup before mutat
     "core authority must be in the mutation lookup set"
   );
   assert.ok(
+    contract.mustSearchBeforeFinalRuleIds.includes("context.bootloader_contract"),
+    "bootloader card must be in the final response lookup set"
+  );
+  assert.ok(
     contract.searchBatches.some((batch) => /\/api\/search\/docs\?ruleId=/.test(batch.path)),
     "contract should expose concrete searchDocs paths"
   );
-  assert.ok(contract.preMutationOrder.includes("searchDocs matching ruleIds"));
+  assert.match(contract.preFinalResponseOrder, /searchDocs core\/active/);
+  assert.match(contract.preMutationOrder, /searchDocs/);
 });
 
 test("rule lookup contract stays compact for calm scenes", () => {
@@ -68,6 +74,7 @@ test("rule lookup contract stays compact for calm scenes", () => {
   assert.equal(contract.schemaVersion, "rule_lookup_contract_v1");
   assert.deepEqual(contract.activeRuleLookups, []);
   assert.deepEqual(contract.mustSearchBeforeMutationRuleIds, contract.alwaysReadRuleIds);
+  assert.deepEqual(contract.mustSearchBeforeFinalRuleIds, contract.alwaysReadRuleIds);
   assert.equal(contract.searchBatches.length, 1);
-  assert.ok(Buffer.byteLength(JSON.stringify(contract), "utf8") < 1200);
+  assert.ok(Buffer.byteLength(JSON.stringify(contract), "utf8") < 1700);
 });

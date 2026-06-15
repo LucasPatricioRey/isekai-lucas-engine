@@ -1,6 +1,6 @@
 # rules_engine.md — Motor Isekai Lucas
 
-Version: Fase C26 v1.0 - rule lookup contract dinamico
+Version: Fase C27 v1.0 - context contracts y bootloader canonico
 Estado: versión validada por Lucas mediante revisión guiada  
 Fuente de migración: Enciclopedia V2 Isekai Lucas + decisiones confirmadas por Lucas durante Fase 1 + validación guiada Fase 2  
 Propósito: este archivo define **cómo se resuelve el juego**. No contiene el save vivo completo ni el lore mundial extenso; eso vive en MongoDB y `world_bible.md`.
@@ -29,6 +29,7 @@ Actualizacion C24D: amplia las rule cards criticas consultables por Mongo/search
 Actualizacion C24E: `applyTurn` y `completeJobShift` pueden devolver `displayBundle`/`renderLines` como contrato unificado de HUD final. Si existe, el GPT debe copiarlo y no reconstruir deltas desde fuentes dispersas.
 Actualizacion C25: `context/compact` expone `scene.narrationContract` como contrato obligatorio de escena/NPC. Este contrato consolida Mongo vivo, capsulas, voz, relacion, conocimiento y limites de improvisacion para evitar dialogo generico y NPCs omniscientes.
 Actualizacion C26: `context/compact` expone `ruleLookupContract` como contrato obligatorio de busqueda de reglas. El GPT debe leer las rule cards indicadas por `ruleLookupContract.searchBatches` antes de previews o mutaciones cuando la accion toque esos dominios.
+Actualizacion C27: `context/compact` expone `profileContract` y `hudContract`. Las instrucciones del GPT pasan a ser bootloader minimo: obligan a leer contexto, contratos y `searchDocs`, pero el canon expandido vive en MongoDB/backend. `minimal_header` y `debug_audit` no son perfiles validos para narracion visible de partida.
 
 ---
 
@@ -159,7 +160,7 @@ Endpoint normal recomendado:
 GET /api/context/compact
 ```
 
-`context/compact` debe usar `profile=player_scene` por defecto. Para chequeos técnicos se puede usar `profile=mechanical_turn`, `profile=minimal_header` o `includeTechnicalSummary=true`; `context/full` queda para modo técnico/admin cuando el compacto no alcanza.
+`context/compact` debe usar `profile=player_scene` por defecto. Para chequeos técnicos se puede usar `profile=mechanical_turn`, `profile=minimal_header` o `includeTechnicalSummary=true`; `context/full` queda para modo técnico/admin cuando el compacto no alcanza. `minimal_header`, `debug_audit` y `mechanical_turn` no son suficientes para una respuesta final visible de partida: si se usaron para inspección, el GPT debe volver a leer `profile=player_scene` antes de narrar.
 
 Debe devolver un contexto dinámico suficiente y estructurado:
 
@@ -175,6 +176,9 @@ Debe devolver un contexto dinámico suficiente y estructurado:
 - misiones relevantes;
 - facciones y reputación;
 - alertas de coherencia;
+- `profileContract` que indica si el perfil sirve para narración visible;
+- `hudContract` con etiquetas, orden y líneas canónicas del HUD cuando no hay `displayBundle`;
+- `scene.narrationContract` con voz/NPC/conocimiento/improvisación;
 - `ruleLookupContract` con ruleIds activos y batches concretos para `searchDocs`.
 
 El contexto de partida normal no debe exponer fixtures `flags.testSuite === true` ni tags técnicos como `admin_fix`, `repair`, `test` o `former_*`. Si aparecen en modo técnico, no son conocimiento diegético.
@@ -219,22 +223,46 @@ Uso obligatorio:
 
 Las rule cards no reemplazan al backend ni autorizan resultados nuevos. Solo hacen que las reglas criticas sean recuperables por Action sin depender de memoria del chat.
 
-### 3.2.2 Rule lookup contract C26
+### 3.2.2 Context contracts C27
+
+Las instrucciones del GPT no deben cargar todo el manual. Son un bootloader mínimo:
+
+1. llamar `getCompactContext(profile=player_scene)`;
+2. leer `profileContract`, `hudContract`, `scene.narrationContract` y `ruleLookupContract`;
+3. buscar en Mongo las rule cards indicadas por `ruleLookupContract`;
+4. narrar sin meta y cerrar con HUD exacto.
+
+`profileContract` bloquea el mal uso de perfiles compactos. Si `gameplayReady=false`, el GPT no debe producir la escena final: debe volver a pedir `player_scene`.
+
+`hudContract` es obligatorio en respuestas de partida sin `displayBundle`. Define:
+
+- orden de secciones;
+- nombres exactos de `Cambios relevantes`, `Estado actual` y `Alertas`;
+- campos exactos de estado final;
+- nombres prohibidos o confusos como `Evento visible para Lucas`, `Pendiente practico` o `Estado guardado`;
+- línea segura de no mutación cuando no hubo cambios.
+
+Si `applyTurn` o `completeJobShift` devuelve `displayBundle.renderLines`, gana `displayBundle`. Si no hubo mutación, gana `hudContract`. En ambos casos el GPT no debe reconstruir ni renombrar el HUD.
+
+### 3.2.3 Rule lookup contract C27
 
 `context/compact` debe devolver `ruleLookupContract.schemaVersion = rule_lookup_contract_v1`.
 
-Este contrato no reemplaza a las rule cards. Su trabajo es decirle al GPT que tarjetas debe buscar en Mongo antes de resolver una accion. La copia de `rules_engine.md` en Knowledge es cache util, pero no alcanza como garantia: si una accion toca un dominio mecanico o social relevante, se consulta `searchDocs` con los `ruleIds` indicados.
+Este contrato no reemplaza a las rule cards. Su trabajo es decirle al GPT que tarjetas debe buscar en Mongo antes de resolver una acción o escribir una respuesta final de partida. La copia de `rules_engine.md` en Knowledge es cache útil, pero no alcanza como garantía: si una acción toca un dominio mecánico, social, narrativo o de HUD relevante, se consulta `searchDocs` con los `ruleIds` indicados.
 
 Campos obligatorios:
 
 - `alwaysReadRuleIds`: reglas base de autoridad, flujo de acciones y HUD final;
 - `activeRuleLookups`: reglas activadas por el estado vivo actual, con un trigger breve;
+- `mustSearchBeforeFinalRuleIds`: conjunto que debe consultarse antes de la respuesta final visible cuando hay escena/HUD/diálogo;
 - `mustSearchBeforeMutationRuleIds`: conjunto compacto que debe consultarse antes de previews o mutaciones relevantes;
 - `searchBatches`: paths listos para llamar `GET /api/search/docs?ruleId=...`;
+- `preFinalResponseOrder`: orden operativo antes de responder al jugador;
 - `preMutationOrder`: orden operativo antes de guardar estado.
 
 Regla estricta:
 
+- antes de toda respuesta final visible de partida, el GPT debe leer las reglas core y activas indicadas por `ruleLookupContract` salvo que ya vengan cubiertas por `displayBundle` y no haya escena nueva;
 - si Lucas pide una accion que cambia estado, el GPT debe cruzar la intencion con `ruleLookupContract`;
 - si hay ruleId aplicable, debe llamar `searchDocs` por `ruleId` antes de `applyTurn`, `completeJobShift` o Action de combate;
 - si no consulta las reglas necesarias, no debe mutar: puede narrar solo lectura, preview o pedir una validacion tecnica;

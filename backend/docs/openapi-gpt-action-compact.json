@@ -3501,7 +3501,7 @@
       "get": {
         "operationId": "getCompactContext",
         "summary": "Obtiene contexto compacto para narrar el turno sin exceder limites de GPT Actions.",
-        "description": "Lectura principal del narrador: estado vivo, ubicacion, Lucas, NPCs cercanos, ruleLookupContract obligatorio para reglas dinamicas/searchDocs, scene.narrationContract obligatorio para voz/NPC, misiones, clima, trabajo, combate activo y alertas de coherencia.",
+        "description": "Lectura principal: estado vivo, profileContract/hudContract, ruleLookupContract para searchDocs, scene.narrationContract para voz/NPC, misiones, clima, trabajo, combate y alertas.",
         "parameters": [
           {
             "name": "gameId",
@@ -3516,7 +3516,7 @@
             "name": "profile",
             "in": "query",
             "required": false,
-            "description": "Perfil de proyeccion del contexto. Usar player_scene por defecto; mechanical_turn para chequeos mecanicos; minimal_header para lectura minima.",
+            "description": "Para narrar partida usar player_scene. mechanical_turn/minimal_header solo chequeo tecnico; releer player_scene antes de respuesta final.",
             "schema": {
               "type": "string",
               "enum": [

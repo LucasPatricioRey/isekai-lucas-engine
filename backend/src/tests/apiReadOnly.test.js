@@ -29,6 +29,13 @@ describe("read-only API coverage", () => {
       `compact context payload is ${compactPayloadBytes} bytes and should stay under 100000`
     );
     assert.ok(Array.isArray(compact.data.context.pendingBiology));
+    assert.equal(compact.data.context.profileContract?.schemaVersion, "compact_profile_contract_v1");
+    assert.equal(compact.data.context.profileContract?.gameplayReady, true);
+    assert.equal(compact.data.context.hudContract?.schemaVersion, "hud_contract_v1");
+    assert.equal(compact.data.context.hudContract?.sectionNames?.state, "## Estado actual");
+    assert.ok(
+      compact.data.context.hudContract?.exactStateFieldOrder?.includes("Evento activo")
+    );
     const narrationContract = compact.data.context.scene.narrationContract;
     assert.equal(narrationContract?.schemaVersion, "scene_narration_contract_v1");
     assert.equal(narrationContract?.contractStrength, "mandatory_for_player_scene");
@@ -36,8 +43,13 @@ describe("read-only API coverage", () => {
     assert.ok((narrationContract?.npcContracts || []).length > 0);
     const ruleLookupContract = compact.data.context.ruleLookupContract;
     assert.equal(ruleLookupContract?.schemaVersion, "rule_lookup_contract_v1");
-    assert.equal(ruleLookupContract?.contractStrength, "mandatory_before_preview_or_mutation");
+    assert.equal(
+      ruleLookupContract?.contractStrength,
+      "mandatory_for_final_response_and_blocking_before_mutation"
+    );
     assert.ok(ruleLookupContract?.alwaysReadRuleIds?.includes("authority.backend_state"));
+    assert.ok(ruleLookupContract?.alwaysReadRuleIds?.includes("context.bootloader_contract"));
+    assert.ok(ruleLookupContract?.mustSearchBeforeFinalRuleIds?.includes("format.response_hud_exact"));
     assert.ok(ruleLookupContract?.mustSearchBeforeMutationRuleIds?.includes("format.response_hud_exact"));
     assert.ok(
       (ruleLookupContract?.searchBatches || []).some((batch) =>
@@ -118,6 +130,12 @@ describe("read-only API coverage", () => {
     assert.equal(defaultCompact.status, 200);
     assert.equal(defaultCompact.data.profile, "player_scene");
     assert.equal(defaultCompact.data.context.technicalSummary, undefined);
+
+    const minimalCompact = await get("/api/context/compact?profile=minimal_header&npcLimit=1");
+    assert.equal(minimalCompact.status, 200);
+    assert.equal(minimalCompact.data.profile, "minimal_header");
+    assert.equal(minimalCompact.data.context.profileContract.gameplayReady, false);
+    assert.match(minimalCompact.data.context.profileContract.policy, /Do not write final/);
   });
 
   it("serves read-only state audit for technical admin mode", async () => {

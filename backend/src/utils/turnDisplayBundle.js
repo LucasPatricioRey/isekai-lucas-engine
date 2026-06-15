@@ -242,6 +242,81 @@ function buildStateLines({ gameState = {}, location = null, nearbyNpcs = [], act
   ];
 }
 
+function truncateHudText(value = "", maxLength = 160) {
+  const text = String(value || "").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 1))}...`;
+}
+
+function buildContextHudContract({
+  gameState = {},
+  location = null,
+  nearbyNpcs = [],
+  activeEvents = [],
+  latestEventLog = null,
+  profile = "player_scene",
+} = {}) {
+  const latestSummary = truncateHudText(latestEventLog?.summary || "", 140);
+  const actionSummary = latestSummary
+    ? `ultimo registro visible: ${latestSummary}`
+    : "sin cambios mecanicos nuevos; describir la situacion visible sin inventar cambios";
+  const headerLines = [
+    formatHeader({}, gameState),
+    formatLocationLine({ location, gameState }),
+  ];
+  const stateLines = buildStateLines({
+    gameState,
+    location,
+    nearbyNpcs,
+    activeEvents,
+    actionSummary,
+  });
+
+  return {
+    schemaVersion: "hud_contract_v1",
+    contractStrength: "mandatory_for_every_player_response",
+    source: "context/compact",
+    profile,
+    ruleIds: [
+      "format.response_hud_exact",
+      "format.mechanical_changes",
+      "format.skill_progress",
+      "format.social_changes",
+    ],
+    copyPolicy:
+      "No displayBundle? use exact HUD labels/order here; never rename fields or invent changes.",
+    responseOrder: "header->narration->Cambios relevantes if needed->Estado actual->Alertas if real",
+    sectionNames: {
+      changes: "### Cambios relevantes",
+      state: "## Estado actual",
+      alerts: "### Alertas",
+    },
+    exactStateFieldOrder: [
+      "D\u00eda",
+      "Bloque",
+      "Hora",
+      "Ubicaci\u00f3n",
+      "Vida",
+      "Saciedad",
+      "Energ\u00eda",
+      "MP",
+      "Dinero",
+      "Evento activo",
+      "Situaci\u00f3n",
+      "NPCs visibles/cerca",
+    ],
+    forbiddenStateFieldRenames: [
+      "Evento visible para Lucas",
+      "Pendiente practico",
+      "NPCs cerca",
+      "Estado guardado",
+    ],
+    noMutationChangeLine: "Sin cambios mecanicos nuevos. No avanzo el tiempo.",
+    headerLines,
+    stateLines,
+  };
+}
+
 function buildChangeGroups({ changes = {}, gameState = {} } = {}) {
   const groups = [
     {
@@ -365,6 +440,7 @@ function buildTurnDisplayBundle({
 module.exports = {
   SCHEMA_VERSION,
   buildTurnDisplayBundle,
+  buildContextHudContract,
   buildChangeGroups,
   buildMagicPracticeLines,
   buildJobShiftLines,

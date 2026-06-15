@@ -107,8 +107,12 @@ test("scene narration contract makes Mongo NPC context the mandatory first sourc
   assert.match(contract.npcContracts[0].voiceRule, /frases cortas/);
   assert.ok(contract.npcContracts[0].avoid.some((line) => /manual|HUD|reglas/.test(line)));
   assert.ok(contract.genericDialogueBans.some((line) => /single neutral/.test(line)));
+  assert.equal(contract.dialogueFormatContract.ruleId, "format.dialogue_direct");
+  assert.match(contract.dialogueFormatContract.requiredFormat, /Nombre/);
+  assert.ok(contract.dialogueFormatContract.forbidden.some((line) => /em dash/.test(line)));
   assert.match(contract.npcContracts[0].knowledgeBoundary.rule, /fuente diegetica/);
   assert.ok(contract.preOutputChecklist.some((line) => /Name:/.test(line)));
+  assert.ok(contract.preOutputChecklist.some((line) => /em dash/.test(line)));
 });
 
 test("scene narration contract blocks exact private facts when knowledge is only inferable", () => {

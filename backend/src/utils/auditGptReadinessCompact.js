@@ -279,13 +279,28 @@ async function checkCompactEndpoints(issues) {
   );
   assertCondition(
     issues,
-    "rule lookup contract requires Mongo rule-card lookup before mutation",
-    context.context?.ruleLookupContract?.contractStrength === "mandatory_before_preview_or_mutation"
+    "context/compact exposes profile contract",
+    context.context?.profileContract?.schemaVersion === "compact_profile_contract_v1"
+  );
+  assertCondition(
+    issues,
+    "context/compact exposes HUD contract",
+    context.context?.hudContract?.schemaVersion === "hud_contract_v1"
+  );
+  assertCondition(
+    issues,
+    "rule lookup contract requires Mongo rule-card lookup before final response and mutation",
+    context.context?.ruleLookupContract?.contractStrength === "mandatory_for_final_response_and_blocking_before_mutation"
   );
   assertCondition(
     issues,
     "rule lookup contract includes core state authority",
     (context.context?.ruleLookupContract?.mustSearchBeforeMutationRuleIds || []).includes("authority.backend_state")
+  );
+  assertCondition(
+    issues,
+    "rule lookup contract includes final response lookup set",
+    (context.context?.ruleLookupContract?.mustSearchBeforeFinalRuleIds || []).includes("context.bootloader_contract")
   );
   assertCondition(
     issues,

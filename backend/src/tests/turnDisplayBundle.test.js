@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { buildTurnDisplayBundle } = require("../utils/turnDisplayBundle");
+const { buildContextHudContract, buildTurnDisplayBundle } = require("../utils/turnDisplayBundle");
 
 test("builds a unified HUD bundle from mechanical, skill, social and magic changes", () => {
   const bundle = buildTurnDisplayBundle({
@@ -98,6 +98,54 @@ test("builds a unified HUD bundle from mechanical, skill, social and magic chang
   assert.ok(bundle.renderLines.includes("## Estado actual"));
   assert.ok(bundle.renderLines.includes("Dinero: 0 oro, 14 plata, 98 cobre"));
   assert.ok(bundle.renderLines.includes("NPCs visibles/cerca: Eddan Rusk."));
+});
+
+test("builds canonical HUD contract for read-only player scenes", () => {
+  const contract = buildContextHudContract({
+    profile: "player_scene",
+    gameState: {
+      currentDay: 19,
+      diegeticDate: {
+        day: 19,
+        month: "Roc\u00edo Nuevo",
+        year: 1,
+      },
+      block: "Ma\u00f1ana",
+      time: "07:45",
+      locationId: "loc_hoshimori_guild_patio",
+      moneyCopper: 1498,
+      lucasStatus: {
+        life: { current: 100, max: 100 },
+        satiety: { current: 66, max: 100, label: "hambre leve" },
+        energy: { current: 99, max: 100, label: "rendimiento normal" },
+        mp: { current: 190, max: 200 },
+      },
+    },
+    location: {
+      locationId: "loc_hoshimori_guild_patio",
+      name: "Patio del gremio",
+    },
+    nearbyNpcs: [{ npcId: "npc_eddan", name: "Eddan Rusk" }],
+    activeEvents: [],
+    latestEventLog: {
+      summary: "Lucas practico control interno sin descarga ni conjuracion.",
+    },
+  });
+
+  assert.equal(contract.schemaVersion, "hud_contract_v1");
+  assert.equal(contract.contractStrength, "mandatory_for_every_player_response");
+  assert.equal(contract.sectionNames.state, "## Estado actual");
+  assert.deepEqual(contract.exactStateFieldOrder.slice(0, 4), [
+    "D\u00eda",
+    "Bloque",
+    "Hora",
+    "Ubicaci\u00f3n",
+  ]);
+  assert.ok(contract.forbiddenStateFieldRenames.includes("Evento visible para Lucas"));
+  assert.ok(contract.headerLines.includes("## D\u00eda 19\u201407:45"));
+  assert.ok(contract.stateLines.includes("Evento activo: ninguno"));
+  assert.ok(contract.stateLines.includes("NPCs visibles/cerca: Eddan Rusk."));
+  assert.match(contract.noMutationChangeLine, /Sin cambios mecanicos nuevos/);
 });
 
 test("builds job shift HUD lines from completeJobShift-style changes", () => {

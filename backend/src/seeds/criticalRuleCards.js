@@ -1,4 +1,4 @@
-const CRITICAL_RULE_CARDS_VERSION = "C24D critical_rule_cards_v1";
+const CRITICAL_RULE_CARDS_VERSION = "C27 context_contract_cards_v1";
 
 const criticalRuleCards = [
   {
@@ -19,6 +19,27 @@ const criticalRuleCards = [
     content:
       "Core authority rule. MongoDB/backend is the live save. rules_engine explains resolution. world_bible defines lore. Chat gives intent. If a result changes state, the backend must validate/save it before narration treats it as true.",
     tags: ["rule_card", "authority", "backend", "state", "no_invention"],
+  },
+  {
+    ruleId: "context.bootloader_contract",
+    domain: "core_authority",
+    priority: "critical",
+    appliesTo: ["all_gameplay_turns", "context_compact", "gpt_instructions", "knowledge_files"],
+    must: [
+      "Treat GPT Builder instructions as a bootloader: they force context/search protocol, not full canon.",
+      "Use context.profileContract, context.hudContract, scene.narrationContract and ruleLookupContract as live contracts.",
+      "Call searchDocs for ruleLookupContract core/active ruleIds before final gameplay response when the scene needs rules, HUD or NPC dialogue.",
+      "Use profile=player_scene for visible in-game narration.",
+    ],
+    never: [
+      "Assume uploaded Knowledge files are fresher than MongoDB rule cards or context contracts.",
+      "Write final player-facing narration from minimal_header or debug_audit.",
+      "Ignore hudContract because no mutation happened.",
+    ],
+    template: "instructions boot -> getCompactContext(player_scene) -> contracts -> searchDocs -> final scene/HUD",
+    content:
+      "Bootloader contract. The GPT instructions stay short and only force the protocol. MongoDB/backend contracts and WorldDocumentIndex rule cards are the expanded canon. Every normal gameplay answer should read player_scene context, obey profileContract/hudContract/narrationContract/ruleLookupContract, and search core/active rule cards when producing a final scene or any mutation.",
+    tags: ["rule_card", "context", "bootloader", "mongo_canon", "hud", "searchDocs"],
   },
   {
     ruleId: "format.mechanical_changes",
@@ -105,7 +126,9 @@ const criticalRuleCards = [
     priority: "critical",
     appliesTo: ["gameplay_turn", "mutation", "preview", "pure_question"],
     must: [
-      "Use getCompactContext before normal in-game resolution.",
+      "Use getCompactContext with profile=player_scene before normal visible in-game resolution.",
+      "Use profileContract to reject minimal_header/debug_audit as final narration sources.",
+      "Use ruleLookupContract.searchBatches before final gameplay response and before previews/mutations.",
       "Use previews/details when outcome, cost or legality is uncertain.",
       "Use applyTurn only when state changes; use completeJobShift for full job shifts and combat Action for real advanced combat.",
       "Read compact context again after mutation before final narration.",
@@ -116,7 +139,7 @@ const criticalRuleCards = [
     ],
     template: "read -> preview/details -> mutate if needed -> reread -> narrate saved state",
     content:
-      "Action flow rule. Pure reads and previews do not mutate. State-changing actions use the proper mutator, then the narrator rereads compact context and narrates the saved result.",
+      "Action flow rule. Normal gameplay starts with player_scene compact context and searches the rule cards listed by ruleLookupContract. Pure reads and previews do not mutate. State-changing actions use the proper mutator, then the narrator rereads compact context and narrates the saved result.",
     tags: ["rule_card", "actions", "flow", "applyTurn", "preview"],
   },
   {
@@ -287,6 +310,7 @@ const criticalRuleCards = [
     priority: "critical",
     appliesTo: ["final_response", "hud", "state_summary", "timeAdvance", "estado_actual"],
     must: [
+      "Use context.hudContract when no displayBundle/renderLines exists.",
       "Use exact HH:MM time and exact location in the scene header when time passes.",
       "Keep the response order: scene header, narration, Cambios relevantes, Estado actual, Alertas only if needed.",
       "Always include Estado actual in normal gameplay responses.",
@@ -295,11 +319,13 @@ const criticalRuleCards = [
     never: [
       "Use approximate time words such as aprox., cerca de, alrededor de or mas o menos in final state.",
       "Drop Estado actual because the scene is narrative.",
+      "Rename fields such as Evento activo, Situacion or NPCs visibles/cerca.",
+      "Add pending plans, backend notes or technical status as HUD fields.",
       "Hide relevant HUD fields when backend state exposes them.",
     ],
     template: "header -> narration -> Cambios relevantes -> Estado actual -> Alertas",
     content:
-      "Mandatory response/HUD format. Gameplay answers must keep exact time/location and always end with Estado actual. Cambios relevantes appears only when something changed, but Estado actual always appears.",
+      "Mandatory response/HUD format. Gameplay answers must keep exact time/location and always end with Estado actual. If applyTurn/completeJobShift returns displayBundle/renderLines, copy it. If no mutation happened, use context.hudContract for exact labels/order and never invent extra HUD fields.",
     tags: ["rule_card", "format", "hud", "estado_actual", "time"],
   },
   {

@@ -26,6 +26,29 @@ function queryBoolean(value, fallback = true) {
   return !["0", "false", "no", "off"].includes(normalized);
 }
 
+function buildCompactProfileContract({ profile = "player_scene", includeTechnicalSummary = false } = {}) {
+  const currentProfile = String(profile || "player_scene");
+  const gameplayReady = currentProfile === "player_scene";
+
+  return {
+    schemaVersion: "compact_profile_contract_v1",
+    contractStrength: "mandatory_profile_gate",
+    currentProfile,
+    requiredForPlayerNarration: "player_scene",
+    gameplayReady,
+    policy: gameplayReady
+      ? "This profile is valid for final in-game narration, NPC dialogue and HUD."
+      : "Do not write final player-facing narration from this profile. Call getCompactContext with profile=player_scene first.",
+    includeTechnicalSummary: Boolean(includeTechnicalSummary),
+    profileUses: {
+      player_scene: "normal gameplay narration, NPC dialogue, social texture and final HUD",
+      mechanical_turn: "mechanical inspection before preview/mutation; reread player_scene before final prose",
+      minimal_header: "technical/ping/status checks only; not enough for visible scene narration",
+      debug_audit: "technical/admin audit only; not for immersive player output",
+    },
+  };
+}
+
 function truncateText(value, maxLength = 700) {
   const text = String(value || "");
   if (text.length <= maxLength) return text;
@@ -1445,6 +1468,16 @@ function buildSceneNarrationContract({
       "npcKnowledgeContext",
     ],
     lineIntentOptions: ["medir", "cuidar", "presionar", "ocultar", "corregir", "negociar", "provocar"],
+    dialogueFormatContract: {
+      ruleId: "format.dialogue_direct",
+      requiredFormat: 'Nombre: "mensaje"',
+      allowedFallback: 'Rol: "mensaje" solo para NPC generico o desconocido',
+      forbidden: [
+        "em dash/raya as direct dialogue marker",
+        "dialogue bullets without speaker label",
+        "speakerless quoted replies",
+      ],
+    },
     usePolicy: {
       ifNpcSpeaks:
         "Use NPC contract first; short lines need gesture/subtext/consequence.",
@@ -1466,6 +1499,7 @@ function buildSceneNarrationContract({
       "no interchangeable filler",
       "no rule/manual speech in NPC mouth",
       "no omniscient certainty without source",
+      "no em dash/raya direct dialogue",
     ],
     npcContracts,
     groupContract: {
@@ -1484,6 +1518,7 @@ function buildSceneNarrationContract({
       "HUD final; copy displayBundle when available",
       "no meta/backend/tool/action wording",
       "Name: \"dialogue\" for direct NPC speech",
+      "never use em dash/raya for NPC dialogue",
       "each NPC line has intent/pressure",
     ],
   };
@@ -1491,6 +1526,7 @@ function buildSceneNarrationContract({
 
 const CORE_RULE_LOOKUP_IDS = [
   "authority.backend_state",
+  "context.bootloader_contract",
   "action.scene_flow",
   "format.response_hud_exact",
 ];
@@ -1633,22 +1669,17 @@ function buildRuleLookupContract({
 
   return {
     schemaVersion: "rule_lookup_contract_v1",
-    contractStrength: "mandatory_before_preview_or_mutation",
+    contractStrength: "mandatory_for_final_response_and_blocking_before_mutation",
     source: "WorldDocumentIndex/searchDocs",
     policy:
-      "Read matching ruleIds before preview/mutation. Knowledge is cache; Mongo card wins. If skipped, no mutation.",
+      "Search core/active ruleIds before final gameplay; before preview/mutation it blocks.",
     alwaysReadRuleIds: CORE_RULE_LOOKUP_IDS,
-    activeRuleLookups: active.slice(0, 12),
+    activeRuleLookups: activeRuleIds.slice(0, 12),
+    mustSearchBeforeFinalRuleIds: CORE_RULE_LOOKUP_IDS,
     mustSearchBeforeMutationRuleIds: mustSearchRuleIds,
     searchBatches,
-    preMutationOrder: [
-      "getCompactContext",
-      "searchDocs matching ruleIds",
-      "preview/details",
-      "mutate",
-      "reread compact",
-      "copy displayBundle/HUD",
-    ],
+    preFinalResponseOrder: "getCompactContext(player_scene)->contracts->searchDocs core/active->scene+HUD",
+    preMutationOrder: "getCompactContext->searchDocs->preview/details->mutate->reread->displayBundle/HUD",
   };
 }
 
@@ -2427,6 +2458,7 @@ module.exports = {
   unique,
   toIntQuery,
   queryBoolean,
+  buildCompactProfileContract,
   truncateText,
   timeToMinutes,
   isExpiredAt,
