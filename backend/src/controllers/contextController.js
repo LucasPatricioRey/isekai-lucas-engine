@@ -126,6 +126,34 @@ function compactProfileCaps(profile) {
   };
 }
 
+function applyTechnicalPayloadBudget(profile, includeTechnicalSummary, limits) {
+  if (!includeTechnicalSummary || profile === "debug_audit") return limits;
+
+  if (profile === "mechanical_turn") {
+    return {
+      ...limits,
+      npcLimit: Math.min(limits.npcLimit, 3),
+      memoryLimit: Math.min(limits.memoryLimit, 1),
+      rumorLimit: Math.min(limits.rumorLimit, 1),
+      missionLimit: Math.min(limits.missionLimit, 3),
+      eventLimit: Math.min(limits.eventLimit, 3),
+      logLimit: Math.min(limits.logLimit, 2),
+      commitmentLimit: Math.min(limits.commitmentLimit, 3),
+    };
+  }
+
+  return {
+    ...limits,
+    npcLimit: Math.min(limits.npcLimit, 4),
+    memoryLimit: Math.min(limits.memoryLimit, 2),
+    rumorLimit: Math.min(limits.rumorLimit, 2),
+    missionLimit: Math.min(limits.missionLimit, 3),
+    eventLimit: Math.min(limits.eventLimit, 4),
+    logLimit: Math.min(limits.logLimit, 2),
+    commitmentLimit: Math.min(limits.commitmentLimit, 4),
+  };
+}
+
 function npcMemoryImportanceRank(memory = {}) {
   const ranks = {
     critical: 4,
@@ -1195,7 +1223,7 @@ async function getCompactContext(req, res) {
     const profile = normalizeCompactProfile(req.query.profile, includeTechnicalSummary);
     const defaultLimits = compactProfileDefaults(profile);
     const capLimits = compactProfileCaps(profile);
-    const limits = {
+    const requestedLimits = {
       npcLimit: responseShaping.toIntQuery(req.query.npcLimit, defaultLimits.npcLimit, 1, capLimits.npcLimit),
       memoryLimit: responseShaping.toIntQuery(req.query.memoryLimit, defaultLimits.memoryLimit, 0, capLimits.memoryLimit),
       rumorLimit: responseShaping.toIntQuery(req.query.rumorLimit, defaultLimits.rumorLimit, 0, capLimits.rumorLimit),
@@ -1209,6 +1237,7 @@ async function getCompactContext(req, res) {
         capLimits.commitmentLimit
       ),
     };
+    const limits = applyTechnicalPayloadBudget(profile, includeTechnicalSummary, requestedLimits);
 
     const gameState = await GameState.findOne({ gameId }).lean();
 
@@ -1281,7 +1310,14 @@ async function getCompactContext(req, res) {
           .lean()
       : [];
     const nearbyShopIds = nearbyShops.map((shop) => shop.shopId);
-    const nearbyShopStockLimit = profile === "debug_audit" ? 80 : profile === "minimal_header" ? 24 : 48;
+    const nearbyShopStockLimit =
+      profile === "debug_audit"
+        ? 80
+        : profile === "minimal_header"
+          ? 24
+          : profile === "mechanical_turn"
+            ? 20
+            : 48;
     const nearbyFactionIds = unique([
       currentLocation?.controllingFactionId,
       parentLocation?.controllingFactionId,
@@ -1339,9 +1375,12 @@ async function getCompactContext(req, res) {
       { status: "available" },
       { gameId, includeTestSuite: includeTestSuiteMissions }
     );
-    const socialLedgerLimit = profile === "debug_audit" ? 20 : profile === "minimal_header" ? 4 : 10;
-    const knowledgeRecordLimit = profile === "debug_audit" ? 40 : profile === "minimal_header" ? 12 : 24;
-    const narrativeContextLimit = profile === "debug_audit" ? 30 : profile === "minimal_header" ? 8 : 18;
+    const socialLedgerLimit =
+      profile === "debug_audit" ? 20 : profile === "minimal_header" ? 4 : profile === "mechanical_turn" ? 6 : 10;
+    const knowledgeRecordLimit =
+      profile === "debug_audit" ? 40 : profile === "minimal_header" ? 12 : profile === "mechanical_turn" ? 12 : 24;
+    const narrativeContextLimit =
+      profile === "debug_audit" ? 30 : profile === "minimal_header" ? 8 : profile === "mechanical_turn" ? 8 : 18;
     const memoryFetchLimit =
       profile === "debug_audit"
         ? limits.memoryLimit

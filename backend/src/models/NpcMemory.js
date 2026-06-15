@@ -44,6 +44,12 @@ const npcMemorySchema = new mongoose.Schema(
       default: "",
     },
 
+    sourceEventLogId: {
+      type: String,
+      default: "",
+      index: true,
+    },
+
     certainty: {
       type: String,
       enum: ["confirmed", "probable", "rumor", "doubtful"],

@@ -68,6 +68,11 @@ const knowledgeRecordSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    sourceEventLogId: {
+      type: String,
+      default: "",
+      index: true,
+    },
     certainty: {
       type: String,
       enum: ["confirmed", "probable", "rumor", "doubtful"],

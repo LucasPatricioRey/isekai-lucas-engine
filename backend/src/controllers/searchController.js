@@ -10,7 +10,10 @@ const Shop = require("../models/Shop");
 const Faction = require("../models/Faction");
 const EnemyTemplate = require("../models/EnemyTemplate");
 const CombatEncounter = require("../models/CombatEncounter");
+const Checkpoint = require("../models/Checkpoint");
 const Commitment = require("../models/Commitment");
+const GameState = require("../models/GameState");
+const NpcSocialLedger = require("../models/NpcSocialLedger");
 const NpcRelationship = require("../models/NpcRelationship");
 const WorldDocumentIndex = require("../models/WorldDocumentIndex");
 const { eventGameFilter } = require("../services/dailyEventSchedulerService");
@@ -55,6 +58,22 @@ function getSearchTokens(query) {
   return Array.from(new Set(normalizeSearchText(query).split(" ")))
     .filter((token) => token.length >= 3 && !stopwords.has(token))
     .slice(0, 8);
+}
+
+function buildSearchRegexes(query) {
+  return [
+    buildRegex(query),
+    ...getSearchTokens(query).map((token) => buildRegex(token)),
+  ];
+}
+
+function searchFieldClauses(fields, regexes) {
+  return regexes.flatMap((regex) => fields.map((field) => ({ [field]: regex })));
+}
+
+function matchesAnyRegex(value, regexes) {
+  const text = String(value || "");
+  return regexes.some((regex) => regex.test(text));
 }
 
 function parseListQuery(value) {
@@ -126,7 +145,7 @@ async function searchDb(req, res) {
     });
   }
 
-  const regex = buildRegex(q);
+  const regexes = buildSearchRegexes(q);
 
   const [
     npcs,
@@ -141,166 +160,160 @@ async function searchDb(req, res) {
     factions,
     enemyTemplates,
     combatEncounters,
+    checkpoints,
     commitments,
+    npcSocialLedgers,
     npcRelationships,
+    gameStatesWithBiology,
   ] = await Promise.all([
     Npc.find({
-      $or: [
-        { npcId: regex },
-        { name: regex },
-        { role: regex },
-        { personality: regex },
-        { knownPublicFacts: regex },
-      ],
+      $or: searchFieldClauses(["npcId", "name", "role", "personality", "knownPublicFacts"], regexes),
     }).limit(10).lean(),
 
     NpcMemory.find({
-      $or: [
-        { npcId: regex },
-        { fact: regex },
-        { summary: regex },
-        { tags: regex },
-      ],
+      $or: searchFieldClauses(["memoryId", "npcId", "fact", "summary", "sourceId", "sourceEventLogId", "tags"], regexes),
     }).limit(10).lean(),
 
     Rumor.find({
-      $or: [
-        { rumorId: regex },
-        { content: regex },
-        { originalContent: regex },
-        { origin: regex },
-        { source: regex },
-        { tags: regex },
-      ],
+      $or: searchFieldClauses(["rumorId", "content", "originalContent", "origin", "source", "tags"], regexes),
     }).limit(10).lean(),
 
     Location.find({
-      $or: [
-        { locationId: regex },
-        { name: regex },
-        { type: regex },
-        { tags: regex },
-      ],
+      $or: searchFieldClauses(["locationId", "name", "type", "tags"], regexes),
     }).limit(10).lean(),
 
     WorldEvent.find({
       $and: [
         eventGameFilter(gameId),
         {
-          $or: [
-            { eventId: regex },
-            { templateId: regex },
-            { title: regex },
-            { type: regex },
-            { cause: regex },
-            { tags: regex },
-          ],
+          $or: searchFieldClauses(["eventId", "templateId", "title", "type", "cause", "tags"], regexes),
         },
       ],
     }).limit(10).lean(),
 
     Mission.find({
-      $or: [
-        { missionId: regex },
-        { title: regex },
-        { description: regex },
-        { requirements: regex },
-      ],
+      $or: searchFieldClauses(["missionId", "title", "description", "requirements", "tags"], regexes),
     }).limit(10).lean(),
 
     EventLog.find({
       gameId,
-      $or: [
-        { logId: regex },
-        { type: regex },
-        { summary: regex },
-        { tags: regex },
-      ],
+      $or: searchFieldClauses(
+        [
+          "logId",
+          "type",
+          "summary",
+          "tags",
+          "mechanicalChanges.skillProgressDisplay.displayLines",
+          "mechanicalChanges.mechanicalChangeDisplay.displayLines",
+          "mechanicalChanges.magicPractice.techniqueId",
+          "mechanicalChanges.magicPractice.techniqueName",
+          "mechanicalChanges.magicPractice.skills.displayLine",
+          "mechanicalChanges.skills.displayLine",
+          "mechanicalChanges.npcRelationships.ledgerId",
+          "mechanicalChanges.npcRelationships.sourceEventLogId",
+          "mechanicalChanges.biologicalClock.pendingCreated.accumulationId",
+          "mechanicalChanges.biologicalClock.pendingCreated.sourceEventLogId",
+        ],
+        regexes
+      ),
     }).sort({ day: -1, timeStart: -1 }).limit(10).lean(),
 
     Item.find({
-      $or: [
-        { itemId: regex },
-        { name: regex },
-        { type: regex },
-        { description: regex },
-        { tags: regex },
-      ],
+      $or: searchFieldClauses(["itemId", "name", "type", "description", "tags"], regexes),
     }).limit(10).lean(),
 
     Shop.find({
-      $or: [
-        { shopId: regex },
-        { name: regex },
-        { type: regex },
-        { tags: regex },
-      ],
+      $or: searchFieldClauses(["shopId", "name", "type", "tags"], regexes),
     }).limit(10).lean(),
 
     Faction.find({
-      $or: [
-        { factionId: regex },
-        { name: regex },
-        { type: regex },
-        { goals: regex },
-        { knownFactsAboutLucas: regex },
-      ],
+      $or: searchFieldClauses(["factionId", "name", "type", "goals", "knownFactsAboutLucas", "tags"], regexes),
     }).limit(10).lean(),
 
     EnemyTemplate.find({
-      $or: [
-        { enemyId: regex },
-        { name: regex },
-        { type: regex },
-        { dangerLevel: regex },
-        { rankHint: regex },
-        { behavior: regex },
-        { zones: regex },
-        { signals: regex },
-        { tags: regex },
-      ],
+      $or: searchFieldClauses(
+        ["enemyId", "name", "type", "dangerLevel", "rankHint", "behavior", "zones", "signals", "tags"],
+        regexes
+      ),
     }).limit(10).lean(),
 
     CombatEncounter.find({
-      $or: [
-        { encounterId: regex },
-        { enemyId: regex },
-        { enemyName: regex },
-        { status: regex },
-        { locationId: regex },
-      ],
+      $or: searchFieldClauses(["encounterId", "enemyId", "enemyName", "status", "locationId"], regexes),
+    }).limit(10).lean(),
+
+    Checkpoint.find({
+      gameId,
+      $or: searchFieldClauses(
+        ["checkpointId", "title", "reason", "triggerKey", "metadata.sourceEventLogId", "notes"],
+        regexes
+      ),
     }).limit(10).lean(),
 
     Commitment.find({
       gameId,
-      $or: [
-        { commitmentId: regex },
-        { title: regex },
-        { summary: regex },
-        { type: regex },
-        { status: regex },
-        { targetNpcIds: regex },
-        { tags: regex },
-      ],
+      $or: searchFieldClauses(
+        ["commitmentId", "title", "summary", "type", "status", "sourceEventLogId", "targetNpcIds", "tags"],
+        regexes
+      ),
+    }).limit(10).lean(),
+
+    NpcSocialLedger.find({
+      gameId,
+      $or: searchFieldClauses(
+        ["ledgerId", "npcId", "actionType", "reason", "sourceEventId", "sourceMissionId", "sourceEventLogId", "tags"],
+        regexes
+      ),
     }).limit(10).lean(),
 
     NpcRelationship.find({
-      $or: [
-        { relationshipId: regex },
-        { npcAId: regex },
-        { npcBId: regex },
-        { type: regex },
-        { publicSummary: regex },
-        { privateNotes: regex },
-        { source: regex },
-        { tags: regex },
-      ],
+      $or: searchFieldClauses(
+        ["relationshipId", "npcAId", "npcBId", "type", "publicSummary", "privateNotes", "source", "tags"],
+        regexes
+      ),
     }).limit(10).lean(),
+
+    GameState.find({
+      gameId,
+      $or: searchFieldClauses(
+        [
+          "biologicalClock.pendingAccumulations.accumulationId",
+          "biologicalClock.pendingAccumulations.sourceEventLogId",
+          "biologicalClock.pendingAccumulations.sourceActionSummary",
+          "biologicalClock.pendingAccumulations.reason",
+        ],
+        regexes
+      ),
+    })
+      .select("gameId currentDay time locationId biologicalClock.pendingAccumulations")
+      .limit(2)
+      .lean(),
   ]);
+
+  const biologicalAccumulations = gameStatesWithBiology.flatMap((state) =>
+    (state.biologicalClock?.pendingAccumulations || [])
+      .filter((entry) =>
+        [
+          entry.accumulationId,
+          entry.sourceEventLogId,
+          entry.sourceActionSummary,
+          entry.reason,
+          entry.category,
+        ].some((value) => matchesAnyRegex(value, regexes))
+      )
+      .slice(0, 10)
+      .map((entry) => ({
+        ...entry,
+        gameId: state.gameId,
+        currentDay: state.currentDay,
+        currentTime: state.time,
+        currentLocationId: state.locationId,
+      }))
+  );
 
   return res.json({
     ok: true,
     query: q,
+    tokens: getSearchTokens(q),
     results: {
       npcs,
       npcMemories,
@@ -314,8 +327,11 @@ async function searchDb(req, res) {
       factions,
       enemyTemplates,
       combatEncounters,
+      checkpoints,
       commitments,
+      npcSocialLedgers,
       npcRelationships,
+      biologicalAccumulations,
     },
   });
 }

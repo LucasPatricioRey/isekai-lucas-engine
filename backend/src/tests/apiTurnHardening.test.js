@@ -2637,6 +2637,31 @@ describe("turn hardening coverage", () => {
     assert.equal(firstLedger.npcId, tempNpcId);
     assert.equal(firstLedger.appliedDeltas.trust, 2);
     assert.equal(firstLedger.appliedDeltas.respect, 1);
+    assert.ok(relationship.data.changes.npcRelationships[0].sourceEventLogId);
+    assert.equal(firstLedger.sourceEventLogId, relationship.data.changes.npcRelationships[0].sourceEventLogId);
+
+    const relationshipLog = await EventLog.findOne({
+      gameId: tempGameId,
+      logId: firstLedger.sourceEventLogId,
+    }).lean();
+    assert.ok(relationshipLog);
+    assert.equal(
+      relationshipLog.mechanicalChanges.npcRelationships[0].sourceEventLogId,
+      relationshipLog.logId
+    );
+
+    const relationshipSearch = await get(
+      `/api/search/db?gameId=${encodeURIComponent(tempGameId)}&q=${encodeURIComponent(
+        `${relationshipLog.logId} ${firstLedger.ledgerId}`
+      )}`
+    );
+    assert.equal(relationshipSearch.status, 200);
+    assert.ok(
+      relationshipSearch.data.results.eventLogs.some((log) => log.logId === relationshipLog.logId)
+    );
+    assert.ok(
+      relationshipSearch.data.results.npcSocialLedgers.some((ledger) => ledger.ledgerId === firstLedger.ledgerId)
+    );
 
     const cappedRelationship = await post("/api/turn/apply", {
       gameId: tempGameId,
@@ -2671,6 +2696,72 @@ describe("turn hardening coverage", () => {
     assert.equal(
       cappedRelationship.data.changes.npcRelationships[0].caps.fields.trust.reason,
       "daily_cap_trust"
+    );
+
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: 10,
+          time: "12:00",
+          biologicalClock: {
+            lastProcessedTime: "12:00",
+            currentHourBlock: "12:00-13:00",
+            pendingAccumulation: [],
+            pendingAccumulations: [],
+          },
+        },
+      }
+    );
+
+    const biology = await post("/api/turn/apply", {
+      gameId: tempGameId,
+      actionSummary: "Test controlado: acumulador biologico trazable.",
+      timeAdvance: {
+        from: "12:00",
+        to: "12:10",
+      },
+      activityCost: {
+        category: "descanso_sentado",
+        minutes: 10,
+        reason: "Prueba trazable de descanso sentado.",
+      },
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de sourceEventLogId biologico.",
+          visibility: "hidden",
+          tags: ["test_turn_hardening", "traceability"],
+        },
+      ],
+    });
+    assert.equal(biology.status, 200);
+    assert.equal(biology.data.ok, true);
+    const bioLogId = biology.data.changes.biologicalClock.sourceEventLogId;
+    const bioAccumulationId = biology.data.changes.biologicalClock.pendingCreated[0].accumulationId;
+    assert.ok(bioLogId);
+    assert.equal(biology.data.changes.biologicalClock.pendingCreated[0].sourceEventLogId, bioLogId);
+
+    const stateWithBio = await GameState.findOne({ gameId: tempGameId }).lean();
+    const savedAccumulation = stateWithBio.biologicalClock.pendingAccumulations.find(
+      (entry) => entry.accumulationId === bioAccumulationId
+    );
+    assert.equal(savedAccumulation.sourceEventLogId, bioLogId);
+
+    const biologyLog = await EventLog.findOne({ gameId: tempGameId, logId: bioLogId }).lean();
+    assert.equal(biologyLog.mechanicalChanges.biologicalClock.pendingCreated[0].sourceEventLogId, bioLogId);
+
+    const biologySearch = await get(
+      `/api/search/db?gameId=${encodeURIComponent(tempGameId)}&q=${encodeURIComponent(
+        `${bioLogId} ${bioAccumulationId}`
+      )}`
+    );
+    assert.equal(biologySearch.status, 200);
+    assert.ok(biologySearch.data.results.eventLogs.some((log) => log.logId === bioLogId));
+    assert.ok(
+      biologySearch.data.results.biologicalAccumulations.some(
+        (entry) => entry.accumulationId === bioAccumulationId
+      )
     );
   });
 

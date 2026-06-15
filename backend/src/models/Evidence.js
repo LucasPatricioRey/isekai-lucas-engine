@@ -123,6 +123,12 @@ const evidenceSchema = new mongoose.Schema(
       index: true,
     },
 
+    sourceEventLogId: {
+      type: String,
+      default: "",
+      index: true,
+    },
+
     relatedEventIds: {
       type: [String],
       default: [],

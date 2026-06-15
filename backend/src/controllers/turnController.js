@@ -2,8 +2,10 @@
 
 const GameState = require("../models/GameState");
 const EventLog = require("../models/EventLog");
+const KnowledgeRecord = require("../models/KnowledgeRecord");
 const Npc = require("../models/Npc");
 const NpcMemory = require("../models/NpcMemory");
+const NpcSocialLedger = require("../models/NpcSocialLedger");
 const Rumor = require("../models/Rumor");
 const WorldEvent = require("../models/WorldEvent");
 const Location = require("../models/Location");
@@ -1559,6 +1561,7 @@ async function applyNpcMemoryPatches(gameState, patches, session = null) {
       summary: patch.summary || "",
       sourceType: patch.sourceType || "told_by_lucas",
       sourceId: patch.sourceId || "",
+      sourceEventLogId: patch.sourceEventLogId || "",
       certainty: patch.certainty || "confirmed",
       emotionalWeight: patch.emotionalWeight || "low",
       privacyLevel: patch.privacyLevel || "private",
@@ -1846,6 +1849,8 @@ async function applyEvidencePatches(gameState, patches, session = null) {
       locationId: rawPatch.locationId || existing?.locationId || gameState.locationId || "",
       sourceEventId: rawPatch.sourceEventId !== undefined ? rawPatch.sourceEventId : existing?.sourceEventId || "",
       sourceMissionId: rawPatch.sourceMissionId !== undefined ? rawPatch.sourceMissionId : existing?.sourceMissionId || "",
+      sourceEventLogId:
+        rawPatch.sourceEventLogId !== undefined ? rawPatch.sourceEventLogId : existing?.sourceEventLogId || "",
       relatedEventIds: baseRelatedEventIds.slice(0, 12),
       relatedMissionIds: baseRelatedMissionIds.slice(0, 12),
       reportedToNpcIds: unique([...(existing?.reportedToNpcIds || []), ...(rawPatch.reportedToNpcIds || [])]).slice(0, 12),
@@ -4144,6 +4149,148 @@ function applyBiologicalClockForTurn(gameState, body, turnTimeAdvance) {
   };
 }
 
+function assignSourceEventLogId(entry, sourceEventLogId) {
+  if (entry && typeof entry === "object" && !entry.sourceEventLogId) {
+    entry.sourceEventLogId = sourceEventLogId;
+  }
+}
+
+function collectPendingAccumulationIdsFromChanges(changes = {}) {
+  return unique((changes.biologicalClock?.pendingCreated || []).map((entry) => entry.accumulationId));
+}
+
+async function linkTurnSubrecordsToEventLog({
+  gameId,
+  gameState,
+  changes,
+  sourceEventLogId,
+  session = null,
+}) {
+  if (!sourceEventLogId || !changes || typeof changes !== "object") {
+    return null;
+  }
+
+  const linked = {
+    sourceEventLogId,
+    npcSocialLedgerIds: [],
+    npcMemoryIds: [],
+    knowledgeIds: [],
+    evidenceIds: [],
+    commitmentIds: [],
+    biologicalAccumulationIds: [],
+  };
+
+  const ledgerIds = unique((changes.npcRelationships || []).map((entry) => entry.ledgerId));
+  if (ledgerIds.length > 0) {
+    await NpcSocialLedger.updateMany(
+      {
+        gameId,
+        ledgerId: { $in: ledgerIds },
+        $or: [{ sourceEventLogId: "" }, { sourceEventLogId: { $exists: false } }],
+      },
+      { $set: { sourceEventLogId } },
+      { session }
+    );
+    for (const entry of changes.npcRelationships || []) assignSourceEventLogId(entry, sourceEventLogId);
+    linked.npcSocialLedgerIds = ledgerIds;
+  }
+
+  const memoryIds = unique((changes.npcMemories || []).map((entry) => entry.memoryId));
+  if (memoryIds.length > 0) {
+    await NpcMemory.updateMany(
+      {
+        memoryId: { $in: memoryIds },
+        $or: [{ sourceEventLogId: "" }, { sourceEventLogId: { $exists: false } }],
+      },
+      { $set: { sourceEventLogId } },
+      { session }
+    );
+    for (const entry of changes.npcMemories || []) assignSourceEventLogId(entry, sourceEventLogId);
+    linked.npcMemoryIds = memoryIds;
+  }
+
+  const knowledgeIds = unique((changes.knowledge || []).map((entry) => entry.knowledgeId));
+  if (knowledgeIds.length > 0) {
+    await KnowledgeRecord.updateMany(
+      {
+        gameId,
+        knowledgeId: { $in: knowledgeIds },
+        $or: [{ sourceEventLogId: "" }, { sourceEventLogId: { $exists: false } }],
+      },
+      { $set: { sourceEventLogId } },
+      { session }
+    );
+    for (const entry of changes.knowledge || []) assignSourceEventLogId(entry, sourceEventLogId);
+    linked.knowledgeIds = knowledgeIds;
+  }
+
+  const evidenceIds = unique((changes.evidence || []).map((entry) => entry.evidenceId));
+  if (evidenceIds.length > 0) {
+    await Evidence.updateMany(
+      {
+        gameId,
+        evidenceId: { $in: evidenceIds },
+        $or: [{ sourceEventLogId: "" }, { sourceEventLogId: { $exists: false } }],
+      },
+      { $set: { sourceEventLogId } },
+      { session }
+    );
+    for (const entry of changes.evidence || []) {
+      assignSourceEventLogId(entry, sourceEventLogId);
+      assignSourceEventLogId(entry.after, sourceEventLogId);
+    }
+    linked.evidenceIds = evidenceIds;
+  }
+
+  const commitmentIds = unique((changes.commitments || []).map((entry) => entry.commitmentId));
+  if (commitmentIds.length > 0) {
+    await Commitment.updateMany(
+      {
+        gameId,
+        commitmentId: { $in: commitmentIds },
+        $or: [{ sourceEventLogId: "" }, { sourceEventLogId: { $exists: false } }],
+      },
+      { $set: { sourceEventLogId } },
+      { session }
+    );
+    for (const entry of changes.commitments || []) {
+      assignSourceEventLogId(entry, sourceEventLogId);
+      assignSourceEventLogId(entry.after, sourceEventLogId);
+    }
+    linked.commitmentIds = commitmentIds;
+  }
+
+  const pendingAccumulationIds = collectPendingAccumulationIdsFromChanges(changes);
+  if (pendingAccumulationIds.length > 0) {
+    await GameState.updateOne(
+      { gameId },
+      {
+        $set: {
+          "biologicalClock.pendingAccumulations.$[entry].sourceEventLogId": sourceEventLogId,
+        },
+      },
+      {
+        arrayFilters: [{ "entry.accumulationId": { $in: pendingAccumulationIds } }],
+        session,
+      }
+    );
+
+    for (const entry of changes.biologicalClock?.pendingCreated || []) assignSourceEventLogId(entry, sourceEventLogId);
+    for (const entry of gameState.biologicalClock?.pendingAccumulations || []) {
+      if (pendingAccumulationIds.includes(entry.accumulationId)) {
+        entry.sourceEventLogId = sourceEventLogId;
+      }
+    }
+    if (typeof gameState.markModified === "function") gameState.markModified("biologicalClock");
+    linked.biologicalAccumulationIds = pendingAccumulationIds;
+  }
+
+  if (changes.biologicalClock) assignSourceEventLogId(changes.biologicalClock, sourceEventLogId);
+  if (changes.activityCost) assignSourceEventLogId(changes.activityCost, sourceEventLogId);
+
+  return linked;
+}
+
 async function applyTurn(req, res) {
   let session = null;
 
@@ -4688,11 +4835,14 @@ async function applyTurn(req, res) {
       attachMechanicalChangeDisplay(changes);
 
       const logsToCreate = [];
+      const turnMechanicalLogIds = [];
 
       if (Array.isArray(body.eventLogs)) {
         for (const log of body.eventLogs) {
+          const logId = log.logId || createLogId();
+          const usesTurnMechanicalChanges = !log.mechanicalChanges;
           logsToCreate.push({
-            logId: log.logId || createLogId(),
+            logId,
             gameId,
             day: changes.time?.dayBefore || updatedGameState.currentDay,
             timeStart: body.timeAdvance?.from || changes.time?.before || updatedGameState.time,
@@ -4708,10 +4858,12 @@ async function applyTurn(req, res) {
             source: log.source || "player_action",
             tags: log.tags || [],
           });
+          if (usesTurnMechanicalChanges) turnMechanicalLogIds.push(logId);
         }
       } else if (body.actionSummary || Object.keys(changes).length > 0) {
+        const logId = createLogId();
         logsToCreate.push({
-          logId: createLogId(),
+          logId,
           gameId,
           day: changes.time?.dayBefore || updatedGameState.currentDay,
           timeStart: changes.time?.before || updatedGameState.time,
@@ -4724,6 +4876,7 @@ async function applyTurn(req, res) {
           visibility: "private",
           source: "player_action",
         });
+        turnMechanicalLogIds.push(logId);
       }
 
       let narrativeHints = null;
@@ -4764,6 +4917,22 @@ async function applyTurn(req, res) {
 
       if (logsToCreate.length > 0) {
         await EventLog.insertMany(logsToCreate, { session });
+        const primarySourceEventLogId = logsToCreate[0].logId;
+        await linkTurnSubrecordsToEventLog({
+          gameId,
+          gameState,
+          changes,
+          sourceEventLogId: primarySourceEventLogId,
+          session,
+        });
+
+        if (turnMechanicalLogIds.length > 0) {
+          await EventLog.updateMany(
+            { gameId, logId: { $in: turnMechanicalLogIds } },
+            { $set: { mechanicalChanges: changes } },
+            { session }
+          );
+        }
       }
 
       const autoCheckpointPlan = buildApplyTurnAutoCheckpointPlan(changes);

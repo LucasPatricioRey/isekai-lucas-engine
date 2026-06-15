@@ -2503,7 +2503,7 @@
     "/api/search/db": {
       "get": {
         "operationId": "searchDatabase",
-        "summary": "Busca entidades vivas en MongoDB, incluyendo NPCs, locations, rumores, items, shops, misiones, enemigos y eventos.",
+        "summary": "Busca entidades vivas y trazas tecnicas en MongoDB: NPCs, eventos, logs, checkpoints, ledgers, acumuladores, misiones, items y ubicaciones.",
         "parameters": [
           {
             "name": "q",
