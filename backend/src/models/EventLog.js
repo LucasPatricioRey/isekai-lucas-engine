@@ -16,6 +16,12 @@ const eventLogSchema = new mongoose.Schema(
       index: true,
     },
 
+    clientTurnId: {
+      type: String,
+      default: "",
+      index: true,
+    },
+
     day: {
       type: Number,
       required: true,
@@ -105,5 +111,6 @@ const eventLogSchema = new mongoose.Schema(
 eventLogSchema.index({ gameId: 1, day: -1, timeStart: -1 });
 eventLogSchema.index({ gameId: 1, locationId: 1, day: -1, timeStart: -1 });
 eventLogSchema.index({ gameId: 1, involvedNpcIds: 1, day: -1, timeStart: -1 });
+eventLogSchema.index({ gameId: 1, clientTurnId: 1 });
 
 module.exports = mongoose.model("EventLog", eventLogSchema);

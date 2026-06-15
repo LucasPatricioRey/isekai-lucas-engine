@@ -38,6 +38,7 @@ let tempCanonLeakMissionId = "";
 let tempJobContractId = "";
 let tempCreatedJobContractId = "";
 let tempNpcId = "";
+let tempIdempotentNpcId = "";
 let tempRemoteNpcId = "";
 let tempFactionId = "";
 let tempWeatherRegionId = "";
@@ -51,6 +52,7 @@ async function createIsolatedGameState() {
   tempCanonLeakMissionId = `mission_test_turn_hardening_canon_leak_${Date.now()}`;
   tempJobContractId = `contract_test_turn_hardening_${Date.now()}`;
   tempNpcId = `npc_test_relationship_${Date.now()}`;
+  tempIdempotentNpcId = `npc_test_idempotent_${Date.now()}`;
   tempRemoteNpcId = `npc_test_relationship_remote_${Date.now()}`;
   tempFactionId = `faction_test_institution_${Date.now()}`;
   tempWeatherRegionId = `region_test_turn_hardening_${Date.now()}`;
@@ -254,6 +256,24 @@ async function createIsolatedGameState() {
     },
   });
 
+  await Npc.create({
+    npcId: tempIdempotentNpcId,
+    name: "NPC Test Idempotencia",
+    role: "fixture social idempotente",
+    currentLocationId: "loc_hoshimori_grulla_azul_comedor",
+    relationshipWithLucas: {
+      trust: 10,
+      familiarity: 0,
+      affection: 0,
+      suspicion: 0,
+      respect: 5,
+      fear: 0,
+      jealousy: 0,
+      socialDebt: 0,
+      notes: "Fixture temporal para reintentos idempotentes.",
+    },
+  });
+
   await Faction.create({
     factionId: tempFactionId,
     name: "Institucion temporal de test",
@@ -290,6 +310,8 @@ async function cleanupIsolatedState() {
   });
   if (tempNpcId) await Npc.deleteOne({ npcId: tempNpcId });
   if (tempNpcId) await NpcSocialLedger.deleteMany({ npcId: tempNpcId });
+  if (tempIdempotentNpcId) await Npc.deleteOne({ npcId: tempIdempotentNpcId });
+  if (tempIdempotentNpcId) await NpcSocialLedger.deleteMany({ npcId: tempIdempotentNpcId });
   if (tempRemoteNpcId) await Npc.deleteOne({ npcId: tempRemoteNpcId });
   if (tempRemoteNpcId) await NpcSocialLedger.deleteMany({ npcId: tempRemoteNpcId });
   if (tempFactionId) await Faction.deleteOne({ factionId: tempFactionId });
@@ -2543,6 +2565,61 @@ describe("turn hardening coverage", () => {
     } finally {
       await GameState.updateOne({ gameId: tempGameId }, { $set: { characterId: originalCharacterId } });
     }
+  });
+
+  it("replays applyTurn by clientTurnId without duplicating mutation", async () => {
+    const clientTurnId = `test-idempotent-${Date.now()}`;
+    const body = {
+      gameId: tempGameId,
+      clientTurnId,
+      actionSummary: "Test controlado: reintento idempotente de applyTurn.",
+      npcRelationshipPatches: [
+        {
+          npcId: tempIdempotentNpcId,
+          familiarityDelta: 1,
+          reason: "Accion social unica usada para validar idempotencia.",
+          actionType: "test_idempotent_turn",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+      eventLogs: [
+        {
+          source: "system_correction",
+          summary: "Test controlado de clientTurnId idempotente.",
+          visibility: "hidden",
+          tags: ["test_turn_hardening"],
+        },
+      ],
+    };
+
+    const first = await post("/api/turn/apply", body);
+    assert.equal(first.status, 200, JSON.stringify(first.data));
+    assert.equal(first.data.ok, true);
+    assert.equal(first.data.responseProfile, "compact");
+    assert.equal(first.data.idempotentReplay, false);
+    assert.equal(first.data.clientTurnId, clientTurnId);
+    assert.equal(first.data.eventLogsCreated, 1);
+    assert.equal(first.data.changes.npcRelationships[0].after.familiarity, 1);
+    assert.equal(first.data.gameState.skills, undefined);
+
+    const afterFirstNpc = await Npc.findOne({ npcId: tempIdempotentNpcId }).lean();
+    assert.equal(afterFirstNpc.relationshipWithLucas.familiarity, 1);
+    assert.equal(await EventLog.countDocuments({ gameId: tempGameId, clientTurnId }), 1);
+    assert.equal(await NpcSocialLedger.countDocuments({ npcId: tempIdempotentNpcId }), 1);
+
+    const replay = await post("/api/turn/apply", body);
+    assert.equal(replay.status, 200, JSON.stringify(replay.data));
+    assert.equal(replay.data.ok, true);
+    assert.equal(replay.data.idempotentReplay, true);
+    assert.equal(replay.data.clientTurnId, clientTurnId);
+    assert.equal(replay.data.eventLogsCreated, 0);
+    assert.equal(replay.data.primaryLogId, first.data.primaryLogId);
+    assert.equal(replay.data.changes.npcRelationships[0].after.familiarity, 1);
+
+    const afterReplayNpc = await Npc.findOne({ npcId: tempIdempotentNpcId }).lean();
+    assert.equal(afterReplayNpc.relationshipWithLucas.familiarity, 1);
+    assert.equal(await EventLog.countDocuments({ gameId: tempGameId, clientTurnId }), 1);
+    assert.equal(await NpcSocialLedger.countDocuments({ npcId: tempIdempotentNpcId }), 1);
   });
 
   it("applies npc relationship patches through applyTurn", async () => {

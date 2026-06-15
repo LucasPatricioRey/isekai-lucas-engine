@@ -25,6 +25,15 @@ const baseDagger = {
   expToNext: 100,
 };
 
+const baseVitality = {
+  skillId: "skill_vitalidad",
+  name: "Vitalidad",
+  phase: "Principiante",
+  level: 1,
+  exp: 0,
+  expToNext: 100,
+};
+
 test("prorates hourly skill EXP by duration before multipliers", () => {
   const preview = previewSkillProgression({
     skill: baseAgility,
@@ -123,4 +132,33 @@ test("underpowered combat fundamentals are rejected for technical skills", () =>
 
   assert.equal(validation.ok, false);
   assert.match(validation.issues.join(" "), /debajo del rango base recomendado 3-6/);
+});
+
+test("rejects skill categories that are not declared for that skill", () => {
+  const validation = validateSkillPatch({
+    skillId: baseVitality.skillId,
+    expDelta: 5,
+    category: "entreno_intenso",
+    reason: "Intento invalido: entrenamiento intenso no declarado para Vitalidad.",
+    currentEnergy: 80,
+    currentPhase: "Principiante",
+    durationMinutes: 60,
+  });
+
+  assert.equal(validation.ok, false);
+  assert.equal(validation.recommendedRange, null);
+  assert.match(validation.issues.join(" "), /no corresponde a un rango conocido para skill_vitalidad/);
+  assert.equal(validation.allowedCategories.includes("entreno_intenso"), false);
+  assert.throws(
+    () =>
+      previewSkillProgression({
+        skill: baseVitality,
+        expDelta: 5,
+        category: "entreno_intenso",
+        reason: "Intento invalido: entrenamiento intenso no declarado para Vitalidad.",
+        currentEnergy: 80,
+        durationMinutes: 60,
+      }),
+    /Skill patch invalido/
+  );
 });

@@ -115,6 +115,42 @@ function compactProfileCaps(profile) {
     };
   }
 
+  if (profile === "player_scene") {
+    return {
+      npcLimit: 5,
+      memoryLimit: 3,
+      rumorLimit: 3,
+      missionLimit: 3,
+      eventLimit: 5,
+      logLimit: 3,
+      commitmentLimit: 5,
+    };
+  }
+
+  if (profile === "mechanical_turn") {
+    return {
+      npcLimit: 8,
+      memoryLimit: 2,
+      rumorLimit: 2,
+      missionLimit: 5,
+      eventLimit: 5,
+      logLimit: 3,
+      commitmentLimit: 5,
+    };
+  }
+
+  if (profile === "minimal_header") {
+    return {
+      npcLimit: 4,
+      memoryLimit: 1,
+      rumorLimit: 1,
+      missionLimit: 3,
+      eventLimit: 4,
+      logLimit: 1,
+      commitmentLimit: 3,
+    };
+  }
+
   return {
     npcLimit: 12,
     memoryLimit: 6,
@@ -208,31 +244,44 @@ function selectBalancedNpcMemories(memories = [], npcIds = [], requestedLimit = 
 
 function slimNpcSummaryForProfile(npc, profile) {
   if (!npc || profile === "debug_audit") return npc;
+  const relationshipRegister = npc.dialogueProfile?.relationshipRegister
+    ? {
+        register: npc.dialogueProfile.relationshipRegister.register || "",
+        guidance: responseShaping.truncateText(npc.dialogueProfile.relationshipRegister.guidance || "", 80),
+      }
+    : null;
+  const currentPressure = npc.dialogueProfile?.currentPressure
+    ? {
+        key: npc.dialogueProfile.currentPressure.key || "",
+        label: npc.dialogueProfile.currentPressure.label || "",
+        summary: responseShaping.truncateText(npc.dialogueProfile.currentPressure.summary || "", 80),
+      }
+    : null;
   const dramaticRole = npc.dialogueProfile?.dramaticRole
     ? {
         schemaVersion: npc.dialogueProfile.dramaticRole.schemaVersion,
-        publicMask: responseShaping.truncateText(npc.dialogueProfile.dramaticRole.publicMask || "", 70),
-        sceneWant: responseShaping.truncateText(npc.dialogueProfile.dramaticRole.sceneWant || "", 80),
-        resistanceMove: responseShaping.truncateText(npc.dialogueProfile.dramaticRole.resistanceMove || "", 70),
-        vulnerabilityTell: responseShaping.truncateText(npc.dialogueProfile.dramaticRole.vulnerabilityTell || "", 65),
-        objectAnchor: responseShaping.truncateText(npc.dialogueProfile.dramaticRole.objectAnchor || "", 70),
+        publicMask: responseShaping.truncateText(npc.dialogueProfile.dramaticRole.publicMask || "", 55),
+        sceneWant: responseShaping.truncateText(npc.dialogueProfile.dramaticRole.sceneWant || "", 60),
+        resistanceMove: responseShaping.truncateText(npc.dialogueProfile.dramaticRole.resistanceMove || "", 55),
+        vulnerabilityTell: responseShaping.truncateText(npc.dialogueProfile.dramaticRole.vulnerabilityTell || "", 55),
+        objectAnchor: responseShaping.truncateText(npc.dialogueProfile.dramaticRole.objectAnchor || "", 55),
         rule: "Usar gesto/objeto/dialogo; no mente privada.",
       }
     : null;
   const emotionalSubtext = npc.dialogueProfile?.emotionalSubtext
     ? {
-        defaultMood: responseShaping.truncateText(npc.dialogueProfile.emotionalSubtext.defaultMood || "", 80),
-        visibleTells: (npc.dialogueProfile.emotionalSubtext.visibleTells || []).slice(0, 2),
-        contradiction: responseShaping.truncateText(npc.dialogueProfile.emotionalSubtext.contradiction || "", 90),
+        defaultMood: responseShaping.truncateText(npc.dialogueProfile.emotionalSubtext.defaultMood || "", 60),
+        visibleTells: (npc.dialogueProfile.emotionalSubtext.visibleTells || []).slice(0, 1),
+        contradiction: responseShaping.truncateText(npc.dialogueProfile.emotionalSubtext.contradiction || "", 70),
         rule: npc.dialogueProfile.emotionalSubtext.rule || "",
       }
     : null;
   const dialogueDirector = npc.dialogueProfile?.dialogueDirector
     ? {
         schemaVersion: npc.dialogueProfile.dialogueDirector.schemaVersion,
-        cadence: responseShaping.truncateText(npc.dialogueProfile.dialogueDirector.cadence || "", 70),
-        emotionalRule: responseShaping.truncateText(npc.dialogueProfile.dialogueDirector.emotionalRule || "", 80),
-        reactFirst: responseShaping.truncateText(npc.dialogueProfile.dialogueDirector.reactFirst || "", 70),
+        cadence: responseShaping.truncateText(npc.dialogueProfile.dialogueDirector.cadence || "", 55),
+        emotionalRule: responseShaping.truncateText(npc.dialogueProfile.dialogueDirector.emotionalRule || "", 65),
+        reactFirst: responseShaping.truncateText(npc.dialogueProfile.dialogueDirector.reactFirst || "", 60),
         sampleBeats: (npc.dialogueProfile.dialogueDirector.sampleBeats || []).slice(0, 1),
         avoid: (npc.dialogueProfile.dialogueDirector.avoid || []).slice(0, 1),
         rule: npc.dialogueProfile.dialogueDirector.rule || "",
@@ -249,53 +298,58 @@ function slimNpcSummaryForProfile(npc, profile) {
     persistenceLevel: npc.persistenceLevel || "",
     socialProfile: npc.socialProfile
       ? {
-          values: (npc.socialProfile.values || []).slice(0, 3),
-          tolerates: (npc.socialProfile.tolerates || []).slice(0, 3),
-          rejects: (npc.socialProfile.rejects || []).slice(0, 3),
-          boundaries: (npc.socialProfile.boundaries || []).slice(0, 3),
-          trustTriggers: (npc.socialProfile.trustTriggers || []).slice(0, 2),
-          trustBreakers: (npc.socialProfile.trustBreakers || []).slice(0, 2),
+          values: (npc.socialProfile.values || []).slice(0, 2),
+          tolerates: (npc.socialProfile.tolerates || []).slice(0, 2),
+          rejects: (npc.socialProfile.rejects || []).slice(0, 2),
+          boundaries: (npc.socialProfile.boundaries || []).slice(0, 2),
+          trustTriggers: (npc.socialProfile.trustTriggers || []).slice(0, 1),
+          trustBreakers: (npc.socialProfile.trustBreakers || []).slice(0, 1),
         }
       : null,
     emotionalProfile: npc.emotionalProfile
       ? {
           schemaVersion: npc.emotionalProfile.schemaVersion || "emotional_profile_v1",
-          defaultMood: responseShaping.truncateText(npc.emotionalProfile.defaultMood || "", 90),
-          coreDrives: (npc.emotionalProfile.coreDrives || []).slice(0, 2),
+          defaultMood: responseShaping.truncateText(npc.emotionalProfile.defaultMood || "", 70),
+          coreDrives: (npc.emotionalProfile.coreDrives || []).slice(0, 1),
           coreFears: (npc.emotionalProfile.coreFears || []).slice(0, 1),
-          visibleTells: (npc.emotionalProfile.visibleTells || []).slice(0, 2),
-          contradiction: responseShaping.truncateText(npc.emotionalProfile.contradiction || "", 90),
+          visibleTells: (npc.emotionalProfile.visibleTells || []).slice(0, 1),
+          contradiction: responseShaping.truncateText(npc.emotionalProfile.contradiction || "", 70),
           sceneHooks: (npc.emotionalProfile.sceneHooks || []).slice(0, 1),
         }
       : null,
     voiceProfile: npc.voiceProfile
       ? {
-          speechStyle: npc.voiceProfile.speechStyle || "",
-          personality: (npc.voiceProfile.personality || []).slice(0, 4),
-          values: (npc.voiceProfile.values || []).slice(0, 3),
-          boundaries: (npc.voiceProfile.boundaries || []).slice(0, 3),
+          speechStyle: responseShaping.truncateText(npc.voiceProfile.speechStyle || "", 90),
+          personality: (npc.voiceProfile.personality || []).slice(0, 3),
+          values: (npc.voiceProfile.values || []).slice(0, 2),
+          boundaries: (npc.voiceProfile.boundaries || []).slice(0, 2),
           dialogueGuidance: (npc.voiceProfile.dialogueGuidance || [])
             .slice(0, 1)
-            .map((line) => responseShaping.truncateText(line, 120)),
+            .map((line) => responseShaping.truncateText(line, 90)),
         }
       : null,
     dialogueProfile: npc.dialogueProfile
       ? {
           schemaVersion: npc.dialogueProfile.schemaVersion,
-          speechRhythm: npc.dialogueProfile.speechRhythm || "",
+          speechRhythm: responseShaping.truncateText(npc.dialogueProfile.speechRhythm || "", 90),
           dialogueDirector,
-          relationshipRegister: npc.dialogueProfile.relationshipRegister || null,
-          emotionalTemperature: npc.dialogueProfile.emotionalTemperature || null,
-          currentPressure: npc.dialogueProfile.currentPressure || null,
+          relationshipRegister,
+          emotionalTemperature: npc.dialogueProfile.emotionalTemperature
+            ? {
+                key: npc.dialogueProfile.emotionalTemperature.key || "",
+                label: npc.dialogueProfile.emotionalTemperature.label || "",
+              }
+            : null,
+          currentPressure,
           dramaticRole,
           emotionalSubtext,
-          subtextSeed: npc.dialogueProfile.subtextSeed || "",
+          subtextSeed: responseShaping.truncateText(npc.dialogueProfile.subtextSeed || "", 110),
           dialogueMoves: (npc.dialogueProfile.dialogueMoves || [])
             .slice(0, 1)
-            .map((line) => responseShaping.truncateText(line, 90)),
+            .map((line) => responseShaping.truncateText(line, 70)),
           avoid: (npc.dialogueProfile.avoid || [])
             .slice(0, 1)
-            .map((line) => responseShaping.truncateText(line, 80)),
+            .map((line) => responseShaping.truncateText(line, 65)),
           rule: npc.dialogueProfile.rule || "",
         }
       : null,
@@ -314,11 +368,17 @@ function slimNpcSummaryForProfile(npc, profile) {
       ? {
           schemaVersion: npc.relationshipState.schemaVersion,
           accessScore: npc.relationshipState.accessScore,
-          stance: npc.relationshipState.stance || null,
-          narrativeGuidance: (npc.relationshipState.narrativeGuidance || []).slice(0, 1),
-          nextThresholds: (npc.relationshipState.nextThresholds || []).slice(0, 1),
+          stance: npc.relationshipState.stance
+            ? {
+                key: npc.relationshipState.stance.key || "",
+                label: npc.relationshipState.stance.label || "",
+                summary: responseShaping.truncateText(npc.relationshipState.stance.summary || "", 70),
+              }
+            : null,
+          narrativeGuidance: (npc.relationshipState.narrativeGuidance || [])
+            .slice(0, 1)
+            .map((line) => responseShaping.truncateText(line, 80)),
           blockers: (npc.relationshipState.blockers || []).slice(0, 1),
-          opportunities: (npc.relationshipState.opportunities || []).slice(0, 1),
         }
       : null,
     factionLinks: (npc.factionLinks || []).slice(0, 3).map((link) => ({
@@ -330,28 +390,31 @@ function slimNpcSummaryForProfile(npc, profile) {
   };
 }
 
-function slimNpcKnowledgeContextForProfile(context, profile) {
+function slimNpcKnowledgeContextForProfile(context, profile, limit = 4) {
   if (!context || profile === "debug_audit") return context;
+
+  const selectedPerNpc = (context.perNpc || []).slice(0, Math.max(1, limit));
+  const selectedNpcIds = new Set(selectedPerNpc.map((entry) => entry.npcId).filter(Boolean));
 
   return {
     ...context,
-    perNpc: (context.perNpc || []).map((entry) => ({
+    perNpc: selectedPerNpc.map((entry) => ({
       npcId: entry.npcId,
       name: entry.name,
       knownRecordCount: (entry.knownRecords || []).length,
-      knownRecords: (entry.knownRecords || []).slice(0, 2).map((record) => ({
+      knownRecords: (entry.knownRecords || []).slice(0, 1).map((record) => ({
         knowledgeId: record.knowledgeId,
         factKey: record.factKey,
-        summary: record.summary || record.fact || "",
+        summary: responseShaping.truncateText(record.summary || record.fact || "", 120),
         sourceType: record.sourceType,
         certainty: record.certainty,
         visibility: record.visibility,
         canShare: Boolean(record.canShare),
       })),
       knownMemoryCount: entry.knownMemoryCount || (entry.knownMemories || []).length,
-      knownMemories: (entry.knownMemories || []).slice(0, 2).map((memory) => ({
+      knownMemories: (entry.knownMemories || []).slice(0, 1).map((memory) => ({
         memoryId: memory.memoryId,
-        summary: memory.summary || memory.fact || "",
+        summary: responseShaping.truncateText(memory.summary || memory.fact || "", 120),
         sourceType: memory.sourceType,
         certainty: memory.certainty,
         privacyLevel: memory.privacyLevel,
@@ -366,6 +429,7 @@ function slimNpcKnowledgeContextForProfile(context, profile) {
           }
         : null,
     })),
+    scheduleUnconfirmedNpcIds: (context.scheduleUnconfirmedNpcIds || []).filter((npcId) => selectedNpcIds.has(npcId)),
   };
 }
 
@@ -924,7 +988,7 @@ function buildNpcSocialSceneGuidance({ npc, entries, actionTypeCounts, positiveD
   };
 }
 
-function buildSocialRhythm({ nearbyNpcSummaries = [], todaySocialLedger = [], gameState = {} } = {}) {
+function buildSocialRhythm({ nearbyNpcSummaries = [], todaySocialLedger = [], gameState = {}, limit = 10, compact = false } = {}) {
   const ledgerByNpc = new Map();
   for (const entry of todaySocialLedger || []) {
     if (!entry?.npcId) continue;
@@ -932,7 +996,7 @@ function buildSocialRhythm({ nearbyNpcSummaries = [], todaySocialLedger = [], ga
     ledgerByNpc.get(entry.npcId).push(entry);
   }
 
-  const npcs = nearbyNpcSummaries.slice(0, 10).map((npc) => {
+  const npcs = nearbyNpcSummaries.slice(0, Math.max(1, limit)).map((npc) => {
     const entries = ledgerByNpc.get(npc.npcId) || [];
     const actionTypeCounts = countSocialActionTypes(entries);
     const positiveDeltas = summarizePositiveSocialDeltas(entries);
@@ -946,10 +1010,10 @@ function buildSocialRhythm({ nearbyNpcSummaries = [], todaySocialLedger = [], ga
     return {
       npcId: npc.npcId,
       name: npc.name,
-      currentTask: npc.currentTask || "",
+      currentTask: responseShaping.truncateText(npc.currentTask || "", compact ? 80 : 160),
       availability: {
         status: npc.availability?.status || "",
-        reason: npc.availability?.reason || "",
+        reason: responseShaping.truncateText(npc.availability?.reason || "", compact ? 80 : 160),
       },
       relationshipBands: {
         trust: npc.relationshipBands?.trust?.label || "",
@@ -962,8 +1026,10 @@ function buildSocialRhythm({ nearbyNpcSummaries = [], todaySocialLedger = [], ga
         positiveDeltas,
       },
       sceneGuidance: guidance,
-      nextThresholds: (npc.relationshipState?.nextThresholds || []).slice(0, 3),
-      narrativeGuidance: (npc.relationshipState?.narrativeGuidance || []).slice(0, 3),
+      nextThresholds: compact ? [] : (npc.relationshipState?.nextThresholds || []).slice(0, 3),
+      narrativeGuidance: (npc.relationshipState?.narrativeGuidance || [])
+        .slice(0, compact ? 1 : 3)
+        .map((line) => responseShaping.truncateText(line, compact ? 90 : 180)),
     };
   });
 
@@ -1663,15 +1729,23 @@ async function getCompactContext(req, res) {
       guildState,
     });
     const nearbyNpcSummaries = nearbyNpcs.map(responseShaping.summarizeNpc);
-    const detailedNpcLimit = profile === "debug_audit" ? limits.npcLimit : Math.min(limits.npcLimit, 3);
+    const sceneNpcLimit =
+      profile === "debug_audit"
+        ? limits.npcLimit
+        : profile === "minimal_header"
+          ? Math.min(limits.npcLimit, 1)
+          : Math.min(limits.npcLimit, 2);
+    const detailedNpcLimit = sceneNpcLimit;
     const nearbyNpcSummariesForResponse = nearbyNpcSummaries
       .slice(0, detailedNpcLimit)
       .map((npc) => slimNpcSummaryForProfile(npc, profile));
-    const npcKnowledgeContextForResponse = slimNpcKnowledgeContextForProfile(npcKnowledgeContext, profile);
+    const npcKnowledgeContextForResponse = slimNpcKnowledgeContextForProfile(npcKnowledgeContext, profile, sceneNpcLimit);
     const socialRhythm = buildSocialRhythm({
       nearbyNpcSummaries,
       todaySocialLedger,
       gameState,
+      limit: profile === "debug_audit" ? 10 : sceneNpcLimit,
+      compact: profile !== "debug_audit",
     });
     const directPresentNpcIds = new Set(
       nearbyNpcs
@@ -1722,7 +1796,7 @@ async function getCompactContext(req, res) {
       nearbyNpcs: nearbyNpcSummaries,
       npcPresence,
       relevantNpcMemories,
-      maxNpcs: profile === "debug_audit" ? limits.npcLimit : Math.min(limits.npcLimit, 3),
+      maxNpcs: sceneNpcLimit,
     });
     const npcById = new Map(nearbyNpcs.map((npc) => [npc.npcId, npc]));
     const alerts = [];
@@ -2057,7 +2131,7 @@ async function getCompactContext(req, res) {
       relationshipDynamics: sceneRelationshipDynamicsForResponse,
       dramaticContext,
       socialRhythm,
-      maxNpcs: profile === "debug_audit" ? Math.min(limits.npcLimit, 6) : Math.min(limits.npcLimit, 3),
+      maxNpcs: sceneNpcLimit,
     });
     const ruleLookupContract = responseShaping.buildRuleLookupContract({
       npcPresence,

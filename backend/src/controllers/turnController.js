@@ -408,6 +408,169 @@ async function buildTurnDisplayContext(gameState, session = null) {
   };
 }
 
+function normalizeClientTurnId(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (text.length < 8 || text.length > 160) {
+    throw validationError("clientTurnId/idempotencyKey debe tener entre 8 y 160 caracteres.", {
+      receivedLength: text.length,
+    });
+  }
+  if (!/^[A-Za-z0-9._:-]+$/.test(text)) {
+    throw validationError("clientTurnId/idempotencyKey solo acepta letras, numeros, '.', '_', ':' y '-'.");
+  }
+  return text;
+}
+
+function wantsDebugTurnResponse(body = {}) {
+  return body.includeDebug === true || body.responseProfile === "debug_full";
+}
+
+function buildGameStateSummary(gameState = {}) {
+  const pendingAccumulations = (gameState.biologicalClock?.pendingAccumulations || [])
+    .filter((entry) => entry && entry.status !== "processed" && !entry.processedAt)
+    .map((entry) => ({
+      accumulationId: entry.accumulationId,
+      day: entry.day,
+      blockStart: entry.blockStart,
+      blockEnd: entry.blockEnd,
+      category: entry.category,
+      minutes: entry.minutes,
+      reason: entry.reason,
+      sourceEventLogId: entry.sourceEventLogId || "",
+      status: entry.status || "pending",
+    }));
+
+  return {
+    gameId: gameState.gameId,
+    characterId: gameState.characterId,
+    currentDay: gameState.currentDay,
+    diegeticDate: gameState.diegeticDate,
+    time: gameState.time,
+    block: gameState.block,
+    locationId: gameState.locationId,
+    moneyCopper: gameState.moneyCopper,
+    activeEventIds: gameState.activeEventIds || [],
+    activeMissionIds: gameState.activeMissionIds || [],
+    lucasStatus: {
+      life: gameState.lucasStatus?.life,
+      satiety: gameState.lucasStatus?.satiety,
+      energy: gameState.lucasStatus?.energy,
+      mp: gameState.lucasStatus?.mp,
+      conditions: gameState.lucasStatus?.conditions || [],
+      injuries: gameState.lucasStatus?.injuries || [],
+    },
+    biologicalClock: {
+      lastProcessedTime: gameState.biologicalClock?.lastProcessedTime || "",
+      currentHourBlock: gameState.biologicalClock?.currentHourBlock || "",
+      pendingAccumulations,
+    },
+  };
+}
+
+function summarizeRoutineSync(routineSync = {}, includeDetails = false) {
+  if (includeDetails) return routineSync;
+
+  return {
+    day: routineSync.day,
+    time: routineSync.time,
+    updatedCount: routineSync.updatedCount || 0,
+    skippedCount: routineSync.skippedCount || 0,
+    updatedNpcIds: (routineSync.updated || []).map((entry) => entry.npcId).filter(Boolean),
+    detailsOmitted: true,
+  };
+}
+
+function summarizeAutoCheckpoint(autoCheckpoint = {}, includeDetails = false) {
+  if (!autoCheckpoint || typeof autoCheckpoint !== "object") return autoCheckpoint;
+  if (includeDetails) return autoCheckpoint;
+
+  return {
+    created: Boolean(autoCheckpoint.created),
+    checkpoint: autoCheckpoint.checkpoint
+      ? {
+          checkpointId: autoCheckpoint.checkpoint.checkpointId,
+          title: autoCheckpoint.checkpoint.title,
+          triggerKey: autoCheckpoint.checkpoint.triggerKey,
+          reason: autoCheckpoint.checkpoint.reason,
+          metadata: autoCheckpoint.checkpoint.metadata || {},
+        }
+      : null,
+    pruned: autoCheckpoint.pruned || null,
+  };
+}
+
+function buildPublicTurnChanges(changes = {}, includeDetails = false) {
+  if (includeDetails) return changes;
+
+  const publicChanges = { ...changes };
+  delete publicChanges.displayBundle;
+
+  if (publicChanges.routineSync) {
+    publicChanges.routineSync = summarizeRoutineSync(publicChanges.routineSync, false);
+  }
+
+  if (publicChanges.autoCheckpoint) {
+    publicChanges.autoCheckpoint = summarizeAutoCheckpoint(publicChanges.autoCheckpoint, false);
+  }
+
+  return publicChanges;
+}
+
+function buildTurnResponsePayload({
+  gameState,
+  changes,
+  displayBundle,
+  logsToCreate = [],
+  eventLogsCreated = 0,
+  clientTurnId = "",
+  idempotentReplay = false,
+  includeDebug = false,
+}) {
+  const plainGameState = typeof gameState?.toObject === "function" ? gameState.toObject() : gameState;
+
+  return {
+    ok: true,
+    message: idempotentReplay
+      ? "Turno ya aplicado previamente; se devuelve respuesta idempotente."
+      : "Turno aplicado correctamente.",
+    idempotentReplay,
+    clientTurnId,
+    logIds: logsToCreate.map((log) => log.logId).filter(Boolean),
+    primaryLogId: logsToCreate[0]?.logId || "",
+    changes: buildPublicTurnChanges(changes, includeDebug),
+    displayBundle,
+    gameState: includeDebug ? plainGameState : buildGameStateSummary(plainGameState),
+    eventLogsCreated,
+    responseProfile: includeDebug ? "debug_full" : "compact",
+  };
+}
+
+async function buildIdempotentReplayResponse(existingLog, includeDebug = false) {
+  const gameState = await GameState.findOne({ gameId: existingLog.gameId }).lean();
+  const changes = existingLog.mechanicalChanges || {};
+  const displayContext = await buildTurnDisplayContext(gameState);
+  const displayBundle = buildTurnDisplayBundle({
+    changes,
+    gameState,
+    location: displayContext.location,
+    nearbyNpcs: displayContext.nearbyNpcs,
+    activeEvents: displayContext.activeEvents,
+    actionSummary: existingLog.summary || "",
+  });
+
+  return buildTurnResponsePayload({
+    gameState,
+    changes,
+    displayBundle,
+    logsToCreate: [existingLog],
+    eventLogsCreated: 0,
+    clientTurnId: existingLog.clientTurnId || "",
+    idempotentReplay: true,
+    includeDebug,
+  });
+}
+
 function buildApplyTurnAutoCheckpointPlan(changes = {}) {
   const triggers = [];
   const elapsedMinutes = Number(changes.time?.elapsedMinutes) || 0;
@@ -4303,14 +4466,23 @@ async function applyTurn(req, res) {
     }
 
     const body = req.body || {};
+    const gameId = body.gameId || "isekai_lucas_main";
+    const includeDebug = wantsDebugTurnResponse(body);
+    const clientTurnId = normalizeClientTurnId(body.clientTurnId || body.idempotencyKey || "");
     const actionFamily = normalizeActionFamilyInput(body.actionFamily);
     validateEventLogInputs(body.eventLogs);
+
+    if (clientTurnId) {
+      const existingLog = await EventLog.findOne({ gameId, clientTurnId }).lean();
+      if (existingLog) {
+        return res.json(await buildIdempotentReplayResponse(existingLog, includeDebug));
+      }
+    }
 
     let responsePayload = null;
     session = await mongoose.startSession();
 
     await session.withTransaction(async () => {
-      const gameId = body.gameId || "isekai_lucas_main";
       const gameState = await GameState.findOne({ gameId }).session(session);
 
       if (!gameState) {
@@ -4836,13 +5008,15 @@ async function applyTurn(req, res) {
 
       const logsToCreate = [];
       const turnMechanicalLogIds = [];
+      let primarySourceEventLogId = "";
 
       if (Array.isArray(body.eventLogs)) {
-        for (const log of body.eventLogs) {
+        for (const [index, log] of body.eventLogs.entries()) {
           const logId = log.logId || createLogId();
           const usesTurnMechanicalChanges = !log.mechanicalChanges;
           logsToCreate.push({
             logId,
+            clientTurnId: index === 0 ? clientTurnId : "",
             gameId,
             day: changes.time?.dayBefore || updatedGameState.currentDay,
             timeStart: body.timeAdvance?.from || changes.time?.before || updatedGameState.time,
@@ -4864,6 +5038,7 @@ async function applyTurn(req, res) {
         const logId = createLogId();
         logsToCreate.push({
           logId,
+          clientTurnId,
           gameId,
           day: changes.time?.dayBefore || updatedGameState.currentDay,
           timeStart: changes.time?.before || updatedGameState.time,
@@ -4905,7 +5080,7 @@ async function applyTurn(req, res) {
         });
 
         if (routineSync.updatedCount > 0) {
-          changes.routineSync = routineSync;
+          changes.routineSync = summarizeRoutineSync(routineSync, includeDebug);
         }
       } else if (changes.time) {
         changes.routineSync = {
@@ -4917,7 +5092,7 @@ async function applyTurn(req, res) {
 
       if (logsToCreate.length > 0) {
         await EventLog.insertMany(logsToCreate, { session });
-        const primarySourceEventLogId = logsToCreate[0].logId;
+        primarySourceEventLogId = logsToCreate[0].logId;
         await linkTurnSubrecordsToEventLog({
           gameId,
           gameState,
@@ -4942,7 +5117,10 @@ async function applyTurn(req, res) {
           title: autoCheckpointPlan.title,
           reason: autoCheckpointPlan.reason,
           triggerKey: autoCheckpointPlan.triggerKey,
-          metadata: autoCheckpointPlan.metadata,
+          metadata: {
+            ...(autoCheckpointPlan.metadata || {}),
+            sourceEventLogId: primarySourceEventLogId,
+          },
           session,
         });
       }
@@ -4963,14 +5141,15 @@ async function applyTurn(req, res) {
       });
       changes.displayBundle = displayBundle;
 
-      responsePayload = {
-        ok: true,
-        message: "Turno aplicado correctamente.",
+      responsePayload = buildTurnResponsePayload({
+        gameState: updatedGameState,
         changes,
         displayBundle,
-        gameState: updatedGameState,
+        logsToCreate,
         eventLogsCreated: logsToCreate.length,
-      };
+        clientTurnId,
+        includeDebug,
+      });
     });
 
     return res.json(responsePayload);

@@ -13,6 +13,7 @@ const {
 } = require("./missionService");
 const {
   eventGameFilter,
+  getEventStatusAt,
   isMainEvent,
   shouldEnsureDailyEvent,
 } = require("./dailyEventSchedulerService");
@@ -243,14 +244,17 @@ async function auditEvents({ gameState, gameId, issues, checks }) {
   }
 
   if (blockingMainEvents.length > 0) {
-    const missingFromState = blockingMainEvents
+    const effectivelyActiveMainEvents = blockingMainEvents.filter(
+      (event) => getEventStatusAt(event, gameState.currentDay, gameState.time) === "active"
+    );
+    const missingFromState = effectivelyActiveMainEvents
       .map((event) => event.eventId)
       .filter((eventId) => !activeEventIds.includes(eventId));
     if (missingFromState.length > 0) {
       addIssue(issues, {
         code: "blocking_main_event_not_in_active_event_ids",
         severity: "warning",
-        message: "Existe evento principal abierto, pero no esta referenciado por GameState.activeEventIds.",
+        message: "Existe evento principal ya activo, pero no esta referenciado por GameState.activeEventIds.",
         evidence: { eventIds: missingFromState },
         recommendedAction: "Reconciliar activeEventIds para que el contexto compacto lo vea siempre.",
       });

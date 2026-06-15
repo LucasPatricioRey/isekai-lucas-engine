@@ -67,6 +67,7 @@
     "repair:forest-evidence-progress": "node src/utils/repairForestEvidenceProgress.js",
     "repair:commitment-followups": "node src/utils/repairCommitmentFollowups.js",
     "repair:mongo-state-c22": "node src/utils/repairMongoStateC22.js",
+    "repair:processed-biological-accumulations": "node src/utils/repairProcessedBiologicalAccumulations.js",
     "ensure:combat-training-skills": "node src/utils/ensureCombatTrainingSkills.js"
   },
   "keywords": [],

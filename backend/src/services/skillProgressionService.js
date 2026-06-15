@@ -546,6 +546,10 @@ function getRecommendedRange({ skillId, category }) {
   };
 }
 
+function getAllowedSkillCategories(skillId) {
+  return Object.keys(SKILL_ACTIVITY_RANGES[skillId] || {});
+}
+
 function validateSkillPatch({
   skillId,
   expDelta,
@@ -568,6 +572,7 @@ function validateSkillPatch({
   }
 
   const { categoryId, range } = getRecommendedRange({ skillId, category });
+  const allowedCategories = getAllowedSkillCategories(skillId);
   const durationAdjustment = calculateDurationAdjustedBaseExp({
     expDelta,
     range,
@@ -607,6 +612,12 @@ function validateSkillPatch({
     issues.push(`expDelta ${expDelta} queda por debajo del rango base recomendado ${range.min}-${range.max} para ${skillId}/${categoryId}.`);
   }
 
+  if (skillId && categoryId && !range) {
+    issues.push(
+      `category ${categoryId} no corresponde a un rango conocido para ${skillId}. Categorias permitidas: ${allowedCategories.join(", ") || "ninguna"}.`
+    );
+  }
+
   return {
     ok: issues.length === 0,
     issues,
@@ -614,6 +625,7 @@ function validateSkillPatch({
     reason,
     categoryId,
     recommendedRange: range,
+    allowedCategories,
     baseExpDelta: Number.isInteger(expDelta) ? expDelta : null,
     durationMinutes: normalizeDurationMinutes(durationMinutes),
     durationAdjustedBaseExpDelta,
@@ -695,6 +707,7 @@ module.exports = {
   calculateDurationAdjustedBaseExp,
   calculateExpMultiplier,
   getEnergyExpMultiplier,
+  getAllowedSkillCategories,
   getNextPhase,
   getRecommendedRange,
   normalizeCategory,

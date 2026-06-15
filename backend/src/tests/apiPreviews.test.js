@@ -193,6 +193,19 @@ describe("preview and rejection API coverage", () => {
     assert.equal(backwardsTime.status, 400);
     assert.equal(backwardsTime.data.ok, false);
 
+    const badSkillPreview = await post("/api/progression/skills/preview", {
+      skillId: "skill_vitalidad",
+      category: "entreno_intenso",
+      expDelta: 5,
+      reason: "Intento invalido: entreno intenso no declarado para Vitalidad.",
+      currentEnergy: 80,
+      durationMinutes: 60,
+    });
+    assert.equal(badSkillPreview.status, 400);
+    assert.equal(badSkillPreview.data.ok, false);
+    assert.match(badSkillPreview.data.error, /Skill patch invalido/);
+    assert.match(JSON.stringify(badSkillPreview.data), /no corresponde a un rango conocido/);
+
     const afterState = await getCanonicalState();
     assertSameState(beforeState, afterState);
   });

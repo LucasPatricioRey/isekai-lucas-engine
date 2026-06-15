@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Compact",
-    "version": "2.19.4",
+    "version": "2.19.5",
     "description": "Schema compacto con hasta 30 operaciones para GPT Builder. Incluye ApplyTurn con missionPatch, activityCost, gameStatePatch y parches de economia/memoria/relacion social. Incluye previewSocialImpact con proyeccion de relationshipState y excluye rollback y mutadores peligrosos directos. El backend separa evento principal unico, rumores menores y eventos de fondo; el scheduler solo genera otro evento principal cuando no hay uno abierto. applyTurn y completeJobShift devuelven displayBundle/renderLines como contrato unificado de HUD final, mechanicalChangeDisplay para cambios numericos generales y previewSkillProgression devuelve displayLines canonicas para EXP/habilidades. applyTurn, completeJobShift y context/compact devuelven narrativeHints/narrativeContext/socialRhythm/npcKnowledgeContext, ruleLookupContract, scenePlan, scene.narrationContract y scene.dialogueSceneCapsules para variar escenas repetidas, priorizar Mongo como canon de reglas/voz/NPC y evitar dialogo generico sin crear mecanicas nuevas ni dar conocimiento omnisciente a NPCs. Las comidas de contrato en completeJobShift son explicitas: solo se aplican si se envian en consumeIncludedMealIds. applyTurn.commitmentPatches guarda promesas, planes y obligaciones pendientes como estado formal con agenda, urgencia y consecuencias previstas. jobContractPatch registra tardanzas/ausencias con consecuencia laboral pendiente sin aplicar castigos sociales automaticos. getCompactContext expone missionAgenda/guildState, worldFriction y missionPatch guarda reportes con evidencia formal. searchDocs expone rule cards C24D ampliadas para formato, tiempo, skills, social, economia, misiones, viaje, trabajo, salud, magia, NPCs e inventario."
   },
   "servers": [
@@ -437,6 +437,32 @@
               "general_action"
             ],
             "description": "Familia narrativa explicita para evitar clasificacion incorrecta en narrativeHints. No crea mecanicas por si sola."
+          },
+          "clientTurnId": {
+            "type": "string",
+            "description": "Clave idempotente estable por intento de turno. Reusar la misma clave si se pierde la respuesta para evitar doble mutacion.",
+            "minLength": 8,
+            "maxLength": 160
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "description": "Alias de clientTurnId para reintentos seguros.",
+            "minLength": 8,
+            "maxLength": 160
+          },
+          "responseProfile": {
+            "type": "string",
+            "enum": [
+              "compact",
+              "debug_full"
+            ],
+            "default": "compact",
+            "description": "compact devuelve estado resumido y cambios listos para HUD. debug_full incluye GameState completo solo para auditoria tecnica."
+          },
+          "includeDebug": {
+            "type": "boolean",
+            "default": false,
+            "description": "Solo true en auditoria tecnica; incluye detalles largos como routineSync completo."
           },
           "timeAdvance": {
             "type": "object",
