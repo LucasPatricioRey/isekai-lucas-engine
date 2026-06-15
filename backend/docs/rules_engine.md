@@ -265,6 +265,7 @@ Regla estricta:
 - antes de toda respuesta final visible de partida, el GPT debe leer las reglas core y activas indicadas por `ruleLookupContract` salvo que ya vengan cubiertas por `displayBundle` y no haya escena nueva;
 - si Lucas pide una accion que cambia estado, el GPT debe cruzar la intencion con `ruleLookupContract`;
 - si hay ruleId aplicable, debe llamar `searchDocs` por `ruleId` antes de `applyTurn`, `completeJobShift` o Action de combate;
+- para turnos con EXP/reloj/actividad, puede llamar `applyTurn` con `dryRun:true` y los mismos patches antes de mutar; esta llamada no guarda estado, logs, checkpoints ni TurnTrace;
 - si no consulta las reglas necesarias, no debe mutar: puede narrar solo lectura, preview o pedir una validacion tecnica;
 - despues de mutar, debe releer `context/compact` y copiar `displayBundle/renderLines` cuando existan.
 

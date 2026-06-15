@@ -220,6 +220,15 @@ function statCurrentLine(label, stat = {}) {
   return `${label}: ${current}/${max}${suffix}`;
 }
 
+function formatSituationSentence(value = "", fallback = "turno actualizado") {
+  const text = String(value || fallback || "")
+    .trim()
+    .replace(/\s+/g, " ");
+  if (!text) return `${fallback}.`;
+  if (/[!?]$/.test(text)) return text;
+  return `${text.replace(/\.+$/g, "")}.`;
+}
+
 function buildStateLines({ gameState = {}, location = null, nearbyNpcs = [], activeEvents = [], actionSummary = "" } = {}) {
   const status = gameState.lucasStatus || {};
   const date = formatDiegeticDate(gameState.diegeticDate || {});
@@ -237,7 +246,7 @@ function buildStateLines({ gameState = {}, location = null, nearbyNpcs = [], act
     statCurrentLine("MP", status.mp),
     `Dinero: ${formatCopper(gameState.moneyCopper || 0)}`,
     `Evento activo: ${activeEventNames.length > 0 ? activeEventNames.join(", ") : "ninguno"}`,
-    `Situaci\u00f3n: ${actionSummary || "turno actualizado"}.`,
+    `Situaci\u00f3n: ${formatSituationSentence(actionSummary)}`,
     `NPCs visibles/cerca: ${npcNames.length > 0 ? npcNames.join(", ") : "ninguno confirmado por el bundle"}.`,
   ];
 }

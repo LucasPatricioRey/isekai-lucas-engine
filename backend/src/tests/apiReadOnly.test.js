@@ -171,6 +171,14 @@ describe("read-only API coverage", () => {
     assert.equal(docs.status, 200);
     assert.equal(docs.data.ok, true);
     assert.ok((docs.data.results || docs.data.documents || []).length >= 1);
+
+    const noisyRuleDocs = await get(
+      `/api/search/docs?q=${encodeURIComponent("ruido largo antes format.skill_progress ruido largo despues")}`
+    );
+    assert.equal(noisyRuleDocs.status, 200);
+    assert.equal(noisyRuleDocs.data.ok, true);
+    assert.ok(noisyRuleDocs.data.filters.ruleIdsFromQuery.includes("format.skill_progress"));
+    assert.ok(noisyRuleDocs.data.results.some((entry) => entry.ruleId === "format.skill_progress"));
   });
 
   it("loads NPC and location full views", async () => {

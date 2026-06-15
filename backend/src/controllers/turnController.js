@@ -1,5 +1,7 @@
 ﻿const mongoose = require("mongoose");
 
+const crypto = require("node:crypto");
+
 const GameState = require("../models/GameState");
 const EventLog = require("../models/EventLog");
 const KnowledgeRecord = require("../models/KnowledgeRecord");
@@ -15,6 +17,7 @@ const Mission = require("../models/Mission");
 const Commitment = require("../models/Commitment");
 const Evidence = require("../models/Evidence");
 const Faction = require("../models/Faction");
+const TurnTrace = require("../models/TurnTrace");
 const CharacterMagicKnowledge = require("../models/CharacterMagicKnowledge");
 const MagicDiscipline = require("../models/MagicDiscipline");
 const MagicTechnique = require("../models/MagicTechnique");
@@ -380,13 +383,14 @@ async function buildTurnDisplayContext(gameState, session = null) {
   const npcClauses = [];
 
   if (locationId) npcClauses.push({ currentLocationId: locationId });
+  if (location?.parentLocationId) npcClauses.push({ currentLocationId: location.parentLocationId });
   if (staticNpcIds.size > 0) npcClauses.push({ npcId: { $in: Array.from(staticNpcIds) } });
 
-  const [nearbyNpcs, activeEvents] = await Promise.all([
+  const [rawNearbyNpcs, activeEvents] = await Promise.all([
     npcClauses.length > 0
       ? Npc.find({ $or: npcClauses })
           .select("npcId name currentLocationId currentTask availability")
-          .limit(12)
+          .limit(24)
           .session(session)
           .lean()
       : Promise.resolve([]),
@@ -400,6 +404,16 @@ async function buildTurnDisplayContext(gameState, session = null) {
           .lean()
       : Promise.resolve([]),
   ]);
+
+  const nearbyNpcs = rawNearbyNpcs
+    .slice()
+    .sort((left, right) => {
+      const leftScore = left.currentLocationId === locationId ? 0 : staticNpcIds.has(left.npcId) ? 1 : 2;
+      const rightScore = right.currentLocationId === locationId ? 0 : staticNpcIds.has(right.npcId) ? 1 : 2;
+      if (leftScore !== rightScore) return leftScore - rightScore;
+      return String(left.name || left.npcId || "").localeCompare(String(right.name || right.npcId || ""));
+    })
+    .slice(0, 12);
 
   return {
     location,
@@ -424,6 +438,123 @@ function normalizeClientTurnId(value) {
 
 function wantsDebugTurnResponse(body = {}) {
   return body.includeDebug === true || body.responseProfile === "debug_full";
+}
+
+function wantsDryRunTurn(body = {}) {
+  return body.dryRun === true;
+}
+
+const TRACE_SECRET_KEY_PATTERN = /(api[_-]?key|authorization|credential|mongodb|password|secret|token|uri)/i;
+
+function sanitizeTraceValue(value, depth = 0, key = "") {
+  if (TRACE_SECRET_KEY_PATTERN.test(key)) return "[REDACTED]";
+  if (value === null || value === undefined) return value;
+  if (depth >= 8) return "[MaxDepth]";
+
+  if (typeof value === "string") {
+    if (TRACE_SECRET_KEY_PATTERN.test(value) && value.length > 24) return "[REDACTED]";
+    return value.length > 1200 ? `${value.slice(0, 1200)}...` : value;
+  }
+
+  if (typeof value !== "object") return value;
+
+  if (Array.isArray(value)) {
+    return value.slice(0, 80).map((entry) => sanitizeTraceValue(entry, depth + 1, key));
+  }
+
+  return Object.keys(value)
+    .sort()
+    .slice(0, 120)
+    .reduce((acc, objectKey) => {
+      acc[objectKey] = sanitizeTraceValue(value[objectKey], depth + 1, objectKey);
+      return acc;
+    }, {});
+}
+
+function stableStringify(value) {
+  return JSON.stringify(sanitizeTraceValue(value));
+}
+
+function hashTraceValue(value) {
+  return crypto.createHash("sha256").update(stableStringify(value)).digest("hex");
+}
+
+function createTurnTraceId({ gameId = "", clientTurnId = "", primaryLogId = "", requestHash = "" } = {}) {
+  const rawKey = `${gameId}:${clientTurnId || primaryLogId || requestHash}`;
+  return `turntrace_${crypto.createHash("sha1").update(rawKey).digest("hex").slice(0, 24)}`;
+}
+
+function summarizeTurnTraceResponse(responsePayload = {}) {
+  const changes = responsePayload.changes || {};
+  const displayBundle = responsePayload.displayBundle || {};
+
+  return {
+    ok: responsePayload.ok,
+    message: responsePayload.message,
+    idempotentReplay: Boolean(responsePayload.idempotentReplay),
+    clientTurnId: responsePayload.clientTurnId || "",
+    logIds: responsePayload.logIds || [],
+    primaryLogId: responsePayload.primaryLogId || "",
+    eventLogsCreated: responsePayload.eventLogsCreated || 0,
+    responseProfile: responsePayload.responseProfile || "compact",
+    changeKeys: Object.keys(changes).filter((key) => key !== "displayBundle").sort(),
+    autoCheckpointId: changes.autoCheckpoint?.checkpoint?.checkpointId || "",
+    gameState: responsePayload.gameState || {},
+    displayBundle: {
+      schemaVersion: displayBundle.schemaVersion || "",
+      headerLines: displayBundle.headerLines || [],
+      changeLines: displayBundle.changeLines || [],
+      stateLines: displayBundle.stateLines || [],
+      alertLines: displayBundle.alertLines || [],
+      renderLines: displayBundle.renderLines || [],
+    },
+  };
+}
+
+async function writeTurnTrace({
+  gameId,
+  clientTurnId = "",
+  requestBody = {},
+  responsePayload = {},
+  status = "applied",
+  session = null,
+} = {}) {
+  const requestSanitized = sanitizeTraceValue(requestBody);
+  const responseSummary = summarizeTurnTraceResponse(responsePayload);
+  const requestHash = hashTraceValue(requestSanitized);
+  const responseHash = hashTraceValue(responseSummary);
+  const primaryLogId = responsePayload.primaryLogId || "";
+  const traceId = createTurnTraceId({
+    gameId,
+    clientTurnId,
+    primaryLogId,
+    requestHash,
+  });
+  const tracePayload = {
+    traceId,
+    gameId,
+    clientTurnId,
+    operation: "applyTurn",
+    status,
+    requestHash,
+    responseHash,
+    requestSanitized,
+    responseSummary,
+    logIds: responsePayload.logIds || [],
+    primaryLogId,
+    checkpointId: responsePayload.changes?.autoCheckpoint?.checkpoint?.checkpointId || "",
+    displayBundle: responsePayload.displayBundle || {},
+    eventLogsCreated: responsePayload.eventLogsCreated || 0,
+    idempotentReplay: Boolean(responsePayload.idempotentReplay),
+  };
+
+  await TurnTrace.findOneAndUpdate(
+    { traceId },
+    { $set: tracePayload },
+    { upsert: true, returnDocument: "after", session }
+  );
+
+  return tracePayload;
 }
 
 function buildGameStateSummary(gameState = {}) {
@@ -1480,6 +1611,356 @@ function applyValidatedSkillPatch({
     after,
     levelUps,
   });
+}
+
+const DRY_RUN_SUPPORTED_TOP_LEVEL_KEYS = new Set([
+  "gameId",
+  "actionSummary",
+  "actionFamily",
+  "clientTurnId",
+  "idempotencyKey",
+  "responseProfile",
+  "includeDebug",
+  "dryRun",
+  "timeAdvance",
+  "lucasPatch",
+  "activityCost",
+  "gameStatePatch",
+  "biologicalCostExemptReason",
+  "skillPatch",
+  "eventLogs",
+]);
+
+const DRY_RUN_SUPPORTED_GAME_STATE_PATCH_KEYS = new Set(["locationId"]);
+
+function getUnsupportedDryRunKeys(body = {}) {
+  const unsupported = Object.keys(body).filter((key) => !DRY_RUN_SUPPORTED_TOP_LEVEL_KEYS.has(key));
+
+  if (body.gameStatePatch && typeof body.gameStatePatch === "object" && !Array.isArray(body.gameStatePatch)) {
+    for (const key of Object.keys(body.gameStatePatch)) {
+      if (!DRY_RUN_SUPPORTED_GAME_STATE_PATCH_KEYS.has(key)) {
+        unsupported.push(`gameStatePatch.${key}`);
+      }
+    }
+  }
+
+  return unsupported.sort();
+}
+
+async function previewApplyTurnDryRun({ body = {}, gameId, clientTurnId = "", includeDebug = false } = {}) {
+  const unsupportedPatchKeys = getUnsupportedDryRunKeys(body);
+  if (unsupportedPatchKeys.length > 0) {
+    throw validationError(
+      "applyTurn dryRun solo cubre timeAdvance/activityCost/gameStatePatch.locationId/lucasPatch/skillPatch en esta fase.",
+      {
+        unsupportedPatchKeys,
+        supportedPatchKeys: Array.from(DRY_RUN_SUPPORTED_TOP_LEVEL_KEYS).sort(),
+      }
+    );
+  }
+
+  const originalGameState = await GameState.findOne({ gameId }).lean();
+  if (!originalGameState) {
+    const error = new Error(`No existe GameState para gameId: ${gameId}`);
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const gameState = toPlain(originalGameState);
+  const changes = {};
+
+  if (body.timeAdvance) {
+    const { from, to } = body.timeAdvance;
+    const effectiveFrom = from || gameState.time;
+    const dayBefore = gameState.currentDay;
+    const fromDay = body.timeAdvance.fromDay ?? dayBefore;
+    const toDay = body.timeAdvance.toDay ?? fromDay;
+
+    if (from && from !== gameState.time) {
+      throw validationError("timeAdvance.from no coincide con la hora actual del GameState.", {
+        currentTime: gameState.time,
+        receivedFrom: from,
+      });
+    }
+
+    if (!Number.isInteger(fromDay) || fromDay < 1) {
+      throw validationError("timeAdvance.fromDay debe ser un entero positivo.", {
+        receivedFromDay: fromDay,
+      });
+    }
+
+    if (!Number.isInteger(toDay) || toDay < 1) {
+      throw validationError("timeAdvance.toDay debe ser un entero positivo.", {
+        receivedToDay: toDay,
+      });
+    }
+
+    if (fromDay !== dayBefore) {
+      throw validationError("timeAdvance.fromDay no coincide con currentDay del GameState.", {
+        currentDay: dayBefore,
+        receivedFromDay: fromDay,
+      });
+    }
+
+    if (!isValidTime(to)) {
+      throw validationError("timeAdvance.to debe tener formato HH:MM exacto.");
+    }
+
+    const elapsedMinutes = diffAdvanceMinutes({
+      fromDay,
+      from: effectiveFrom,
+      toDay,
+      to,
+    });
+
+    if (elapsedMinutes < 0) {
+      throw validationError("timeAdvance.to no puede ser anterior a timeAdvance.from. Si cruza medianoche, envia toDay.", {
+        from: effectiveFrom,
+        fromDay,
+        to,
+        toDay,
+      });
+    }
+
+    if (elapsedMinutes > 24 * 60) {
+      throw validationError("timeAdvance no puede avanzar mas de 24 horas en una sola llamada.", {
+        from: effectiveFrom,
+        fromDay,
+        to,
+        toDay,
+        elapsedMinutes,
+      });
+    }
+
+    validateHourBoundaryCost({
+      timeAdvance: { fromDay, from: effectiveFrom, toDay, to },
+      currentTime: gameState.time,
+      body,
+    });
+    validateActivityCostMinutes({
+      timeAdvance: { fromDay, from: effectiveFrom, toDay, to },
+      currentTime: gameState.time,
+      body,
+    });
+
+    changes.time = {
+      dayBefore,
+      before: gameState.time,
+      dayAfter: toDay,
+      after: to,
+      blockAfter: getBlockFromTime(to),
+      elapsedMinutes,
+      crossesMidnight: toDay > fromDay,
+    };
+
+    if (toDay > dayBefore) {
+      advanceDiegeticDate(gameState.diegeticDate, toDay - dayBefore);
+    }
+
+    gameState.currentDay = toDay;
+    gameState.time = to;
+    gameState.block = getBlockFromTime(to);
+  }
+
+  if (body.gameStatePatch?.locationId) {
+    const location = await Location.findOne({ locationId: body.gameStatePatch.locationId })
+      .select("locationId name")
+      .lean();
+
+    if (!location) {
+      throw validationError("gameStatePatch.locationId no existe.", {
+        locationId: body.gameStatePatch.locationId,
+      });
+    }
+
+    const before = gameState.locationId;
+    gameState.locationId = body.gameStatePatch.locationId;
+    changes.location = {
+      before,
+      after: gameState.locationId,
+      locationName: location.name,
+    };
+  }
+
+  if (body.lucasPatch) {
+    const lucasChanges = {};
+    const allowedStats = {
+      lifeDelta: "life",
+      satietyDelta: "satiety",
+      energyDelta: "energy",
+      mpDelta: "mp",
+    };
+
+    for (const [deltaKey, statKey] of Object.entries(allowedStats)) {
+      if (body.lucasPatch[deltaKey] !== undefined) {
+        const delta = body.lucasPatch[deltaKey];
+
+        if (!Number.isInteger(delta)) {
+          throw validationError(`${deltaKey} debe ser un número entero.`);
+        }
+
+        lucasChanges[statKey] = applyStatDelta(gameState.lucasStatus[statKey], delta, statKey);
+      }
+    }
+
+    if (Array.isArray(body.lucasPatch.addInjuries)) {
+      gameState.lucasStatus.injuries.push(...body.lucasPatch.addInjuries);
+      lucasChanges.addInjuries = body.lucasPatch.addInjuries;
+    }
+
+    if (Array.isArray(body.lucasPatch.addConditions)) {
+      gameState.lucasStatus.conditions.push(...body.lucasPatch.addConditions);
+      lucasChanges.addConditions = body.lucasPatch.addConditions;
+    }
+
+    if (Object.keys(lucasChanges).length > 0) {
+      changes.lucasStatus = lucasChanges;
+    }
+  }
+
+  if (body.activityCost || changes.time) {
+    const biologicalClockChange = applyBiologicalClockForTurn(
+      gameState,
+      body,
+      changes.time
+        ? {
+            fromDay: changes.time.dayBefore,
+            from: changes.time.before,
+            toDay: changes.time.dayAfter,
+            to: changes.time.after,
+          }
+        : null
+    );
+
+    if (biologicalClockChange) {
+      changes.biologicalClock = biologicalClockChange;
+
+      if (biologicalClockChange.processedBlocks.length > 0) {
+        const satietyBefore = biologicalClockChange.processedBlocks[0].satiety.before;
+        const energyBefore = biologicalClockChange.processedBlocks[0].energy.before;
+        const satietyAfter =
+          biologicalClockChange.processedBlocks[biologicalClockChange.processedBlocks.length - 1].satiety.after;
+        const energyAfter =
+          biologicalClockChange.processedBlocks[biologicalClockChange.processedBlocks.length - 1].energy.after;
+
+        changes.activityCost = {
+          mode: biologicalClockChange.mode,
+          satiety: {
+            before: satietyBefore,
+            delta: satietyAfter - satietyBefore,
+            after: satietyAfter,
+            labelAfter: gameState.lucasStatus.satiety.label || "",
+          },
+          energy: {
+            before: energyBefore,
+            delta: energyAfter - energyBefore,
+            after: energyAfter,
+            labelAfter: gameState.lucasStatus.energy.label || "",
+          },
+          processedBlocks: biologicalClockChange.processedBlocks,
+        };
+
+        changes.lucasStatus = {
+          ...(changes.lucasStatus || {}),
+          activityCost: {
+            satiety: changes.activityCost.satiety,
+            energy: changes.activityCost.energy,
+          },
+        };
+      }
+    }
+  }
+
+  if (body.skillPatch !== undefined && !Array.isArray(body.skillPatch)) {
+    throw validationError("skillPatch debe ser un array.");
+  }
+
+  if (Array.isArray(body.skillPatch)) {
+    const skillChanges = [];
+    const recentSkillLogs = await EventLog.find({
+      gameId,
+      day: gameState.currentDay,
+      "mechanicalChanges.skills": { $exists: true },
+    })
+      .sort({ createdAt: 1 })
+      .limit(100)
+      .lean();
+    const localSkillCategoryCounts = new Map();
+
+    for (const patch of body.skillPatch) {
+      const skill = gameState.skills.find((entry) => entry.skillId === patch.skillId);
+
+      if (!skill) {
+        throw validationError(`No existe la habilidad: ${patch.skillId}`);
+      }
+
+      const inputCategoryId = normalizeSkillCategory(patch.category || "");
+      const localKey = `${patch.skillId}:${inputCategoryId}`;
+      const priorLocalSimilarCount = localSkillCategoryCounts.get(localKey) || 0;
+
+      skillChanges.push({
+        ...applyValidatedSkillPatch({
+          gameState,
+          skill,
+          patch,
+          body,
+          recentSkillLogs,
+          priorLocalSimilarCount,
+          skillPatchCount: body.skillPatch.length,
+        }),
+      });
+      localSkillCategoryCounts.set(localKey, priorLocalSimilarCount + 1);
+    }
+
+    if (skillChanges.length > 0) {
+      changes.skills = skillChanges;
+    }
+  }
+
+  if (Array.isArray(changes.skills) && changes.skills.length > 0) {
+    changes.skills = changes.skills.map((change) => withSkillProgressDisplay(change));
+    changes.skillProgressDisplay = buildSkillProgressDisplay(changes.skills);
+  }
+
+  attachMechanicalChangeDisplay(changes);
+
+  const autoCheckpointPlan = buildApplyTurnAutoCheckpointPlan(changes);
+  const displayContext = await buildTurnDisplayContext(gameState);
+  const displayBundle = buildTurnDisplayBundle({
+    changes,
+    gameState,
+    location: displayContext.location,
+    nearbyNpcs: displayContext.nearbyNpcs,
+    activeEvents: displayContext.activeEvents,
+    actionSummary: body.actionSummary || "",
+  });
+  changes.displayBundle = displayBundle;
+
+  return {
+    ok: true,
+    dryRun: true,
+    message: "Preview exacta de applyTurn calculada sin guardar estado, logs, checkpoints ni trazas.",
+    operation: "applyTurn",
+    mutation: {
+      willMutateGameState: false,
+      willCreateEventLogs: false,
+      willCreateCheckpoint: false,
+      willCreateTurnTrace: false,
+    },
+    clientTurnId,
+    supportedPatchKeys: Array.from(DRY_RUN_SUPPORTED_TOP_LEVEL_KEYS).sort(),
+    unsupportedPatchKeys: [],
+    eventLogsWouldCreate: Array.isArray(body.eventLogs)
+      ? body.eventLogs.length
+      : body.actionSummary || Object.keys(changes).length > 1
+        ? 1
+        : 0,
+    autoCheckpointPlan,
+    changes: buildPublicTurnChanges(changes, includeDebug),
+    displayBundle,
+    gameState: includeDebug ? gameState : buildGameStateSummary(gameState),
+    responseProfile: includeDebug ? "debug_full" : "compact",
+  };
 }
 
 async function applyInventoryPatch(inventory, patch, session = null) {
@@ -4472,10 +4953,17 @@ async function applyTurn(req, res) {
     const actionFamily = normalizeActionFamilyInput(body.actionFamily);
     validateEventLogInputs(body.eventLogs);
 
+    if (wantsDryRunTurn(body)) {
+      return res.json(await previewApplyTurnDryRun({ body, gameId, clientTurnId, includeDebug, actionFamily }));
+    }
+
     if (clientTurnId) {
       const existingLog = await EventLog.findOne({ gameId, clientTurnId }).lean();
       if (existingLog) {
-        return res.json(await buildIdempotentReplayResponse(existingLog, includeDebug));
+        const replayResponse = await buildIdempotentReplayResponse(existingLog, includeDebug);
+        const trace = await TurnTrace.findOne({ gameId, clientTurnId }).select("traceId").lean();
+        if (trace?.traceId) replayResponse.turnTraceId = trace.traceId;
+        return res.json(replayResponse);
       }
     }
 
@@ -5150,6 +5638,16 @@ async function applyTurn(req, res) {
         clientTurnId,
         includeDebug,
       });
+
+      const turnTrace = await writeTurnTrace({
+        gameId,
+        clientTurnId,
+        requestBody: body,
+        responsePayload,
+        status: "applied",
+        session,
+      });
+      responsePayload.turnTraceId = turnTrace.traceId;
     });
 
     return res.json(responsePayload);

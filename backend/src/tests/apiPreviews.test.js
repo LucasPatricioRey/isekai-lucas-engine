@@ -1,5 +1,6 @@
 const { after, before, describe, it } = require("node:test");
 
+const TurnTrace = require("../models/TurnTrace");
 const {
   assert,
   assertCanonState,
@@ -71,6 +72,47 @@ describe("preview and rejection API coverage", () => {
 
     const afterState = await getCanonicalState();
     assertSameState(beforeState, afterState);
+  });
+
+  it("applyTurn dryRun previews skill patches without mutating state or writing traces", async () => {
+    const beforeState = await getCanonicalState();
+    assertCanonState(beforeState);
+
+    const clientTurnId = `test-dryrun-skill-${Date.now()}`;
+    const dryRun = await post("/api/turn/apply", {
+      gameId: "isekai_lucas_main",
+      dryRun: true,
+      clientTurnId,
+      actionFamily: "magic_practice",
+      actionSummary: "Preview seca de practica basica de mana.",
+      skillPatch: [
+        {
+          skillId: "skill_mana",
+          expDelta: 4,
+          category: "practica_basica_10_30min",
+          durationMinutes: 30,
+          reason: "Preview seca de entrenamiento magico basico sin guardar.",
+          modifiers: {
+            aquaBlessing: true,
+            newGoal: true,
+          },
+        },
+      ],
+    });
+
+    assert.equal(dryRun.status, 200, JSON.stringify(dryRun.data));
+    assert.equal(dryRun.data.ok, true);
+    assert.equal(dryRun.data.dryRun, true);
+    assert.equal(dryRun.data.mutation.willMutateGameState, false);
+    assert.equal(dryRun.data.mutation.willCreateTurnTrace, false);
+    assert.equal(dryRun.data.clientTurnId, clientTurnId);
+    assert.ok(dryRun.data.changes.skillProgressDisplay.displayLines.length >= 1);
+    assert.ok(dryRun.data.changes.skills[0].multiplierParts.some((part) => part.id === "aqua" && part.applied));
+    assert.ok(dryRun.data.displayBundle.renderLines.includes("## Estado actual"));
+
+    const afterState = await getCanonicalState();
+    assertSameState(beforeState, afterState);
+    assert.equal(await TurnTrace.countDocuments({ clientTurnId }), 0);
   });
 
   it("social preview applies NPC-specific profile friction without mutating canonical state", async () => {

@@ -477,6 +477,7 @@ async function main() {
   assertCondition(issues, "compact has npcRelationshipPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.npcRelationshipPatches));
   assertCondition(issues, "compact has factionReputationPatches", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.factionReputationPatches));
   assertCondition(issues, "compact has actionFamily", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.actionFamily));
+  assertCondition(issues, "compact has applyTurn dryRun", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.dryRun));
   assertCondition(issues, "compact has jobContractPatch", Boolean(compact.components?.schemas?.ApplyTurnRequest?.properties?.jobContractPatch));
   assertCondition(
     issues,

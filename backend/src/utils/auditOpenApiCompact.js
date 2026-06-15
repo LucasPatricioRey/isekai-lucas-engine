@@ -242,6 +242,7 @@ function main() {
     "activityCost",
     "biologicalCostExemptReason",
     "actionFamily",
+    "dryRun",
     "missionPatch",
     "worldEventPatches",
     "jobContractPatch",

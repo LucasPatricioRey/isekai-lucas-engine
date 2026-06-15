@@ -13,6 +13,7 @@ const CharacterMagicKnowledge = require("../models/CharacterMagicKnowledge");
 const Mission = require("../models/Mission");
 const Npc = require("../models/Npc");
 const NpcSocialLedger = require("../models/NpcSocialLedger");
+const TurnTrace = require("../models/TurnTrace");
 const WeatherState = require("../models/WeatherState");
 const WorldEvent = require("../models/WorldEvent");
 const { pruneAutomaticCheckpoints } = require("../services/checkpointService");
@@ -299,6 +300,7 @@ async function cleanupIsolatedState() {
   if (tempGameId) await Commitment.deleteMany({ gameId: tempGameId });
   if (tempGameId) await Evidence.deleteMany({ gameId: tempGameId });
   if (tempGameId) await InjuryRecord.deleteMany({ gameId: tempGameId });
+  if (tempGameId) await TurnTrace.deleteMany({ gameId: tempGameId });
   if (tempGameId) await WorldEvent.deleteMany({ gameId: tempGameId });
   await Mission.deleteMany({
     missionId: {
@@ -2606,6 +2608,14 @@ describe("turn hardening coverage", () => {
     assert.equal(afterFirstNpc.relationshipWithLucas.familiarity, 1);
     assert.equal(await EventLog.countDocuments({ gameId: tempGameId, clientTurnId }), 1);
     assert.equal(await NpcSocialLedger.countDocuments({ npcId: tempIdempotentNpcId }), 1);
+    const trace = await TurnTrace.findOne({ gameId: tempGameId, clientTurnId }).lean();
+    assert.ok(trace);
+    assert.equal(first.data.turnTraceId, trace.traceId);
+    assert.equal(trace.primaryLogId, first.data.primaryLogId);
+    assert.equal(trace.status, "applied");
+    assert.equal(trace.requestSanitized.clientTurnId, clientTurnId);
+    assert.ok(trace.displayBundle.renderLines.includes("## Estado actual"));
+    assert.ok(trace.responseSummary.changeKeys.includes("npcRelationships"));
 
     const replay = await post("/api/turn/apply", body);
     assert.equal(replay.status, 200, JSON.stringify(replay.data));
@@ -2614,12 +2624,14 @@ describe("turn hardening coverage", () => {
     assert.equal(replay.data.clientTurnId, clientTurnId);
     assert.equal(replay.data.eventLogsCreated, 0);
     assert.equal(replay.data.primaryLogId, first.data.primaryLogId);
+    assert.equal(replay.data.turnTraceId, trace.traceId);
     assert.equal(replay.data.changes.npcRelationships[0].after.familiarity, 1);
 
     const afterReplayNpc = await Npc.findOne({ npcId: tempIdempotentNpcId }).lean();
     assert.equal(afterReplayNpc.relationshipWithLucas.familiarity, 1);
     assert.equal(await EventLog.countDocuments({ gameId: tempGameId, clientTurnId }), 1);
     assert.equal(await NpcSocialLedger.countDocuments({ npcId: tempIdempotentNpcId }), 1);
+    assert.equal(await TurnTrace.countDocuments({ gameId: tempGameId, clientTurnId }), 1);
   });
 
   it("applies npc relationship patches through applyTurn", async () => {

@@ -130,6 +130,7 @@ const criticalRuleCards = [
       "Use profileContract to reject minimal_header/debug_audit as final narration sources.",
       "Use ruleLookupContract.searchBatches before final gameplay response and before previews/mutations.",
       "Use previews/details when outcome, cost or legality is uncertain.",
+      "Use applyTurn with dryRun:true and the same patches for exact EXP/time/activity preview before mutating those turns.",
       "Use applyTurn only when state changes; use completeJobShift for full job shifts and combat Action for real advanced combat.",
       "Read compact context again after mutation before final narration.",
     ],
@@ -137,9 +138,9 @@ const criticalRuleCards = [
       "Mutate state for a pure question, thought, OOC check or preview.",
       "Use full context in normal compact gameplay unless debug/admin is needed.",
     ],
-    template: "read -> preview/details -> mutate if needed -> reread -> narrate saved state",
+    template: "read -> ruleIds -> preview/dryRun -> mutate if needed -> reread -> narrate saved state",
     content:
-      "Action flow rule. Normal gameplay starts with player_scene compact context and searches the rule cards listed by ruleLookupContract. Pure reads and previews do not mutate. State-changing actions use the proper mutator, then the narrator rereads compact context and narrates the saved result.",
+      "Action flow rule. Normal gameplay starts with player_scene compact context and searches the rule cards listed by ruleLookupContract. Pure reads and previews do not mutate. For EXP/time/activity patches, applyTurn dryRun:true previews the same payload without saving. State-changing actions use the proper mutator, then the narrator rereads compact context and narrates the saved result.",
     tags: ["rule_card", "actions", "flow", "applyTurn", "preview"],
   },
   {

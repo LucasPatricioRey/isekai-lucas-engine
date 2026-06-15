@@ -213,3 +213,35 @@ test("builds job shift HUD lines from completeJobShift-style changes", () => {
   assert.ok(bundle.renderLines.includes("Dinero: 0 oro, 22 plata, 98 cobre"));
   assert.ok(bundle.renderLines.includes("NPCs visibles/cerca: Roberto Valen, Fern."));
 });
+
+test("normalizes situation punctuation in HUD state lines", () => {
+  const bundle = buildTurnDisplayBundle({
+    changes: {},
+    gameState: {
+      currentDay: 19,
+      diegeticDate: {
+        day: 19,
+        month: "Roc\u00edo Nuevo",
+        year: 1,
+      },
+      block: "Ma\u00f1ana",
+      time: "09:35",
+      locationId: "loc_hoshimori_guild_patio",
+      moneyCopper: 1498,
+      lucasStatus: {
+        life: { current: 100, max: 100 },
+        satiety: { current: 57, max: 100, label: "hambre leve" },
+        energy: { current: 87, max: 100, label: "rendimiento normal" },
+        mp: { current: 190, max: 200 },
+      },
+    },
+    location: {
+      locationId: "loc_hoshimori_guild_patio",
+      name: "Patio del gremio",
+    },
+    actionSummary: "Lucas completo el entrenamiento real..",
+  });
+
+  assert.ok(bundle.stateLines.includes("Situaci\u00f3n: Lucas completo el entrenamiento real."));
+  assert.equal(bundle.stateLines.some((line) => line.includes("real..")), false);
+});

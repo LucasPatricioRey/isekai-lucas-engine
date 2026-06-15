@@ -11,6 +11,7 @@ const Faction = require("../models/Faction");
 const EnemyTemplate = require("../models/EnemyTemplate");
 const CombatEncounter = require("../models/CombatEncounter");
 const Checkpoint = require("../models/Checkpoint");
+const TurnTrace = require("../models/TurnTrace");
 const Commitment = require("../models/Commitment");
 const GameState = require("../models/GameState");
 const NpcSocialLedger = require("../models/NpcSocialLedger");
@@ -94,6 +95,14 @@ function parseLimit(value, fallback = 20, max = 50) {
   return Math.min(parsed, max);
 }
 
+function uniqueList(values = []) {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function extractRuleIdsFromQuery(query = "") {
+  return uniqueList(String(query || "").match(/\b[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+\b/g) || []).slice(0, 12);
+}
+
 function scoreDocSearchResult(doc, rawQuery, tokens) {
   const exactRegex = rawQuery ? buildRegex(rawQuery) : null;
   const normalized = normalizeSearchText(
@@ -161,6 +170,7 @@ async function searchDb(req, res) {
     enemyTemplates,
     combatEncounters,
     checkpoints,
+    turnTraces,
     commitments,
     npcSocialLedgers,
     npcRelationships,
@@ -249,6 +259,31 @@ async function searchDb(req, res) {
       ),
     }).limit(10).lean(),
 
+    TurnTrace.find({
+      gameId,
+      $or: searchFieldClauses(
+        [
+          "traceId",
+          "clientTurnId",
+          "operation",
+          "status",
+          "requestHash",
+          "responseHash",
+          "logIds",
+          "primaryLogId",
+          "checkpointId",
+          "responseSummary.changeKeys",
+        ],
+        regexes
+      ),
+    })
+      .select(
+        "traceId gameId clientTurnId operation status requestHash responseHash logIds primaryLogId checkpointId eventLogsCreated idempotentReplay responseSummary displayBundle.renderLines createdAt updatedAt"
+      )
+      .sort({ updatedAt: -1 })
+      .limit(10)
+      .lean(),
+
     Commitment.find({
       gameId,
       $or: searchFieldClauses(
@@ -328,6 +363,7 @@ async function searchDb(req, res) {
       enemyTemplates,
       combatEncounters,
       checkpoints,
+      turnTraces,
       commitments,
       npcSocialLedgers,
       npcRelationships,
@@ -338,7 +374,9 @@ async function searchDb(req, res) {
 
 async function searchDocs(req, res) {
   const q = String(req.query.q || "").trim();
-  const ruleIds = parseListQuery(req.query.ruleId || req.query.ruleIds);
+  const explicitRuleIds = parseListQuery(req.query.ruleId || req.query.ruleIds);
+  const ruleIdsFromQuery = extractRuleIdsFromQuery(q);
+  const ruleIds = uniqueList([...explicitRuleIds, ...ruleIdsFromQuery]).slice(0, 12);
   const sources = parseListQuery(req.query.source || req.query.sources);
   const domains = parseListQuery(req.query.domain || req.query.domains);
   const priorities = parseListQuery(req.query.priority || req.query.priorities);
@@ -370,7 +408,7 @@ async function searchDocs(req, res) {
   if (appliesTo.length > 0) clauses.push({ appliesTo: { $in: appliesTo } });
 
   const tokens = getSearchTokens(q);
-  if (q) {
+  if (q && ruleIdsFromQuery.length === 0) {
     const regex = buildRegex(q);
     const tokenRegexes = tokens.map((token) => buildRegex(token));
     const tokenClauses = tokenRegexes.map((tokenRegex) => ({
@@ -425,6 +463,7 @@ async function searchDocs(req, res) {
     query: q,
     filters: {
       ruleIds,
+      ruleIdsFromQuery,
       sources,
       domains,
       priorities,
