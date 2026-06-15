@@ -93,6 +93,7 @@ function getSnapshotDocId(collectionKey, doc) {
     doc.eventId ||
     doc.missionId ||
     doc.logId ||
+    doc.contractId ||
     doc.shopId ||
     doc.stockId ||
     doc.itemId ||
@@ -184,7 +185,20 @@ function checkpointScopedCollections(checkpoint = {}) {
   return new Set(configured.filter((key) => GAME_SCOPED_RESTORE_COLLECTION_KEYS.has(key)));
 }
 
-async function restoreCollection(Model, collectionKey, docs, session, { gameId = "", scopedCollections = new Set() } = {}) {
+function scopedRestoreFilter(collectionKey, { gameId = "", characterId = "" } = {}) {
+  if (collectionKey === "jobContracts") {
+    return { characterId: characterId || "char_lucas" };
+  }
+  return { gameId };
+}
+
+async function restoreCollection(
+  Model,
+  collectionKey,
+  docs,
+  session,
+  { gameId = "", characterId = "", scopedCollections = new Set() } = {}
+) {
   if (docs === undefined || docs === null) {
     return {
       collection: collectionKey,
@@ -194,7 +208,7 @@ async function restoreCollection(Model, collectionKey, docs, session, { gameId =
   }
 
   const scoped = scopedCollections.has(collectionKey);
-  await Model.deleteMany(scoped ? { gameId } : {}).session(session);
+  await Model.deleteMany(scoped ? scopedRestoreFilter(collectionKey, { gameId, characterId }) : {}).session(session);
 
   if (docs.length > 0) {
     await Model.insertMany(docs, { session, ordered: true });
@@ -260,6 +274,7 @@ async function rollbackCheckpoint(req, res) {
           restoreSummary.push(
             await restoreCollection(Model, collectionKey, snapshot[collectionKey], session, {
               gameId: gameStateSnapshot.gameId,
+              characterId: gameStateSnapshot.characterId,
               scopedCollections,
             })
           );

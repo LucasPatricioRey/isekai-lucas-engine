@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Compact",
-    "version": "2.19.8",
-    "description": "Schema compacto con hasta 30 operaciones para GPT Builder. Incluye ApplyTurn con dryRun para preview exacta de timeAdvance/activityCost/activitySegments/economia/skillPatch/magicPractice/magicPatches sin mutar, y permite turnos compuestos en un solo applyTurn cuando viaje, chequeo, descanso, comida, entrenamiento o magia se expresan como activitySegments. TurnTrace audita mutaciones reales, missionPatch, gameStatePatch y parches de economia/memoria/relacion social. Incluye previewSocialImpact con proyeccion de relationshipState y excluye rollback y mutadores peligrosos directos. El backend separa evento principal unico, rumores menores y eventos de fondo; el scheduler solo genera otro evento principal cuando no hay uno abierto. applyTurn y completeJobShift devuelven displayBundle/renderLines como contrato unificado de HUD final, mechanicalChangeDisplay para cambios numericos generales y previewSkillProgression devuelve displayLines canonicas para EXP/habilidades. applyTurn, completeJobShift y context/compact devuelven narrativeHints/narrativeContext/socialRhythm/npcKnowledgeContext, ruleLookupContract, scenePlan, scene.narrationContract y scene.dialogueSceneCapsules para variar escenas repetidas, priorizar Mongo como canon de reglas/voz/NPC y evitar dialogo generico sin crear mecanicas nuevas ni dar conocimiento omnisciente a NPCs. Las comidas de contrato en completeJobShift son explicitas: solo se aplican si se envian en consumeIncludedMealIds. applyTurn.commitmentPatches guarda promesas, planes y obligaciones pendientes como estado formal con agenda, urgencia y consecuencias previstas. jobContractPatch registra tardanzas/ausencias con consecuencia laboral pendiente sin aplicar castigos sociales automaticos. getCompactContext expone missionAgenda/guildState, worldFriction y missionPatch guarda reportes con evidencia formal. searchDocs expone rule cards C24D ampliadas para formato, tiempo, skills, social, economia, misiones, viaje, trabajo, salud, magia, NPCs e inventario."
+    "version": "2.20.0",
+    "description": "Schema compacto con resolveTurn/previewResolveTurn para acciones compuestas en una sola Action y ApplyTurn con dryRun/activitySegments. resolveTurn arma viaje, descanso, actividad, tardanza laboral, memoria NPC y EXP fisica conservadora desde sequence[]; devuelve resolverPlan y displayBundle. Checkpoints game_scoped ahora evitan snapshots globales pesados. Mongo/backend siguen como canon; searchDocs expone rule cards criticas; applyTurn/completeJobShift mantienen HUD canonico."
   },
   "servers": [
     {
@@ -2458,6 +2458,318 @@
             "type": "string"
           }
         }
+      },
+      "ResolveTurnStep": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "rest",
+              "activity",
+              "wait",
+              "environment_check",
+              "travel",
+              "job_attendance",
+              "job_late",
+              "npc_memory",
+              "apology"
+            ],
+            "description": "Paso estructurado que el backend transforma en applyTurn. Usar travel/rest/job_attendance/apology para turnos compuestos."
+          },
+          "minutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1440
+          },
+          "category": {
+            "type": "string",
+            "description": "Categoria biologica opcional para activity/rest."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "fromLocationId": {
+            "type": "string"
+          },
+          "toLocationId": {
+            "type": "string"
+          },
+          "destinationLocationId": {
+            "type": "string"
+          },
+          "routeId": {
+            "type": "string"
+          },
+          "pace": {
+            "type": "string",
+            "enum": [
+              "walk",
+              "hurry",
+              "careful",
+              "run",
+              "full_speed",
+              "correr",
+              "a_toda_velocidad"
+            ],
+            "description": "Ritmo de viaje; full_speed convierte viaje en esfuerzo_fuerte y puede dar EXP fisica conservadora."
+          },
+          "allowMultiSegment": {
+            "type": "boolean"
+          },
+          "maxSegments": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8
+          },
+          "awardSkills": {
+            "type": "boolean"
+          },
+          "contractId": {
+            "type": "string"
+          },
+          "shiftId": {
+            "type": "string"
+          },
+          "targetNpcId": {
+            "type": "string"
+          },
+          "npcId": {
+            "type": "string"
+          },
+          "excused": {
+            "type": "boolean"
+          },
+          "consequenceLevel": {
+            "type": "string",
+            "enum": [
+              "none",
+              "minor",
+              "moderate",
+              "major",
+              "critical"
+            ]
+          },
+          "consequenceApplied": {
+            "type": "boolean"
+          },
+          "consequenceSummary": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "fact": {
+            "type": "string",
+            "maxLength": 700
+          },
+          "sourceType": {
+            "type": "string",
+            "enum": [
+              "saw",
+              "heard",
+              "told_by_lucas",
+              "told_by_npc",
+              "public_record",
+              "rumor",
+              "inference"
+            ]
+          },
+          "certainty": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "probable",
+              "rumor",
+              "doubtful"
+            ]
+          },
+          "emotionalWeight": {
+            "type": "string",
+            "enum": [
+              "none",
+              "low",
+              "medium",
+              "high",
+              "very_high"
+            ]
+          },
+          "privacyLevel": {
+            "type": "string",
+            "enum": [
+              "public",
+              "semi_private",
+              "private",
+              "secret"
+            ]
+          },
+          "canShare": {
+            "type": "boolean"
+          },
+          "importance": {
+            "type": "string",
+            "enum": [
+              "minor",
+              "normal",
+              "important",
+              "critical"
+            ]
+          },
+          "relatedNpcIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8
+          },
+          "relatedLocationIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 12
+          },
+          "conditions": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "ResolveTurnRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "gameId": {
+            "type": "string",
+            "default": "isekai_lucas_main"
+          },
+          "clientTurnId": {
+            "type": "string",
+            "description": "Idempotencia/logica del turno; usar uno unico por intento del jugador."
+          },
+          "responseProfile": {
+            "type": "string",
+            "enum": [
+              "compact"
+            ],
+            "default": "compact"
+          },
+          "actionFamily": {
+            "type": "string",
+            "enum": [
+              "travel",
+              "social",
+              "physical_training",
+              "magic_practice",
+              "mission",
+              "investigation",
+              "report",
+              "work",
+              "rest",
+              "other"
+            ]
+          },
+          "actionSummary": {
+            "type": "string",
+            "maxLength": 700
+          },
+          "playerText": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "hidden",
+              "private",
+              "local",
+              "public"
+            ]
+          },
+          "includeResolvedPayload": {
+            "type": "boolean",
+            "description": "Solo debug: devuelve el applyTurn generado."
+          },
+          "intent": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "summary": {
+                "type": "string",
+                "maxLength": 700
+              },
+              "destinationLocationId": {
+                "type": "string"
+              },
+              "targetNpcId": {
+                "type": "string"
+              },
+              "jobContractId": {
+                "type": "string"
+              },
+              "shiftId": {
+                "type": "string"
+              },
+              "pace": {
+                "type": "string"
+              },
+              "travelPace": {
+                "type": "string"
+              },
+              "sequence": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ResolveTurnStep"
+                },
+                "maxItems": 8
+              }
+            }
+          },
+          "sequence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResolveTurnStep"
+            },
+            "minItems": 1,
+            "maxItems": 8
+          },
+          "involvedNpcIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 12
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 12
+          },
+          "applyTurnOverrides": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Escape hatch tecnico; evitar en partida normal."
+          }
+        },
+        "required": [
+          "sequence"
+        ]
       }
     }
   },
@@ -2753,6 +3065,82 @@
         "description": "Muta estado validado. dryRun:true proyecta tiempo/coste/segmentos/economia/skillPatch/magicPractice/magicPatches sin guardar. Acciones compuestas: preferir un applyTurn con activitySegments. timeAdvance requiere coste, segmentos o exencion. Copiar displayBundle.renderLines."
       }
     },
+    "/api/turn/resolve/preview": {
+      "post": {
+        "operationId": "previewResolveTurn",
+        "summary": "Previsualiza una intencion compuesta resuelta por backend.",
+        "description": "Previsualiza una intencion compuesta con pasos estructurados sin mutar. Devuelve resolverPlan y displayBundle dryRun.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveTurnRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Turno compuesto previsualizado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Intencion rechazada por validacion."
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-openai-isConsequential": false
+      }
+    },
+    "/api/turn/resolve": {
+      "post": {
+        "operationId": "resolveTurn",
+        "summary": "Resuelve y aplica una intencion compuesta.",
+        "description": "Resuelve y aplica una intencion compuesta con pasos estructurados. Reduce llamadas: arma timeAdvance, activitySegments, viaje, EXP fisica basica, tardanza laboral y memoria NPC, luego ejecuta applyTurn.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveTurnRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Turno compuesto aplicado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Intencion rechazada por validacion."
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-openai-isConsequential": false
+      }
+    },
     "/api/economy/shops/{shopId}/stock": {
       "get": {
         "operationId": "getShopStock",
@@ -3043,30 +3431,6 @@
         "x-openai-isConsequential": false
       }
     },
-    "/api/travel/routes": {
-      "get": {
-        "operationId": "listTravelRoutes",
-        "summary": "Lista rutas de viaje.",
-        "responses": {
-          "200": {
-            "description": "Rutas.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GenericResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "ApiKeyAuth": []
-          }
-        ],
-        "x-openai-isConsequential": false
-      }
-    },
     "/api/travel/preview": {
       "post": {
         "operationId": "previewTravel",
@@ -3296,48 +3660,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GenericResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "ApiKeyAuth": []
-          }
-        ],
-        "x-openai-isConsequential": false
-      }
-    },
-    "/api/needs/activity-cost/preview": {
-      "post": {
-        "operationId": "previewActivityCost",
-        "summary": "Previsualiza coste biologico por actividad sin mutar estado.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "category": {
-                    "type": "string"
-                  },
-                  "minutes": {
-                    "type": "integer"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Preview de coste biologico.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PreviewResponse"
                 }
               }
             }

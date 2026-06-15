@@ -8,6 +8,7 @@ const Location = require("../models/Location");
 const WorldEvent = require("../models/WorldEvent");
 const Mission = require("../models/Mission");
 const EventLog = require("../models/EventLog");
+const JobContract = require("../models/JobContract");
 const Shop = require("../models/Shop");
 const ShopStock = require("../models/ShopStock");
 const Item = require("../models/Item");
@@ -37,6 +38,7 @@ const RESTORE_COLLECTIONS = [
   ["worldEvents", WorldEvent],
   ["missions", Mission],
   ["eventLogs", EventLog],
+  ["jobContracts", JobContract],
   ["shops", Shop],
   ["shopStocks", ShopStock],
   ["items", Item],
@@ -62,6 +64,7 @@ const DEFAULT_AUTO_CHECKPOINT_RETENTION = 40;
 const GAME_SCOPED_RESTORE_COLLECTION_KEYS = new Set([
   "worldEvents",
   "eventLogs",
+  "jobContracts",
   "combatEncounters",
   "combatantStates",
   "combatActionPreviews",
@@ -83,10 +86,24 @@ function checkpointSnapshotMetadata({ mode = "full", gameId = "" } = {}) {
   };
 }
 
-function snapshotFind(Model, collectionKey, { gameId = "", mode = "full", session = null } = {}) {
-  const filter = mode === "game_scoped" && GAME_SCOPED_RESTORE_COLLECTION_KEYS.has(collectionKey)
-    ? { gameId }
-    : {};
+function scopedSnapshotFilter(collectionKey, gameState = {}) {
+  if (collectionKey === "jobContracts") {
+    return { characterId: gameState.characterId || "char_lucas" };
+  }
+  if (GAME_SCOPED_RESTORE_COLLECTION_KEYS.has(collectionKey)) {
+    return { gameId: gameState.gameId };
+  }
+  return null;
+}
+
+function snapshotFind(Model, collectionKey, { gameState = null, mode = "full", session = null } = {}) {
+  if (mode === "game_scoped") {
+    const filter = scopedSnapshotFilter(collectionKey, gameState || {});
+    if (!filter) return Promise.resolve([]);
+    return withSession(Model.find(filter).lean(), session);
+  }
+
+  const filter = {};
   return withSession(Model.find(filter).lean(), session);
 }
 
@@ -169,6 +186,7 @@ async function buildFullSnapshot(gameId, { session = null, mode = "full" } = {})
     worldEvents,
     missions,
     eventLogs,
+    jobContracts,
     shops,
     shopStocks,
     items,
@@ -189,33 +207,34 @@ async function buildFullSnapshot(gameId, { session = null, mode = "full" } = {})
     weatherStates,
     evidence,
   ] = await Promise.all([
-    snapshotFind(Character, "characters", { gameId, mode, session }),
-    snapshotFind(Npc, "npcs", { gameId, mode, session }),
-    snapshotFind(NpcMemory, "npcMemories", { gameId, mode, session }),
-    snapshotFind(Rumor, "rumors", { gameId, mode, session }),
-    snapshotFind(Location, "locations", { gameId, mode, session }),
-    snapshotFind(WorldEvent, "worldEvents", { gameId, mode, session }),
-    snapshotFind(Mission, "missions", { gameId, mode, session }),
-    snapshotFind(EventLog, "eventLogs", { gameId, mode, session }),
-    snapshotFind(Shop, "shops", { gameId, mode, session }),
-    snapshotFind(ShopStock, "shopStocks", { gameId, mode, session }),
-    snapshotFind(Item, "items", { gameId, mode, session }),
-    snapshotFind(Faction, "factions", { gameId, mode, session }),
-    snapshotFind(RoutineOverride, "routineOverrides", { gameId, mode, session }),
-    snapshotFind(CombatEncounter, "combatEncounters", { gameId, mode, session }),
-    snapshotFind(CombatantState, "combatantStates", { gameId, mode, session }),
-    snapshotFind(CombatActionPreview, "combatActionPreviews", { gameId, mode, session }),
-    snapshotFind(CombatLogEntry, "combatLogEntries", { gameId, mode, session }),
-    snapshotFind(InjuryRecord, "injuryRecords", { gameId, mode, session }),
-    snapshotFind(WeaponProfile, "weaponProfiles", { gameId, mode, session }),
-    snapshotFind(NpcRelationship, "npcRelationships", { gameId, mode, session }),
-    snapshotFind(NpcSocialLedger, "npcSocialLedger", { gameId, mode, session }),
-    snapshotFind(CharacterMagicKnowledge, "characterMagicKnowledge", { gameId, mode, session }),
-    snapshotFind(MagicDiscipline, "magicDisciplines", { gameId, mode, session }),
-    snapshotFind(MagicTechnique, "magicTechniques", { gameId, mode, session }),
-    snapshotFind(TravelRoute, "travelRoutes", { gameId, mode, session }),
-    snapshotFind(WeatherState, "weatherStates", { gameId, mode, session }),
-    snapshotFind(Evidence, "evidence", { gameId, mode, session }),
+    snapshotFind(Character, "characters", { gameState, mode, session }),
+    snapshotFind(Npc, "npcs", { gameState, mode, session }),
+    snapshotFind(NpcMemory, "npcMemories", { gameState, mode, session }),
+    snapshotFind(Rumor, "rumors", { gameState, mode, session }),
+    snapshotFind(Location, "locations", { gameState, mode, session }),
+    snapshotFind(WorldEvent, "worldEvents", { gameState, mode, session }),
+    snapshotFind(Mission, "missions", { gameState, mode, session }),
+    snapshotFind(EventLog, "eventLogs", { gameState, mode, session }),
+    snapshotFind(JobContract, "jobContracts", { gameState, mode, session }),
+    snapshotFind(Shop, "shops", { gameState, mode, session }),
+    snapshotFind(ShopStock, "shopStocks", { gameState, mode, session }),
+    snapshotFind(Item, "items", { gameState, mode, session }),
+    snapshotFind(Faction, "factions", { gameState, mode, session }),
+    snapshotFind(RoutineOverride, "routineOverrides", { gameState, mode, session }),
+    snapshotFind(CombatEncounter, "combatEncounters", { gameState, mode, session }),
+    snapshotFind(CombatantState, "combatantStates", { gameState, mode, session }),
+    snapshotFind(CombatActionPreview, "combatActionPreviews", { gameState, mode, session }),
+    snapshotFind(CombatLogEntry, "combatLogEntries", { gameState, mode, session }),
+    snapshotFind(InjuryRecord, "injuryRecords", { gameState, mode, session }),
+    snapshotFind(WeaponProfile, "weaponProfiles", { gameState, mode, session }),
+    snapshotFind(NpcRelationship, "npcRelationships", { gameState, mode, session }),
+    snapshotFind(NpcSocialLedger, "npcSocialLedger", { gameState, mode, session }),
+    snapshotFind(CharacterMagicKnowledge, "characterMagicKnowledge", { gameState, mode, session }),
+    snapshotFind(MagicDiscipline, "magicDisciplines", { gameState, mode, session }),
+    snapshotFind(MagicTechnique, "magicTechniques", { gameState, mode, session }),
+    snapshotFind(TravelRoute, "travelRoutes", { gameState, mode, session }),
+    snapshotFind(WeatherState, "weatherStates", { gameState, mode, session }),
+    snapshotFind(Evidence, "evidence", { gameState, mode, session }),
   ]);
 
   return {
@@ -229,6 +248,7 @@ async function buildFullSnapshot(gameId, { session = null, mode = "full" } = {})
       worldEvents,
       missions,
       eventLogs,
+      jobContracts,
       shops,
       shopStocks,
       items,

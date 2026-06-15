@@ -27,7 +27,7 @@ Actualizacion C24B: `previewSkillProgression`, `applyTurn.skillPatch`, `applyTur
 Actualizacion C24C: `applyTurn` devuelve `mechanicalChangeDisplay` y `displayLines` canonicas para dinero, inventario, stock, biologia, estado fisico, evidencia y registro del gremio; el GPT debe copiarlas en `Cambios relevantes`.
 Actualizacion C24D: amplia las rule cards criticas consultables por Mongo/searchDocs para formato HUD/dialogo, tiempo/eventos, EXP/anti-farmeo, social/romance, economia/stock/propiedad, misiones/gremio, viaje/friccion, trabajo/asistencia, salud, magia autodidacta, presencia/agencia NPC, rumores/reputacion/facciones, inventario/evidencia, checkpoints y recovery.
 Actualizacion C24E: `applyTurn` y `completeJobShift` pueden devolver `displayBundle`/`renderLines` como contrato unificado de HUD final. Si existe, el GPT debe copiarlo y no reconstruir deltas desde fuentes dispersas.
-Actualizacion C28: `applyTurn dryRun:true` cubre `magicPractice` y `magicPatches`; los turnos compuestos deben preferir un solo `applyTurn` con `activitySegments` cuando mezclan viaje, chequeo, descanso, entrenamiento, comida o magia.
+Actualizacion C28: `applyTurn dryRun:true` cubre `magicPractice` y `magicPatches`; `resolveTurn`/`previewResolveTurn` resuelve turnos compuestos normales desde `sequence[]` para viaje, descanso, chequeo, tardanza laboral, disculpa/memoria NPC y EXP fisica conservadora. Si el dominio no esta cubierto por `resolveTurn`, los turnos compuestos deben preferir un solo `applyTurn` con `activitySegments`.
 Actualizacion C25: `context/compact` expone `scene.narrationContract` como contrato obligatorio de escena/NPC. Este contrato consolida Mongo vivo, capsulas, voz, relacion, conocimiento y limites de improvisacion para evitar dialogo generico y NPCs omniscientes.
 Actualizacion C26: `context/compact` expone `ruleLookupContract` como contrato obligatorio de busqueda de reglas. El GPT debe leer las rule cards indicadas por `ruleLookupContract.searchBatches` antes de previews o mutaciones cuando la accion toque esos dominios.
 Actualizacion C27: `context/compact` expone `profileContract` y `hudContract`. Las instrucciones del GPT pasan a ser bootloader minimo: obligan a leer contexto, contratos y `searchDocs`, pero el canon expandido vive en MongoDB/backend. `minimal_header` y `debug_audit` no son perfiles validos para narracion visible de partida.
@@ -265,9 +265,10 @@ Regla estricta:
 
 - antes de toda respuesta final visible de partida, el GPT debe leer las reglas core y activas indicadas por `ruleLookupContract` salvo que ya vengan cubiertas por `displayBundle` y no haya escena nueva;
 - si Lucas pide una accion que cambia estado, el GPT debe cruzar la intencion con `ruleLookupContract`;
-- si hay ruleId aplicable, debe llamar `searchDocs` por `ruleId` antes de `applyTurn`, `completeJobShift` o Action de combate;
+- si hay ruleId aplicable, debe llamar `searchDocs` por `ruleId` antes de `resolveTurn`, `applyTurn`, `completeJobShift` o Action de combate;
+- si una accion normal mezcla viaje/descanso/chequeo/tardanza/disculpa/memoria NPC, debe preferir `previewResolveTurn`/`resolveTurn` con `sequence[]` antes que armar manualmente rutas, costes, EXP fisica, jobContractPatch y npcMemoryPatches;
 - para turnos con EXP/reloj/actividad/economia/magia, puede llamar `applyTurn` con `dryRun:true` y los mismos patches antes de mutar; esta llamada no guarda estado, logs, checkpoints ni TurnTrace;
-- si una accion mezcla varias actividades secuenciales, debe preferir un solo `applyTurn` con `activitySegments` y todos los patches compatibles en vez de fragmentar en varios turnos reales;
+- si una accion mezcla varias actividades secuenciales no cubiertas por `resolveTurn`, debe preferir un solo `applyTurn` con `activitySegments` y todos los patches compatibles en vez de fragmentar en varios turnos reales;
 - si no consulta las reglas necesarias, no debe mutar: puede narrar solo lectura, preview o pedir una validacion tecnica;
 - despues de mutar, debe releer `context/compact` y copiar `displayBundle/renderLines` cuando existan.
 

@@ -32,17 +32,19 @@ Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.j
 | previewSocialImpact | `POST /api/npcs/social/impact/preview` | si | si | preview | gameplay |
 | searchDatabase | `GET /api/search/db` | si | si | lectura | gameplay |
 | searchDocs | `GET /api/search/docs` | si | si | lectura | gameplay/reglas |
-| listTravelRoutes | `GET /api/travel/routes` | si | si | lectura | gameplay |
+| listTravelRoutes | `GET /api/travel/routes` | si | no | lectura | gameplay |
 | getTravelRoute | `GET /api/travel/routes/{routeId}` | si | no | lectura | gameplay |
 | getCurrentWeather | `GET /api/weather/current` | si | si | lectura | gameplay |
 | createCheckpoint | `POST /api/checkpoints` | si | no | mutacion | admin/debug |
 | previewCombatAction | `POST /api/combat/encounters/{encounterId}/actions/preview` | si | si | preview | gameplay |
 | previewJobShift | `POST /api/jobs/shifts/{shiftId}/preview` | si | si | preview | gameplay |
 | previewMagicPractice | `POST /api/magic/practice/preview` | si | si | preview | gameplay |
-| previewActivityCost | `POST /api/needs/activity-cost/preview` | si | si | preview | gameplay |
+| previewActivityCost | `POST /api/needs/activity-cost/preview` | si | no | preview | gameplay |
 | previewSkillProgression | `POST /api/progression/skills/preview` | si | si | preview | gameplay |
 | previewTravel | `POST /api/travel/preview` | si | si | preview | gameplay |
 | applyTurn | `POST /api/turn/apply` | si | si | mutacion | gameplay |
+| previewResolveTurn | `POST /api/turn/resolve/preview` | si | si | preview | gameplay |
+| resolveTurn | `POST /api/turn/resolve` | si | si | mutacion | gameplay |
 | previewWeatherEffects | `POST /api/weather/effects/preview` | si | si | preview | gameplay |
 | listWorldEvents | `GET /api/world/events` | si | no | lectura | admin/debug |
 | getWorldEvent | `GET /api/world/events/{eventId}` | si | no | lectura | admin/debug |
@@ -60,5 +62,6 @@ Notas:
 - El backend puede separar keys por scope: lecturas/previews aceptan keys validas de lectura, `applyTurn` usa scope gameplay y mutadores directos peligrosos usan scope admin-write. `API_KEY` sigue funcionando como fallback legacy mientras existan despliegues antiguos.
 - `applyTurn` y `completeJobShift` no estan marcados como consequential en el schema compacto para modo juego fluido sin confirmacion manual. El backend sigue validando y rechazando mutaciones invalidas.
 - `applyTurn.activityCost` no suma operaciones: todo `timeAdvance` positivo requiere `activityCost` o exencion explicita; acumula automaticamente actividades entre horas y procesa pendientes al llegar a `:00`.
+- `resolveTurn` reemplaza varios previews para acciones normales compuestas: desde `sequence[]` arma viaje, descanso, chequeo, tardanza laboral, disculpa/memoria NPC, EXP fisica conservadora y un unico `applyTurn`. `listTravelRoutes` y `previewActivityCost` quedan fuera del compact porque `previewTravel`, `previewResolveTurn` y `applyTurn dryRun` cubren el flujo normal.
 - `narrativeHints`/`narrativeContext`/`dramaticContext`/`dramaticContext.emotionalScene`, `scene.nearbyNpcs[].dialogueProfile`, `scene.nearbyNpcs[].dialogueProfile.dramaticRole`, `scene.nearbyNpcs[].emotionalProfile` y `scene.relationshipDynamics` no suman operaciones: viajan dentro de respuestas existentes para variar escenas, mejorar dialogos, sostener subtexto, mostrar gestos/tension entre NPCs y mantener HUD final sin tocar calculos mecanicos.
 - El schema `admin-extra` es solo lectura, usa `operationId` prefijados por `admin` y no debe usarse para juego normal.

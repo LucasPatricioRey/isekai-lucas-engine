@@ -1,4 +1,4 @@
-const CRITICAL_RULE_CARDS_VERSION = "C27 context_contract_cards_v1";
+const CRITICAL_RULE_CARDS_VERSION = "C28 resolve_turn_cards_v1";
 
 const criticalRuleCards = [
   {
@@ -130,8 +130,9 @@ const criticalRuleCards = [
       "Use profileContract to reject minimal_header/debug_audit as final narration sources.",
       "Use ruleLookupContract.searchBatches before final gameplay response and before previews/mutations.",
       "Use previews/details when outcome, cost or legality is uncertain.",
+      "For normal multi-step turns such as travel plus rest, lateness, apology or NPC memory, prefer previewResolveTurn/resolveTurn with sequence before manually assembling applyTurn.",
       "Use applyTurn with dryRun:true and the same patches for exact EXP/time/activity/economy/magic preview before mutating those turns.",
-      "For composite actions, prefer one applyTurn with activitySegments plus all compatible patches instead of splitting travel/rest/training/magic into several real turns.",
+      "For composite actions not covered by resolveTurn, prefer one applyTurn with activitySegments plus all compatible patches instead of splitting travel/rest/training/magic into several real turns.",
       "Use applyTurn only when state changes; use completeJobShift for full job shifts and combat Action for real advanced combat.",
       "Read compact context again after mutation before final narration.",
     ],
@@ -139,10 +140,10 @@ const criticalRuleCards = [
       "Mutate state for a pure question, thought, OOC check or preview.",
       "Use full context in normal compact gameplay unless debug/admin is needed.",
     ],
-    template: "read -> ruleIds -> preview/dryRun -> mutate if needed -> reread -> narrate saved state",
+    template: "read -> ruleIds -> resolveTurn if normal composite, else preview/dryRun -> mutate -> reread",
     content:
-      "Action flow rule. Normal gameplay starts with player_scene compact context and searches the rule cards listed by ruleLookupContract. Pure reads and previews do not mutate. For EXP/time/activity/economy/magic patches, applyTurn dryRun:true previews the same payload without saving. Composite actions should use one activitySegments applyTurn when possible. State-changing actions use the proper mutator, then the narrator rereads compact context and narrates the saved result.",
-    tags: ["rule_card", "actions", "flow", "applyTurn", "preview"],
+      "Action flow rule. Normal gameplay starts with player_scene compact context and searches rule cards listed by ruleLookupContract. Pure reads and previews do not mutate. For normal composite turns, resolveTurn turns sequence[] into validated time, travel, activitySegments, basic physical EXP, job lateness and NPC memory. For domains not covered by resolveTurn, applyTurn dryRun:true previews the same payload without saving. State-changing actions use the proper mutator, then the narrator rereads compact context and narrates the saved result.",
+    tags: ["rule_card", "actions", "flow", "resolveTurn", "applyTurn", "preview"],
   },
   {
     ruleId: "biology.accumulators",
