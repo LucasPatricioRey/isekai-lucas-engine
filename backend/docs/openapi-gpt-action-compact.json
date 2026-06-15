@@ -2712,7 +2712,7 @@
           }
         ],
         "x-openai-isConsequential": false,
-        "description": "Usar solo si cambia estado. Todo timeAdvance positivo requiere activityCost o biologicalCostExemptReason. activityCost se acumula entre horas y se procesa en :00. Misiones por missionPatch. Ubicacion por gameStatePatch.locationId. Si la respuesta incluye displayBundle.renderLines, copiar esas lineas como HUD final sin reconstruir deltas."
+        "description": "Muta estado validado. timeAdvance requiere activityCost o biologicalCostExemptReason. Misiones por missionPatch; ubicacion por gameStatePatch.locationId. Si devuelve displayBundle.renderLines, copiarlas como HUD final."
       }
     },
     "/api/economy/shops/{shopId}/stock": {

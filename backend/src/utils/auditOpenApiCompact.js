@@ -6,7 +6,9 @@ const FULL_PATH = path.join(DOCS_DIR, "openapi-gpt-action.json");
 const COMPACT_PATH = path.join(DOCS_DIR, "openapi-gpt-action-compact.json");
 const ADMIN_PATH = path.join(DOCS_DIR, "openapi-gpt-action-admin.json");
 const ADMIN_EXTRA_PATH = path.join(DOCS_DIR, "openapi-gpt-action-admin-extra.json");
+const COMBAT_PATH = path.join(DOCS_DIR, "openapi-gpt-action-combat.json");
 const MATRIX_PATH = path.join(DOCS_DIR, "gpt-actions-operation-matrix.md");
+const GPT_BUILDER_OPERATION_TEXT_LIMIT = 300;
 
 const EXPECTED_COMPACT = [
   ["GET", "/api/context/compact"],
@@ -89,6 +91,29 @@ function collectOperationIds(openapi) {
   return operationIds;
 }
 
+function collectOperationTextLimitIssues(openapi, schemaName) {
+  const issues = [];
+  const methods = ["get", "post", "put", "patch", "delete"];
+
+  for (const [routePath, pathItem] of Object.entries(openapi.paths || {})) {
+    for (const method of methods) {
+      const operation = pathItem[method];
+      if (!operation) continue;
+
+      for (const field of ["summary", "description"]) {
+        const value = operation[field];
+        if (typeof value === "string" && value.length > GPT_BUILDER_OPERATION_TEXT_LIMIT) {
+          issues.push(
+            `${schemaName} ${method.toUpperCase()} ${routePath} ${field} ${value.length}/${GPT_BUILDER_OPERATION_TEXT_LIMIT}`
+          );
+        }
+      }
+    }
+  }
+
+  return issues;
+}
+
 function section(title) {
   console.log(`\n=== ${title} ===`);
 }
@@ -110,11 +135,13 @@ function main() {
   console.log(`Compact: ${COMPACT_PATH}`);
   console.log(`Admin: ${ADMIN_PATH}`);
   console.log(`Admin extra: ${ADMIN_EXTRA_PATH}`);
+  console.log(`Combat: ${COMBAT_PATH}`);
 
   const full = readJson(FULL_PATH);
   const compact = readJson(COMPACT_PATH);
   const admin = readJson(ADMIN_PATH);
   const adminExtra = readJson(ADMIN_EXTRA_PATH);
+  const combat = readJson(COMBAT_PATH);
   const fullOps = collectOperations(full);
   const compactOps = collectOperations(compact);
   const adminOps = collectOperations(admin);
@@ -126,6 +153,22 @@ function main() {
   assertCondition(issues, "compact declares operation limit", compact["x-operation-limit"] === 30);
   assertCondition(issues, "compact uses ApiKeyAuth", Boolean(compact.components?.securitySchemes?.ApiKeyAuth));
   assertCondition(issues, "compact server points to Render", (compact.servers || []).some((server) => /onrender\.com/.test(server.url || "")));
+
+  section("GPT Builder Text Limits");
+  const textLimitIssues = [
+    ...collectOperationTextLimitIssues(full, "full"),
+    ...collectOperationTextLimitIssues(compact, "compact"),
+    ...collectOperationTextLimitIssues(admin, "admin"),
+    ...collectOperationTextLimitIssues(adminExtra, "admin-extra"),
+    ...collectOperationTextLimitIssues(combat, "combat"),
+  ];
+  for (const issue of textLimitIssues) console.log(`FAIL ${issue}`);
+  assertCondition(
+    issues,
+    "operation summaries/descriptions stay under GPT Builder limit",
+    textLimitIssues.length === 0,
+    textLimitIssues.length ? textLimitIssues.join("; ") : `${GPT_BUILDER_OPERATION_TEXT_LIMIT} chars`
+  );
 
   section("Expected Compact Operations");
   const missingCompact = [];
