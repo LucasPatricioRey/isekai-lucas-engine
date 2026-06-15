@@ -1303,7 +1303,7 @@ function summarizeKnowledgeBoundaryForNpc(entry = null) {
     knownMemories,
     canStateExactSchedule: Boolean(exactSchedule?.canStateAsFact),
     warnings: warnings.slice(0, 2),
-    rule: "Certeza solo con fuente diegetica. Si falta fuente, escribir duda, pregunta, rumor o silencio; no omnisciencia.",
+    rule: "Certeza solo con fuente diegetica; si falta: duda, pregunta, rumor o silencio.",
   };
 }
 
@@ -1360,7 +1360,7 @@ function buildNpcNarrationContract(npc = {}, { capsule = null, npcKnowledgeConte
       capsule?.sampleTone ? `sample tone: ${capsule.sampleTone}` : "",
     ])
       .filter(Boolean)
-      .slice(0, 3)
+      .slice(0, 2)
       .map((line) => truncateText(line, 90)),
     voiceRule: truncateText(
       [
@@ -1370,7 +1370,7 @@ function buildNpcNarrationContract(npc = {}, { capsule = null, npcKnowledgeConte
       ]
         .filter(Boolean)
         .join(" | "),
-      260
+      150
     ),
     relationshipGate: {
       stance: relationshipState.stance?.key || "",
@@ -1379,31 +1379,31 @@ function buildNpcNarrationContract(npc = {}, { capsule = null, npcKnowledgeConte
         relationshipState.narrativeGuidance?.[0] ||
           dialogueProfile.relationshipRegister?.guidance ||
           "El trato debe seguir confianza, respeto, sospecha, miedo y familiaridad actuales.",
-        180
+        100
       ),
     },
     knowledgeBoundary: summarizeKnowledgeBoundaryForNpc(knowledgeEntry),
     improvisationLimits: {
       canImproviseWithin: [
-        "voz, gesto, silencio, humor, cansancio, tarea, objeto y microdecision coherente",
+        "voz, gesto, silencio, humor, cansancio, tarea, objeto",
       ],
       cannotImprovise: [
-        "mecanicas, recompensas, romance, secretos, permisos, violencia fuera de personalidad o datos sin fuente",
+        "mecanicas, recompensas, romance, secretos, permisos, violencia fuera de perfil o datos sin fuente",
       ],
     },
     repetitionRule: saturated
-      ? "Interaccion social saturada hoy: usar continuidad, gesto o memoria; no repetir agradecimiento ni dar deltas rutinarios."
-      : "Si la escena se parece a una anterior, variar por objeto, tarea, limite, cansancio o subtexto; no repetir la misma frase.",
+      ? "Saturado hoy: usar continuidad/gesto/memoria; no delta rutinario."
+      : "Variar por objeto, tarea, limite, cansancio o subtexto.",
     avoid: unique([
+      "no explicar HUD, numeros, backend ni reglas como manual",
       ...toArray(capsule?.avoid),
       ...toArray(dialogueDirector.avoid),
       ...toArray(dialogueProfile.avoid),
       "no sonar intercambiable con otros NPCs",
-      "no explicar HUD, numeros, backend ni reglas como manual",
       "no cerrar pedidos, bromas, conflicto o entrenamiento con una sola frase neutra",
     ])
       .filter(Boolean)
-      .slice(0, 4)
+      .slice(0, 3)
       .map((line) => truncateText(line, 80)),
   };
 }
@@ -1437,44 +1437,42 @@ function buildSceneNarrationContract({
     schemaVersion: "scene_narration_contract_v1",
     contractStrength: "mandatory_for_player_scene",
     authority:
-      "Mongo/context compact is live canon for NPC voice, presence, relation, memory and knowledge.",
+      "Mongo/context compact is live canon for NPC voice, presence, relation and knowledge.",
     sourcePriority: [
       "scene.narrationContract.npcContracts",
       "scene.dialogueSceneCapsules",
       "dialogueDirector/emotionalProfile/relationshipState",
       "npcKnowledgeContext",
-      "scene.relationshipDynamics",
-      "dramaticContext/emotionalScene",
     ],
     lineIntentOptions: ["medir", "cuidar", "presionar", "ocultar", "corregir", "negociar", "provocar"],
     usePolicy: {
       ifNpcSpeaks:
-        "Use that NPC contract first. Short lines need gesture, condition, subtext or consequence.",
+        "Use NPC contract first; short lines need gesture/subtext/consequence.",
       ifNpcPresentButSilent:
-        "Show task, glance, interruption, object, distance or refusal when relevant.",
+        "Show task, glance, object, distance or refusal when relevant.",
       ifNoNpcContract:
-        "Use body/place/object anchors; do not invent named NPCs or closeness.",
+        "Use body/place/object anchors; do not invent named NPCs.",
       mechanicsBoundary:
         "NPC prose cannot grant money, EXP, loot, wounds, healing, mission completion, romance, permissions or knowledge.",
     },
     requiredSceneBeats: [
       "open with body/place/object pressure",
-      "answer Lucas tone before practical fact",
-      "speaking NPC uses one mustUse or visible equivalent",
+      "answer tone before practical fact",
+      "speaking NPC uses one mustUse",
       "clear next decision, then HUD",
     ],
     genericDialogueBans: [
-      "no single neutral acknowledgement as whole NPC response",
-      "no interchangeable polite filler",
+      "no single neutral reply as whole NPC response",
+      "no interchangeable filler",
       "no rule/manual speech in NPC mouth",
-      "no omniscient certainty without npcKnowledgeContext source",
+      "no omniscient certainty without source",
     ],
     npcContracts,
     groupContract: {
       relationshipDynamicsAvailable: Boolean(relationshipDynamics?.count),
       pairCount: Number(relationshipDynamics?.count) || 0,
       rule: relationshipDynamics?.count
-        ? "Use at least one glance, interruption, alliance, correction or silence between NPCs when the pair is in the scene; never reveal privateSubtext as known fact."
+        ? "Use glance/interruption/alliance/silence; never reveal privateSubtext."
         : "Do not force group banter without nearby relationship data.",
     },
     dramaticMode: {
@@ -1483,10 +1481,173 @@ function buildSceneNarrationContract({
       emotionalQuestion: dramaticContext?.emotionalScene?.emotionalQuestion || "",
     },
     preOutputChecklist: [
-      "HUD remains final and copied from displayBundle when available",
-      "no meta/backend/tool/action wording in player-facing scene",
-      "NPC names use Name: \"dialogue\" format for direct speech",
-      "every direct NPC line has intent or pressure",
+      "HUD final; copy displayBundle when available",
+      "no meta/backend/tool/action wording",
+      "Name: \"dialogue\" for direct NPC speech",
+      "each NPC line has intent/pressure",
+    ],
+  };
+}
+
+const CORE_RULE_LOOKUP_IDS = [
+  "authority.backend_state",
+  "action.scene_flow",
+  "format.response_hud_exact",
+];
+
+function ruleSearchPath(ruleIds = []) {
+  const uniqueRuleIds = unique(ruleIds).slice(0, 12);
+  return `/api/search/docs?ruleId=${uniqueRuleIds.join(",")}&limit=${uniqueRuleIds.length || 1}`;
+}
+
+function addRuleLookup(active, seen, ruleId, trigger) {
+  if (!ruleId || seen.has(ruleId)) return;
+  seen.add(ruleId);
+  active.push({
+    ruleId,
+    trigger: truncateText(trigger, 32),
+  });
+}
+
+function buildRuleLookupContract({
+  npcPresence = {},
+  nearbyNpcs = [],
+  narrationContract = null,
+  worldFriction = null,
+  weather = null,
+  jobContract = null,
+  activeMissions = [],
+  availableMissionPreview = [],
+  missionAgenda = null,
+  carriedEvidence = [],
+  pendingCommitments = [],
+  commitmentAgenda = null,
+  activeCombatEncounters = [],
+  activeRumors = [],
+  minorRumors = [],
+  backgroundEvents = [],
+  guildState = null,
+  pendingBiology = [],
+  alerts = [],
+} = {}) {
+  const active = [];
+  const seen = new Set();
+  const nearbyNpcCount = toArray(nearbyNpcs).length;
+  const speakingNpcCount =
+    toArray(narrationContract?.npcContracts).length ||
+    toArray(npcPresence?.visible).length ||
+    nearbyNpcCount;
+  const hasMissionPressure =
+    toArray(activeMissions).length > 0 ||
+    toArray(availableMissionPreview).length > 0 ||
+    Number(missionAgenda?.readyToComplete?.length || 0) > 0 ||
+    Number(missionAgenda?.proofRejected?.length || 0) > 0;
+  const hasCommitmentPressure =
+    toArray(pendingCommitments).length > 0 ||
+    Number(commitmentAgenda?.dueSoon?.length || 0) > 0 ||
+    Number(commitmentAgenda?.reviewDue?.length || 0) > 0 ||
+    Number(commitmentAgenda?.needsSchedule?.length || 0) > 0;
+  const hasFactions =
+    Boolean(guildState?.schemaVersion || guildState?.guildRegistrationStatus) ||
+    hasMissionPressure;
+  const hasRumorOrFactionFlow =
+    toArray(activeRumors).length > 0 ||
+    toArray(minorRumors).length > 0 ||
+    toArray(backgroundEvents).length > 0;
+  const hasWorldFriction =
+    Boolean(worldFriction?.economy?.hasPressure) ||
+    Boolean(worldFriction?.travel?.hasPressure) ||
+    Boolean(weather?.staleByCurrentTime);
+  const alertTypes = new Set(toArray(alerts).map((alert) => alert?.type).filter(Boolean));
+
+  if (speakingNpcCount > 0) {
+    addRuleLookup(active, seen, "format.dialogue_direct", "npc_dialogue");
+    addRuleLookup(active, seen, "narration.dialogue_hud_boundary", "voice_vs_hud");
+    addRuleLookup(active, seen, "npc.knowledge_boundaries", "npc_knowledge");
+    addRuleLookup(active, seen, "npc.scene_presence_agency", "npc_presence");
+  }
+
+  if (nearbyNpcCount > 0) {
+    addRuleLookup(active, seen, "social.relationship_logic", "nearby_npcs");
+  }
+
+  if (hasMissionPressure) {
+    addRuleLookup(active, seen, "missions.guild_rewards_registration", "missions");
+    addRuleLookup(active, seen, "events.evidence_progress", "event_proof");
+  }
+
+  if (toArray(carriedEvidence).length > 0) {
+    addRuleLookup(active, seen, "inventory.evidence_boundary", "evidence");
+  }
+
+  if (hasCommitmentPressure) {
+    addRuleLookup(active, seen, "commitment.promises", "commitment");
+  }
+
+  if (jobContract) {
+    addRuleLookup(active, seen, "jobs.attendance_consequences", "job");
+    if (jobContract.includesMeals || toArray(jobContract.mealBenefits).length > 0) {
+      addRuleLookup(active, seen, "job.contract_meals", "job_meal");
+    }
+  }
+
+  if (hasWorldFriction) {
+    addRuleLookup(active, seen, "travel.world_friction_preview", "friction");
+    if (worldFriction?.economy?.hasPressure) {
+      addRuleLookup(active, seen, "economy.trade_stock_property", "economy");
+    }
+  }
+
+  if (toArray(activeCombatEncounters).length > 0) {
+    addRuleLookup(active, seen, "combat.backend_resolves", "combat");
+    addRuleLookup(active, seen, "combat.recovery_detail", "recovery");
+  }
+
+  if (hasFactions) {
+    addRuleLookup(active, seen, "factions.institutional_vs_personal", "faction");
+  }
+
+  if (hasRumorOrFactionFlow) {
+    addRuleLookup(active, seen, "rumors.reputation_factions", "rumor");
+  }
+
+  if (toArray(pendingBiology).length > 0 || alertTypes.has("pending_biology") || alertTypes.has("stale_pending_biology")) {
+    addRuleLookup(active, seen, "biology.accumulators", "biology");
+  }
+
+  const activeRuleIds = active.map((entry) => entry.ruleId);
+  const mustSearchRuleIds = unique([...CORE_RULE_LOOKUP_IDS, ...activeRuleIds]).slice(0, 16);
+  const searchBatches = [
+    {
+      name: "core_turn",
+      path: ruleSearchPath(CORE_RULE_LOOKUP_IDS),
+    },
+  ];
+
+  if (activeRuleIds.length > 0) {
+    searchBatches.push({
+      name: "active_scene",
+      path: ruleSearchPath(activeRuleIds.slice(0, 12)),
+    });
+  }
+
+  return {
+    schemaVersion: "rule_lookup_contract_v1",
+    contractStrength: "mandatory_before_preview_or_mutation",
+    source: "WorldDocumentIndex/searchDocs",
+    policy:
+      "Read matching ruleIds before preview/mutation. Knowledge is cache; Mongo card wins. If skipped, no mutation.",
+    alwaysReadRuleIds: CORE_RULE_LOOKUP_IDS,
+    activeRuleLookups: active.slice(0, 12),
+    mustSearchBeforeMutationRuleIds: mustSearchRuleIds,
+    searchBatches,
+    preMutationOrder: [
+      "getCompactContext",
+      "searchDocs matching ruleIds",
+      "preview/details",
+      "mutate",
+      "reread compact",
+      "copy displayBundle/HUD",
     ],
   };
 }
@@ -2282,6 +2443,7 @@ module.exports = {
   buildNpcDramaticRole,
   buildDialogueSceneCapsules,
   buildSceneNarrationContract,
+  buildRuleLookupContract,
   summarizeNpcEmotionalProfile,
   summarizeNpcRelationship,
   buildSceneRelationshipDynamics,

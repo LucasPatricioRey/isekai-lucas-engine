@@ -34,6 +34,16 @@ describe("read-only API coverage", () => {
     assert.equal(narrationContract?.contractStrength, "mandatory_for_player_scene");
     assert.equal(narrationContract?.sourcePriority?.[0], "scene.narrationContract.npcContracts");
     assert.ok((narrationContract?.npcContracts || []).length > 0);
+    const ruleLookupContract = compact.data.context.ruleLookupContract;
+    assert.equal(ruleLookupContract?.schemaVersion, "rule_lookup_contract_v1");
+    assert.equal(ruleLookupContract?.contractStrength, "mandatory_before_preview_or_mutation");
+    assert.ok(ruleLookupContract?.alwaysReadRuleIds?.includes("authority.backend_state"));
+    assert.ok(ruleLookupContract?.mustSearchBeforeMutationRuleIds?.includes("format.response_hud_exact"));
+    assert.ok(
+      (ruleLookupContract?.searchBatches || []).some((batch) =>
+        String(batch.path || "").startsWith("/api/search/docs?ruleId=")
+      )
+    );
     assert.ok(
       (compact.data.context.scene.nearbyNpcs || []).some(
         (npc) => npc.relationshipState?.schemaVersion === "social_state_v1"

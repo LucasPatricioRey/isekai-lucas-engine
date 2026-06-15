@@ -2019,6 +2019,27 @@ async function getCompactContext(req, res) {
       socialRhythm,
       maxNpcs: profile === "debug_audit" ? Math.min(limits.npcLimit, 6) : Math.min(limits.npcLimit, 3),
     });
+    const ruleLookupContract = responseShaping.buildRuleLookupContract({
+      npcPresence,
+      nearbyNpcs: nearbyNpcSummariesForResponse,
+      narrationContract,
+      worldFriction,
+      weather: weatherSummary,
+      jobContract: jobContractSummary,
+      activeMissions: activeMissionSummaries,
+      availableMissionPreview,
+      missionAgenda,
+      carriedEvidence: carriedEvidence.map(responseShaping.summarizeEvidence),
+      pendingCommitments: pendingCommitmentSummaries,
+      commitmentAgenda,
+      activeCombatEncounters: activeCombatEncounterSummaries,
+      activeRumors: activeRumors.map(responseShaping.summarizeRumor),
+      minorRumors: minorRumorEventSummaries,
+      backgroundEvents: backgroundEventSummaries,
+      guildState,
+      pendingBiology: pendingBiologicalAccumulations,
+      alerts,
+    });
     const technicalSummary = includeTechnicalSummary
       ? summarizeTechnicalReadiness({
           gameState,
@@ -2094,6 +2115,7 @@ async function getCompactContext(req, res) {
         missionAgenda,
         pendingBiology: pendingBiologicalAccumulations,
         pendingBiologicalAccumulations,
+        ruleLookupContract,
         narrativeContext,
         dramaticContext,
         ...(includeTechnicalSummary ? { technicalSummary } : {}),

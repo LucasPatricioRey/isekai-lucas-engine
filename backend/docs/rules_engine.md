@@ -1,6 +1,6 @@
 # rules_engine.md — Motor Isekai Lucas
 
-Version: Fase C24D v1.0 - rule cards criticas ampliadas
+Version: Fase C26 v1.0 - rule lookup contract dinamico
 Estado: versión validada por Lucas mediante revisión guiada  
 Fuente de migración: Enciclopedia V2 Isekai Lucas + decisiones confirmadas por Lucas durante Fase 1 + validación guiada Fase 2  
 Propósito: este archivo define **cómo se resuelve el juego**. No contiene el save vivo completo ni el lore mundial extenso; eso vive en MongoDB y `world_bible.md`.
@@ -28,6 +28,7 @@ Actualizacion C24C: `applyTurn` devuelve `mechanicalChangeDisplay` y `displayLin
 Actualizacion C24D: amplia las rule cards criticas consultables por Mongo/searchDocs para formato HUD/dialogo, tiempo/eventos, EXP/anti-farmeo, social/romance, economia/stock/propiedad, misiones/gremio, viaje/friccion, trabajo/asistencia, salud, magia autodidacta, presencia/agencia NPC, rumores/reputacion/facciones, inventario/evidencia, checkpoints y recovery.
 Actualizacion C24E: `applyTurn` y `completeJobShift` pueden devolver `displayBundle`/`renderLines` como contrato unificado de HUD final. Si existe, el GPT debe copiarlo y no reconstruir deltas desde fuentes dispersas.
 Actualizacion C25: `context/compact` expone `scene.narrationContract` como contrato obligatorio de escena/NPC. Este contrato consolida Mongo vivo, capsulas, voz, relacion, conocimiento y limites de improvisacion para evitar dialogo generico y NPCs omniscientes.
+Actualizacion C26: `context/compact` expone `ruleLookupContract` como contrato obligatorio de busqueda de reglas. El GPT debe leer las rule cards indicadas por `ruleLookupContract.searchBatches` antes de previews o mutaciones cuando la accion toque esos dominios.
 
 ---
 
@@ -173,7 +174,8 @@ Debe devolver un contexto dinámico suficiente y estructurado:
 - stock y comercios relevantes;
 - misiones relevantes;
 - facciones y reputación;
-- alertas de coherencia.
+- alertas de coherencia;
+- `ruleLookupContract` con ruleIds activos y batches concretos para `searchDocs`.
 
 El contexto de partida normal no debe exponer fixtures `flags.testSuite === true` ni tags técnicos como `admin_fix`, `repair`, `test` o `former_*`. Si aparecen en modo técnico, no son conocimiento diegético.
 
@@ -216,6 +218,35 @@ Uso obligatorio:
 - si hay combate real, usar `ruleId=combat.backend_resolves` y el Action de combate.
 
 Las rule cards no reemplazan al backend ni autorizan resultados nuevos. Solo hacen que las reglas criticas sean recuperables por Action sin depender de memoria del chat.
+
+### 3.2.2 Rule lookup contract C26
+
+`context/compact` debe devolver `ruleLookupContract.schemaVersion = rule_lookup_contract_v1`.
+
+Este contrato no reemplaza a las rule cards. Su trabajo es decirle al GPT que tarjetas debe buscar en Mongo antes de resolver una accion. La copia de `rules_engine.md` en Knowledge es cache util, pero no alcanza como garantia: si una accion toca un dominio mecanico o social relevante, se consulta `searchDocs` con los `ruleIds` indicados.
+
+Campos obligatorios:
+
+- `alwaysReadRuleIds`: reglas base de autoridad, flujo de acciones y HUD final;
+- `activeRuleLookups`: reglas activadas por el estado vivo actual, con un trigger breve;
+- `mustSearchBeforeMutationRuleIds`: conjunto compacto que debe consultarse antes de previews o mutaciones relevantes;
+- `searchBatches`: paths listos para llamar `GET /api/search/docs?ruleId=...`;
+- `preMutationOrder`: orden operativo antes de guardar estado.
+
+Regla estricta:
+
+- si Lucas pide una accion que cambia estado, el GPT debe cruzar la intencion con `ruleLookupContract`;
+- si hay ruleId aplicable, debe llamar `searchDocs` por `ruleId` antes de `applyTurn`, `completeJobShift` o Action de combate;
+- si no consulta las reglas necesarias, no debe mutar: puede narrar solo lectura, preview o pedir una validacion tecnica;
+- despues de mutar, debe releer `context/compact` y copiar `displayBundle/renderLines` cuando existan.
+
+Ejemplo:
+
+```txt
+GET /api/search/docs?ruleId=format.dialogue_direct,npc.knowledge_boundaries,social.relationship_logic&limit=3
+```
+
+El GPT no debe mostrar esta busqueda ni mencionar rule cards en partida. Es una obligacion interna.
 
 ### 3.3 Escritura automática
 

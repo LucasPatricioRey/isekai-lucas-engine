@@ -274,6 +274,28 @@ async function checkCompactEndpoints(issues) {
   );
   assertCondition(
     issues,
+    "context/compact exposes rule lookup contract",
+    context.context?.ruleLookupContract?.schemaVersion === "rule_lookup_contract_v1"
+  );
+  assertCondition(
+    issues,
+    "rule lookup contract requires Mongo rule-card lookup before mutation",
+    context.context?.ruleLookupContract?.contractStrength === "mandatory_before_preview_or_mutation"
+  );
+  assertCondition(
+    issues,
+    "rule lookup contract includes core state authority",
+    (context.context?.ruleLookupContract?.mustSearchBeforeMutationRuleIds || []).includes("authority.backend_state")
+  );
+  assertCondition(
+    issues,
+    "rule lookup contract exposes concrete searchDocs batches",
+    (context.context?.ruleLookupContract?.searchBatches || []).some((batch) =>
+      String(batch.path || "").startsWith("/api/search/docs?ruleId=")
+    )
+  );
+  assertCondition(
+    issues,
     "dramaticContext points to emotionalProfile",
     (context.context?.dramaticContext?.dialogueDirectives || []).some((line) => /emotionalProfile/.test(line))
   );
