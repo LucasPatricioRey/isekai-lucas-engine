@@ -137,7 +137,7 @@ function classifyTurn({ text = "", aiClassification = null } = {}) {
       suggestedOperation: "getCompactContext",
       supported: false,
       confidence: "medium",
-      fallbackReason: "Fase 1 no trae paquete social profundo; usar flujo social existente.",
+      fallbackReason: "Social complejo o con posible consecuencia; usar flujo social existente.",
     };
   }
 
