@@ -60,6 +60,34 @@ function gameStateFromPayload(payload = {}) {
   return payload.gameState || payload.result?.gameState || payload.result?.after || null;
 }
 
+function compactGameState(value = {}) {
+  if (!value || typeof value !== "object") return null;
+  const lucasStatus = value.lucasStatus || value.status || {};
+  return {
+    currentDay: value.currentDay || value.day || null,
+    block: value.block || "",
+    time: value.time || "",
+    locationId: value.locationId || value.location?.locationId || "",
+    moneyCopper: Number.isFinite(Number(value.moneyCopper)) ? Number(value.moneyCopper) : null,
+    lucasStatus: {
+      life: lucasStatus.life
+        ? { current: lucasStatus.life.current, max: lucasStatus.life.max, label: lucasStatus.life.label || "" }
+        : null,
+      satiety: lucasStatus.satiety
+        ? { current: lucasStatus.satiety.current, max: lucasStatus.satiety.max, label: lucasStatus.satiety.label || "" }
+        : null,
+      energy: lucasStatus.energy
+        ? { current: lucasStatus.energy.current, max: lucasStatus.energy.max, label: lucasStatus.energy.label || "" }
+        : null,
+      mp: lucasStatus.mp
+        ? { current: lucasStatus.mp.current, max: lucasStatus.mp.max, label: lucasStatus.mp.label || "" }
+        : null,
+    },
+    activeEventIds: Array.isArray(value.activeEventIds) ? value.activeEventIds.slice(0, 5) : [],
+    activeMissionIds: Array.isArray(value.activeMissionIds) ? value.activeMissionIds.slice(0, 5) : [],
+  };
+}
+
 function checkpointIdFromPayload(payload = {}) {
   return (
     payload.changes?.autoCheckpoint?.checkpoint?.checkpointId ||
@@ -74,9 +102,14 @@ function lineStartingWith(lines = [], prefix = "") {
 
 function replaceSituationLine(stateLines = [], actionSummary = "") {
   if (!actionSummary) return stateLines;
+  const summary = String(actionSummary).trim().replace(/\.+$/g, "");
   return stateLines.map((line) =>
-    String(line || "").startsWith("Situación:")
-      ? `Situación: ${String(actionSummary).trim().replace(/\.+$/g, "")}.`
+    String(line || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .startsWith("situacion:")
+      ? `Situación: ${summary}.`
       : line
   );
 }
@@ -110,17 +143,17 @@ function buildAggregateDisplayBundle({ operationResults = [], actionSummary = ""
   const displayBundles = operationResults.map((result) => result.displayBundle).filter(Boolean);
   const firstBundle = displayBundles[0] || {};
   const lastBundle = displayBundles[displayBundles.length - 1] || {};
-  const firstChanges = operationResults.map((result) => result.changes || {}).find((changes) => changes.time?.before) || {};
-  const lastChanges = [...operationResults].reverse().map((result) => result.changes || {}).find((changes) => changes.time?.after) || {};
+  const firstTimeChange = operationResults.map((result) => result.timeChange || {}).find((time) => time.before) || {};
+  const lastTimeChange = [...operationResults].reverse().map((result) => result.timeChange || {}).find((time) => time.after) || {};
   const finalGameState = [...operationResults].reverse().find((result) => result.gameState)?.gameState || {};
   const finalDay =
     finalGameState.currentDay ||
     finalGameState.day ||
-    lastChanges.time?.dayAfter ||
-    firstChanges.time?.dayAfter ||
+    lastTimeChange.dayAfter ||
+    firstTimeChange.dayAfter ||
     "?";
-  const firstTime = firstChanges.time?.before || finalGameState.time || "?";
-  const lastTime = lastChanges.time?.after || finalGameState.time || "?";
+  const firstTime = firstTimeChange.before || finalGameState.time || "?";
+  const lastTime = lastTimeChange.after || finalGameState.time || "?";
   const headerLines = [
     firstTime && lastTime && firstTime !== lastTime
       ? `## Día ${finalDay}—${firstTime}→${lastTime}`
@@ -154,6 +187,7 @@ function buildAggregateDisplayBundle({ operationResults = [], actionSummary = ""
 function summarizePayload({ operation = {}, payload = {}, statusCode = 200 } = {}) {
   const displayBundle = displayBundleFromPayload(payload);
   const changes = changesFromPayload(payload);
+  const gameState = compactGameState(gameStateFromPayload(payload));
   return {
     order: operation.order,
     selectedOperation: operation.selectedOperation,
@@ -164,10 +198,37 @@ function summarizePayload({ operation = {}, payload = {}, statusCode = 200 } = {
     primaryLogId: payload.primaryLogId || payload.result?.logId || "",
     turnTraceId: payload.turnTraceId || "",
     checkpointId: checkpointIdFromPayload(payload),
-    changes,
+    changeKeys: Object.keys(changes),
+    timeChange: changes.time || null,
     displayBundle,
     stateLine: displayBundle ? lineStartingWith(displayBundle.stateLines || [], "Hora:") : "",
-    gameState: gameStateFromPayload(payload),
+    gameState,
+  };
+}
+
+function publicOperationResult(result = {}) {
+  const bundle = result.displayBundle || {};
+  return {
+    order: result.order,
+    selectedOperation: result.selectedOperation,
+    operationId: result.operationId,
+    ok: result.ok,
+    statusCode: result.statusCode,
+    logIds: result.logIds || [],
+    primaryLogId: result.primaryLogId || "",
+    turnTraceId: result.turnTraceId || "",
+    checkpointId: result.checkpointId || "",
+    changeKeys: result.changeKeys || [],
+    timeChange: result.timeChange || null,
+    displaySummary: {
+      headerLines: bundle.headerLines || [],
+      changeLineCount: Array.isArray(bundle.changeLines)
+        ? bundle.changeLines.length
+        : Array.isArray(bundle.changeGroups)
+          ? bundle.changeGroups.reduce((count, group) => count + (group.lines || []).length, 0)
+          : 0,
+      stateLine: result.stateLine || "",
+    },
   };
 }
 
@@ -311,7 +372,7 @@ async function executeActionPlan(body = {}) {
       turnTraceId: result.turnTraceId,
       checkpointId: result.checkpointId,
     })),
-    operationResults,
+    operationResults: operationResults.map(publicOperationResult),
     unresolvedSlots,
     warnings,
     aggregateDisplayBundle,

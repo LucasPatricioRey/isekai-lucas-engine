@@ -612,6 +612,10 @@ describe("turn intake API", () => {
     const executed = await post("/api/turn/action-plan/execute", response.data.actionPlanPacket.request);
     assert.equal(executed.status, 200, JSON.stringify(executed.data));
     assert.equal(executed.data.ok, true);
+    assert.ok(
+      JSON.stringify(executed.data).length < 45000,
+      "executeActionPlan response should stay compact enough for GPT Actions"
+    );
     assert.equal(executed.data.operationCount, 3);
     assert.deepEqual(
       executed.data.operationsExecuted.map((operation) => operation.selectedOperation),
@@ -630,6 +634,11 @@ describe("turn intake API", () => {
     assert.ok(
       executed.data.aggregateDisplayBundle.changeLines.some((line) =>
         String(line).includes("Pr\u00e1ctica m\u00e1gica") || String(line).includes("Practica magica")
+      )
+    );
+    assert.ok(
+      executed.data.aggregateDisplayBundle.stateLines.some((line) =>
+        String(line).includes("Lucas espera a que sean las 14")
       )
     );
     assert.equal(

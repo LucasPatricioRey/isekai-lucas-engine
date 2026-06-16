@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Compact",
-    "version": "2.30.0",
+    "version": "2.31.0",
     "description": "Schema compacto con intakeTurn como Capability Router: devuelve packets de narracion, resolveTurn, actionPacket o executeActionPlan. Mongo/backend siguen como canon."
   },
   "servers": [
@@ -4227,7 +4227,7 @@
       "post": {
         "operationId": "executeActionPlan",
         "summary": "Ejecuta un actionPlanPacket completo y devuelve HUD agregado.",
-        "description": "Executes an actionPlanPacket produced by intakeTurn in backend order, including internal resolveTurn/completeJobShift/applyTurn operations, and returns aggregateDisplayBundle.",
+        "description": "Executes an actionPlanPacket produced by intakeTurn and returns a compact aggregateDisplayBundle plus operation summaries. Internal changes are not echoed.",
         "requestBody": {
           "required": true,
           "content": {
