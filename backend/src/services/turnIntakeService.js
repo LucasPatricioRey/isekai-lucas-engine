@@ -442,6 +442,14 @@ function socialPresenceForTarget(targetNpc = null, npcPresence = {}, location = 
     return { scope: "same_location", canNarrateDirectly: true, reason: "NPC ubicado en la misma localizacion." };
   }
   if ((npcPresence.nearby || []).some((npc) => npc.npcId === targetNpc.npcId)) {
+    const availabilityStatus = String(targetNpc.availability?.status || "").toLowerCase();
+    if (!["absent", "traveling", "unknown"].includes(availabilityStatus)) {
+      return {
+        scope: "nearby_probable",
+        canNarrateDirectly: true,
+        reason: "NPC cercano/probable dentro del alcance de la escena; microcharla read-only permitida.",
+      };
+    }
     return {
       scope: "nearby_probable",
       canNarrateDirectly: false,

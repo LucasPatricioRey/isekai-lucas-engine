@@ -215,6 +215,30 @@ describe("turn intake API", () => {
     assert.equal(response.data.narratorPacket.socialPacket.targetNpc.name, "Lira Test");
   });
 
+  it("allows read-only microtalk with a nearby probable NPC in the current scene scope", async () => {
+    await createFixture();
+    await Location.updateOne(
+      { locationId: tempLocationId },
+      { $set: { visibleNpcIds: [], probableNpcIds: [tempNpcId] } }
+    );
+    await Npc.updateOne({ npcId: tempNpcId }, { $set: { currentLocationId: "" } });
+
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas le pregunta a Lira Test si todavia queda mucho por cerrar.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.intent, "social_scene");
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.route.needsMutation, false);
+    assert.equal(response.data.route.suggestedOperation, "narrateOnly");
+    assert.equal(response.data.narratorPacket.socialPacket.targetNpc.name, "Lira Test");
+    assert.equal(response.data.narratorPacket.socialPacket.targetPresence.scope, "nearby_probable");
+    assert.equal(response.data.narratorPacket.socialPacket.targetPresence.canNarrateDirectly, true);
+  });
+
   it("does not keep the scene in a private room after a latest log says Lucas came downstairs", async () => {
     await createFixture();
     await EventLog.create({
