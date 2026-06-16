@@ -1,3 +1,5 @@
+const crypto = require("node:crypto");
+
 const GameState = require("../models/GameState");
 const Location = require("../models/Location");
 const Npc = require("../models/Npc");
@@ -10,6 +12,49 @@ const { formatCopper } = require("../utils/mechanicalChangeDisplay");
 
 const DEFAULT_GAME_ID = "isekai_lucas_main";
 const SCHEMA_VERSION = "turn_intake_v1";
+const COMMON_RESOLVER_UNSUPPORTED_DOMAINS = new Set([
+  "magic",
+  "economy",
+  "inventory_evidence",
+  "combat_injury",
+]);
+const DESTINATION_ALIASES = [
+  {
+    locationId: "loc_hoshimori_grulla_azul",
+    name: "La Grulla Azul",
+    patterns: [/\b(posada|grulla azul|la grulla)\b/],
+  },
+  {
+    locationId: "loc_hoshimori_guild",
+    name: "Gremio local de Hoshimori",
+    patterns: [/\b(gremio|guild)\b/],
+  },
+  {
+    locationId: "loc_hoshimori_guild_patio",
+    name: "Patio del gremio",
+    patterns: [/\b(patio del gremio|patio gremio)\b/],
+  },
+  {
+    locationId: "loc_hoshimori_forest_whispers_edge",
+    name: "Bosque de los Susurros - borde",
+    patterns: [/\b(borde del bosque|bosque de los susurros|bosque)\b/],
+  },
+  {
+    locationId: "loc_hoshimori_market",
+    name: "Mercado de Hoshimori",
+    patterns: [/\b(mercado)\b/],
+  },
+  {
+    locationId: "loc_hoshimori_plaza",
+    name: "Plaza de Hoshimori",
+    patterns: [/\b(plaza)\b/],
+  },
+  {
+    locationId: "loc_hoshimori_temple_serene_flame",
+    name: "Templo de la Llama Serena",
+    patterns: [/\b(templo|llama serena)\b/],
+  },
+];
 
 function normalizeText(value = "") {
   return String(value || "")
@@ -172,7 +217,7 @@ function classifyTurn({ text = "", aiClassification = null } = {}) {
     };
   }
 
-  if (likelySocial) {
+  if (likelySocial && (!likelyMutation || isReadOnlyNpcTaskQuestion(normalized))) {
     if (isSimpleSocialText(normalized)) {
       const routeDomains = isReadOnlyNpcTaskQuestion(normalized)
         ? domains.filter((domain) => domain !== "work")
@@ -485,6 +530,231 @@ function buildQuestionContext({ text = "", targetNpc = null, gameState = {} } = 
   };
 }
 
+function regexIndex(text = "", pattern) {
+  const match = pattern.exec(text);
+  if (!match) return -1;
+  return match.index;
+}
+
+function extractDurations(text = "") {
+  const durations = [];
+  const pushMatches = (pattern, toMinutes) => {
+    for (const match of text.matchAll(pattern)) {
+      const minutes = toMinutes(match);
+      if (Number.isInteger(minutes) && minutes > 0) {
+        durations.push({
+          index: match.index,
+          text: match[0],
+          minutes,
+        });
+      }
+    }
+  };
+
+  pushMatches(/\b(\d{1,3})\s*(minutos?|mins?|m)\b/g, (match) => Number(match[1]));
+  pushMatches(/\b(\d{1,2})\s*(horas?|hs?|h)\b/g, (match) => Number(match[1]) * 60);
+
+  const wordDurations = [
+    ["cinco minutos", 5],
+    ["diez minutos", 10],
+    ["quince minutos", 15],
+    ["veinte minutos", 20],
+    ["treinta minutos", 30],
+    ["cuarenta minutos", 40],
+    ["cuarenta y cinco minutos", 45],
+    ["media hora", 30],
+    ["un cuarto de hora", 15],
+    ["una hora", 60],
+    ["un hora", 60],
+    ["dos horas", 120],
+    ["tres horas", 180],
+  ];
+
+  for (const [phrase, minutes] of wordDurations) {
+    const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    pushMatches(new RegExp(`\\b${escaped}\\b`, "g"), () => minutes);
+  }
+
+  return durations.sort((left, right) => left.index - right.index);
+}
+
+function durationNear(text = "", cueIndex = -1, { maxDistance = 96 } = {}) {
+  const durations = extractDurations(text);
+  if (durations.length === 0) return null;
+  if (cueIndex < 0) return durations[0];
+  return (
+    durations.find(
+      (duration) =>
+        duration.index >= cueIndex - 64 &&
+        duration.index <= cueIndex + maxDistance
+    ) || null
+  );
+}
+
+function detectRestCategory(text = "", cueIndex = -1) {
+  const slice = cueIndex >= 0 ? text.slice(Math.max(0, cueIndex - 30), cueIndex + 100) : text;
+  if (/\b(acostad|cama|duerme|dormir|dormia|siesta)\b/.test(slice)) return "descanso_acostado";
+  return "descanso_sentado";
+}
+
+function detectDestination(text = "") {
+  for (const destination of DESTINATION_ALIASES) {
+    if (destination.patterns.some((pattern) => pattern.test(text))) {
+      return destination;
+    }
+  }
+  return null;
+}
+
+function detectTravelPace(text = "", cueIndex = -1) {
+  const slice = cueIndex >= 0 ? text.slice(Math.max(0, cueIndex - 40), cueIndex + 120) : text;
+  if (/\b(a toda velocidad|sprint|maxima velocidad|lo mas rapido)\b/.test(slice)) return "full_speed";
+  if (/\b(corre|corriendo|correr)\b/.test(slice)) return "run";
+  if (/\b(rapido|rapidamente|apuro|prisa)\b/.test(slice)) return "hurry";
+  if (/\b(cuidado|cautela|despacio)\b/.test(slice)) return "careful";
+  return "walk";
+}
+
+function makeResolverClientTurnId({ gameState = {}, text = "" } = {}) {
+  const hash = crypto
+    .createHash("sha1")
+    .update(`${gameState.gameId || DEFAULT_GAME_ID}:${gameState.currentDay || 0}:${gameState.time || ""}:${text}`)
+    .digest("hex")
+    .slice(0, 12);
+  return `intake-d${gameState.currentDay || 0}-${String(gameState.time || "0000").replace(":", "")}-${hash}`;
+}
+
+function buildCommonResolverPacket({ route = {}, text = "", gameState = {} } = {}) {
+  const normalized = normalizeText(text);
+  if (!route.needsMutation) return null;
+  if ((route.domains || []).some((domain) => COMMON_RESOLVER_UNSUPPORTED_DOMAINS.has(domain))) return null;
+  if ((route.domains || []).includes("mission_event") && /\b(mision|cartelera|evento|recompensa|reporte)\b/.test(normalized)) {
+    return null;
+  }
+
+  const cues = [];
+  const addCue = (kind, pattern) => {
+    const index = regexIndex(normalized, pattern);
+    if (index >= 0) cues.push({ kind, index });
+  };
+
+  addCue("rest", /\b(descansa|descansar|se sienta|sentado|se acuesta|acostado|duerme|dormir)\b/);
+  addCue("wait", /\b(espera|esperar|aguarda)\b/);
+  addCue("work_segment", /\b(trabaja|trabajar|sirve mesas|servir mesas|atiende mesas|limpia mesas|ayuda a cerrar|ordena mesas)\b/);
+  addCue("travel", /\b(vuelve|regresa|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|camina|corre|sale hacia|entra en)\b/);
+
+  const steps = [];
+  const unsupportedReasons = [];
+
+  for (const cue of cues.sort((left, right) => left.index - right.index)) {
+    if (cue.kind === "rest") {
+      const duration = durationNear(normalized, cue.index);
+      if (!duration) {
+        unsupportedReasons.push("rest sin duracion explicita");
+        continue;
+      }
+      steps.push({
+        type: "rest",
+        minutes: duration.minutes,
+        category: detectRestCategory(normalized, cue.index),
+        reason: "Descanso indicado por el jugador.",
+      });
+      continue;
+    }
+
+    if (cue.kind === "wait") {
+      const duration = durationNear(normalized, cue.index);
+      if (!duration) {
+        unsupportedReasons.push("wait sin duracion explicita");
+        continue;
+      }
+      steps.push({
+        type: "wait",
+        minutes: duration.minutes,
+        category: "actividad_normal",
+        reason: "Espera indicada por el jugador.",
+      });
+      continue;
+    }
+
+    if (cue.kind === "work_segment") {
+      const duration = durationNear(normalized, cue.index);
+      if (!duration) {
+        unsupportedReasons.push("work_segment sin duracion explicita");
+        continue;
+      }
+      steps.push({
+        type: "work_segment",
+        minutes: duration.minutes,
+        intensity: /\b(fuerte|intenso|intensidad alta)\b/.test(normalized)
+          ? "strong"
+          : /\b(suave|ligero|tranquilo|intensidad baja)\b/.test(normalized)
+            ? "light"
+            : "normal",
+        reason: "Trabajo parcial indicado por el jugador.",
+      });
+      continue;
+    }
+
+    if (cue.kind === "travel") {
+      const destination = detectDestination(normalized);
+      if (!destination || destination.locationId === gameState.locationId) {
+        unsupportedReasons.push("travel sin destino nuevo claro");
+        continue;
+      }
+      steps.push({
+        type: "travel",
+        toLocationId: destination.locationId,
+        pace: detectTravelPace(normalized, cue.index),
+        allowMultiSegment: true,
+        reason: `Traslado indicado por el jugador hacia ${destination.name}.`,
+      });
+    }
+  }
+
+  const dedupedSteps = [];
+  for (const step of steps) {
+    const previous = dedupedSteps[dedupedSteps.length - 1];
+    if (
+      previous &&
+      previous.type === step.type &&
+      previous.type === "travel" &&
+      previous.toLocationId === step.toLocationId
+    ) {
+      continue;
+    }
+    dedupedSteps.push(step);
+  }
+
+  if (dedupedSteps.length === 0 || unsupportedReasons.length > 0) return null;
+  const hasWork = dedupedSteps.some((step) => step.type === "work_segment");
+  const hasTravel = dedupedSteps.some((step) => step.type === "travel");
+  const actionFamily = hasWork ? "job_shift" : hasTravel ? "travel" : "rest";
+  const resolverRequest = {
+    gameId: gameState.gameId || DEFAULT_GAME_ID,
+    clientTurnId: makeResolverClientTurnId({ gameState, text }),
+    actionFamily,
+    actionSummary: text,
+    intent: {
+      summary: text,
+      generatedBy: "turn_intake_common_resolver_v1",
+    },
+    sequence: dedupedSteps,
+    responseProfile: "compact",
+  };
+
+  return {
+    schemaVersion: "turn_intake_resolver_packet_v1",
+    supported: true,
+    selectedOperation: "resolveTurn",
+    confidence: "high",
+    resolverRequest,
+    unsupportedReasons,
+    boundary:
+      "Usar resolveTurn con resolverRequest. No llamar getCompactContext/searchDocs/getNpcFull/previews para esta accion comun.",
+  };
+}
+
 function statLine(label, stat = {}) {
   const current = Number.isFinite(Number(stat.current)) ? Math.round(Number(stat.current)) : "?";
   const max = Number.isFinite(Number(stat.max)) ? Math.round(Number(stat.max)) : "?";
@@ -755,20 +1025,23 @@ function buildDirectorPacket({
   text = "",
   socialPacket = null,
   questionContext = null,
+  resolverPacket = null,
   continuityTarget = null,
   narrativeLocation = null,
   visibleEvents = [],
 } = {}) {
   const narrateOnly = route?.supported === true && route?.suggestedOperation === "narrateOnly";
+  const resolverReady = route?.supported === true && route?.suggestedOperation === "resolveTurn" && resolverPacket;
   return {
     schemaVersion: "turn_director_readonly_v1",
-    mode: narrateOnly ? "read_only_narration" : "fallback_required",
+    mode: narrateOnly ? "read_only_narration" : resolverReady ? "resolver_ready" : "fallback_required",
     playerText: text,
     selectedOperation: route?.suggestedOperation || "getCompactContext",
     backendResolved: {
       routeSupported: Boolean(route?.supported),
       socialTargetResolved: Boolean(socialPacket?.targetNpc?.npcId),
       questionResolved: Boolean(questionContext?.canAnswerFromPacket),
+      resolverReady: Boolean(resolverReady),
       continuityTargetNpcId: continuityTarget?.npcId || "",
       continuitySource: continuityTarget?.source || "",
       narrativeLocation: narrativeLocation?.displayName || "",
@@ -783,7 +1056,25 @@ function buildDirectorPacket({
         }
       : null,
     questionContext: questionContext || null,
-    actionPolicy: narrateOnly
+    resolverRequest: resolverPacket?.resolverRequest || null,
+    resolverPacket: resolverPacket || null,
+    actionPolicy: resolverReady
+      ? {
+          mutate: true,
+          timeAdvance: true,
+          gptShouldCall: ["resolveTurn"],
+          gptShouldNotCall: [
+            "getCompactContext",
+            "searchDocs",
+            "getNpcFull",
+            "previewActivityCost",
+            "previewResolveTurn",
+            "applyTurn",
+          ],
+          narrationInstruction:
+            "Llamar resolveTurn con resolverRequest y narrar la respuesta guardada. No buscar mas contexto antes.",
+        }
+      : narrateOnly
       ? {
           mutate: false,
           timeAdvance: false,
@@ -956,6 +1247,19 @@ async function buildNarratorPacket({
     : [];
   let npcPresence = summarizeNpcPresence(npcs, location, narrativeLocation);
   const visibleEvents = activeEvents.filter((event) => eventVisibleToLucas(event, { locationIds }));
+  let resolverPacket = null;
+  if (route.needsMutation) {
+    resolverPacket = buildCommonResolverPacket({ route, text, gameState });
+    if (resolverPacket) {
+      route = {
+        ...route,
+        supported: true,
+        suggestedOperation: "resolveTurn",
+        fallbackReason: "",
+        confidence: resolverPacket.confidence,
+      };
+    }
+  }
   let socialPacket = null;
   let questionContext = null;
   if (route.intent === "social_scene") {
@@ -990,6 +1294,7 @@ async function buildNarratorPacket({
     text,
     socialPacket,
     questionContext,
+    resolverPacket,
     continuityTarget,
     narrativeLocation,
     visibleEvents,
@@ -1001,6 +1306,7 @@ async function buildNarratorPacket({
     readOnly: true,
     route,
     directorPacket,
+    ...(resolverPacket ? { resolverPacket } : {}),
     narratorPacket: {
       schemaVersion: "narrator_packet_minimal_v1",
       packetProfile: socialPacket ? "social_scene" : "minimal_scene",
@@ -1049,6 +1355,7 @@ async function buildNarratorPacket({
         socialPacket,
       }),
       directorPacket,
+      ...(resolverPacket ? { resolverPacket } : {}),
       ...(socialPacket ? { socialPacket } : {}),
       displayBundle,
     },

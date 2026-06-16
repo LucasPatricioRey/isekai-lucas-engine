@@ -167,16 +167,22 @@ describe("read-only API coverage", () => {
     assertSameState(beforeState, afterState);
   });
 
-  it("routes unsupported mutating turns away from narrator-only intake", async () => {
+  it("routes common mutating turns to resolveTurn without mutating during intake", async () => {
+    const beforeState = await getCanonicalState();
     const response = await post("/api/turn/intake", {
       text: "Lucas trabaja 45 minutos en el turno de tarde.",
     });
     assert.equal(response.status, 200, JSON.stringify(response.data));
     assert.equal(response.data.ok, true);
     assert.equal(response.data.readOnly, true);
-    assert.equal(response.data.route.supported, false);
+    assert.equal(response.data.route.supported, true);
     assert.equal(response.data.route.needsMutation, true);
-    assert.equal(response.data.route.suggestedOperation, "resolveTurn_or_existing_flow");
+    assert.equal(response.data.route.suggestedOperation, "resolveTurn");
+    assert.equal(response.data.directorPacket.mode, "resolver_ready");
+    assert.equal(response.data.resolverPacket.resolverRequest.sequence[0].type, "work_segment");
+    assert.equal(response.data.resolverPacket.resolverRequest.sequence[0].minutes, 45);
+    const afterState = await getCanonicalState();
+    assertSameState(beforeState, afterState);
   });
 
   it("keeps passive look-around scene turns on the narrator-only route", async () => {

@@ -242,6 +242,78 @@ describe("turn intake API", () => {
     assert.equal(route.suggestedOperation, "getCompactContext");
   });
 
+  it("returns a resolver request for partial work instead of fallback tool hunting", async () => {
+    await createFixture();
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas se incorpora al turno de tarde, trabaja 45 minutos con intensidad normal y evita seguir hablando de la tardanza.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.readOnly, true);
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.route.needsMutation, true);
+    assert.equal(response.data.route.suggestedOperation, "resolveTurn");
+    assert.equal(response.data.directorPacket.mode, "resolver_ready");
+    assert.equal(response.data.resolverPacket.resolverRequest.actionFamily, "job_shift");
+    assert.equal(response.data.resolverPacket.resolverRequest.sequence.length, 1);
+    assert.equal(response.data.resolverPacket.resolverRequest.sequence[0].type, "work_segment");
+    assert.equal(response.data.resolverPacket.resolverRequest.sequence[0].minutes, 45);
+    assert.equal(response.data.directorPacket.actionPolicy.gptShouldCall.includes("resolveTurn"), true);
+    assert.equal(response.data.directorPacket.actionPolicy.gptShouldNotCall.includes("getCompactContext"), true);
+  });
+
+  it("returns a resolver request for rest plus urgent travel", async () => {
+    await createFixture();
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas dedica 10 minutos a descansar, despues vuelve corriendo a toda velocidad a la posada.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.route.suggestedOperation, "resolveTurn");
+    assert.deepEqual(
+      response.data.resolverPacket.resolverRequest.sequence.map((step) => step.type),
+      ["rest", "travel"]
+    );
+    assert.equal(response.data.resolverPacket.resolverRequest.sequence[0].minutes, 10);
+    assert.equal(response.data.resolverPacket.resolverRequest.sequence[1].toLocationId, "loc_hoshimori_grulla_azul");
+    assert.equal(response.data.resolverPacket.resolverRequest.sequence[1].pace, "full_speed");
+  });
+
+  it("allows simple travel to the guild even though guild is a mission-adjacent word", async () => {
+    await createFixture();
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas camina al gremio.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.route.suggestedOperation, "resolveTurn");
+    assert.equal(response.data.resolverPacket.resolverRequest.actionFamily, "travel");
+    assert.equal(response.data.resolverPacket.resolverRequest.sequence[0].type, "travel");
+    assert.equal(response.data.resolverPacket.resolverRequest.sequence[0].toLocationId, "loc_hoshimori_guild");
+  });
+
+  it("does not build a common resolver request for magic practice", async () => {
+    await createFixture();
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas descansa 10 minutos y practica meditacion de mana durante una hora.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.supported, false);
+    assert.equal(response.data.route.suggestedOperation, "resolveTurn_or_existing_flow");
+    assert.equal(response.data.resolverPacket, undefined);
+  });
+
   it("returns a social packet for simple questions about a visible NPC current task", async () => {
     await createFixture();
     const response = await post("/api/turn/intake", {

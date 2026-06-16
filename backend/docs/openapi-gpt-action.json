@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions",
-    "version": "2.24.0",
-    "description": "Schema normal para GPT Actions. Incluye intakeTurn como director read-only de escena/social, resolveTurn/previewResolveTurn para acciones compuestas, applyTurn con dryRun/activitySegments, previews, lecturas y mutadores controlados."
+    "version": "2.25.0",
+    "description": "Schema normal para GPT Actions. Incluye intakeTurn como director de escena/social y router de acciones comunes hacia resolveTurn, resolveTurn/previewResolveTurn, applyTurn con dryRun/activitySegments, previews, lecturas y mutadores controlados."
   },
   "servers": [
     {
@@ -125,7 +125,12 @@
           },
           "directorPacket": {
             "type": "object",
-            "description": "Decision read-only del backend: target social, questionContext, rutina/horario si aplica y lista de Actions que el GPT no debe llamar cuando narrateOnly.",
+            "description": "Decision del backend: target social, questionContext o resolverRequest; lista de Actions que el GPT debe/no debe llamar.",
+            "additionalProperties": true
+          },
+          "resolverPacket": {
+            "type": "object",
+            "description": "Plan read-only para acciones comunes con tiempo. Si existe y suggestedOperation=resolveTurn, llamar resolveTurn con resolverPacket.resolverRequest sin consultas extra.",
             "additionalProperties": true
           }
         },
@@ -2914,8 +2919,8 @@
     "/api/turn/intake": {
       "post": {
         "operationId": "intakeTurn",
-        "summary": "Director read-only: clasifica texto y devuelve packet compacto para narrar escena/social simple.",
-        "description": "Primera operacion de partida. Si route.supported=true y suggestedOperation=narrateOnly, narrar con directorPacket/narratorPacket/displayBundle sin llamar contexto, docs ni NPC full.",
+        "summary": "Director de turno: clasifica texto y devuelve packet compacto o resolverRequest.",
+        "description": "Primera operacion de partida. Si suggestedOperation=narrateOnly, narrar con packets. Si suggestedOperation=resolveTurn, llamar resolveTurn con resolverPacket.resolverRequest sin consultas extra.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2928,7 +2933,7 @@
         },
         "responses": {
           "200": {
-            "description": "Ruta/intencion y paquete minimo de narracion read-only.",
+            "description": "Ruta/intencion y packet minimo de narracion o resolverRequest.",
             "content": {
               "application/json": {
                 "schema": {
