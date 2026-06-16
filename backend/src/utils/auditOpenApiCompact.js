@@ -17,8 +17,8 @@ const EXPECTED_COMPACT = [
   ["GET", "/api/search/docs"],
   ["GET", "/api/npcs/{npcId}/full"],
   ["GET", "/api/locations/{locationId}/full"],
+  ["POST", "/api/turn/action-plan/execute"],
   ["POST", "/api/turn/apply"],
-  ["POST", "/api/turn/resolve/preview"],
   ["POST", "/api/turn/resolve"],
   ["GET", "/api/economy/shops/{shopId}/stock"],
   ["GET", "/api/economy/items/{itemId}"],
@@ -221,6 +221,11 @@ function main() {
   );
   assertCondition(
     issues,
+    "compact executeActionPlan is non-consequential for fluid gameplay",
+    compactOps.get("POST /api/turn/action-plan/execute")?.["x-openai-isConsequential"] === false
+  );
+  assertCondition(
+    issues,
     "compact resolveTurn is non-consequential for fluid gameplay",
     compactOps.get("POST /api/turn/resolve")?.["x-openai-isConsequential"] === false
   );
@@ -230,8 +235,7 @@ function main() {
       compactOps.get("POST /api/travel/preview")?.["x-openai-isConsequential"] === false &&
       compactOps.get("POST /api/world/tick/preview")?.["x-openai-isConsequential"] === false &&
       compactOps.get("POST /api/magic/practice/preview")?.["x-openai-isConsequential"] === false &&
-      compactOps.get("POST /api/npcs/social/impact/preview")?.["x-openai-isConsequential"] === false &&
-      compactOps.get("POST /api/turn/resolve/preview")?.["x-openai-isConsequential"] === false
+      compactOps.get("POST /api/npcs/social/impact/preview")?.["x-openai-isConsequential"] === false
   );
 
   section("ApplyTurn Schema");

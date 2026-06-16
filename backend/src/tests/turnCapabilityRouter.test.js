@@ -81,6 +81,18 @@ describe("turn capability router", () => {
     assert.equal(result.route.resolverPlan.steps[0].targetTime, "08:00");
   });
 
+  it("routes rest until a concrete time without requiring explicit duration", () => {
+    const result = routeTurnIntent({
+      text: "Lucas va a descansar hasta que sean las 14.",
+    });
+
+    assert.equal(result.route.needsMutation, true);
+    assert.equal(result.route.capabilityId, "rest_duration");
+    assert.equal(result.route.resolverPlan.steps[0].type, "rest");
+    assert.equal(result.route.resolverPlan.steps[0].targetTime, "14:00");
+    assert.equal(result.route.resolverPlan.unsupportedReasons.length, 0);
+  });
+
   it("routes safe magic and simple meals to action candidates while keeping risky magic on existing flow", () => {
     const magic = routeTurnIntent({
       text: "Lucas practica meditacion de mana durante una hora.",
@@ -116,5 +128,6 @@ describe("turn capability router", () => {
     assert.equal(result.route.supported, false);
     assert.equal(result.route.suggestedOperation, "completeJobShift");
     assert.equal(result.route.slots.completeJobShiftPlan.consumeContractMeal, true);
+    assert.equal(result.route.slots.completeJobShiftPlan.contractMealTiming, "before_work_cost");
   });
 });

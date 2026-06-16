@@ -42,8 +42,9 @@ Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.j
 | previewActivityCost | `POST /api/needs/activity-cost/preview` | si | no | preview | gameplay |
 | previewSkillProgression | `POST /api/progression/skills/preview` | si | si | preview | gameplay |
 | previewTravel | `POST /api/travel/preview` | si | si | preview | gameplay |
+| executeActionPlan | `POST /api/turn/action-plan/execute` | si | si | mutacion | gameplay |
 | applyTurn | `POST /api/turn/apply` | si | si | mutacion | gameplay |
-| previewResolveTurn | `POST /api/turn/resolve/preview` | si | si | preview | gameplay |
+| previewResolveTurn | `POST /api/turn/resolve/preview` | si | no | preview | gameplay |
 | resolveTurn | `POST /api/turn/resolve` | si | si | mutacion | gameplay |
 | previewWeatherEffects | `POST /api/weather/effects/preview` | si | si | preview | gameplay |
 | listWorldEvents | `GET /api/world/events` | si | no | lectura | admin/debug |
@@ -62,6 +63,7 @@ Notas:
 - El backend puede separar keys por scope: lecturas/previews aceptan keys validas de lectura, `applyTurn` usa scope gameplay y mutadores directos peligrosos usan scope admin-write. `API_KEY` sigue funcionando como fallback legacy mientras existan despliegues antiguos.
 - `applyTurn` y `completeJobShift` no estan marcados como consequential en el schema compacto para modo juego fluido sin confirmacion manual. El backend sigue validando y rechazando mutaciones invalidas.
 - `applyTurn.activityCost` no suma operaciones: todo `timeAdvance` positivo requiere `activityCost` o exencion explicita; acumula automaticamente actividades entre horas y procesa pendientes al llegar a `:00`.
-- `resolveTurn` reemplaza varios previews para acciones normales compuestas: desde `sequence[]` arma viaje, descanso, chequeo, `work_segment`/trabajo parcial, tardanza laboral, disculpa/memoria NPC, EXP fisica conservadora y un unico `applyTurn`. `listTravelRoutes` y `previewActivityCost` quedan fuera del compact porque `previewTravel`, `previewResolveTurn` y `applyTurn dryRun` cubren el flujo normal.
+- `executeActionPlan` ejecuta planes compuestos ya materializados por `intakeTurn` y devuelve `aggregateDisplayBundle`; evita que el GPT fusione a mano `completeJobShift` + `applyTurn`. `previewResolveTurn` queda fuera del compact para mantener 30 operaciones.
+- `resolveTurn` reemplaza varios previews para acciones normales compuestas: desde `sequence[]` arma viaje, descanso, chequeo, `work_segment`/trabajo parcial, tardanza laboral, disculpa/memoria NPC, EXP fisica conservadora y un unico `applyTurn`. `listTravelRoutes` y `previewActivityCost` quedan fuera del compact porque `resolveTurn` y `applyTurn dryRun` cubren el flujo normal.
 - `narrativeHints`/`narrativeContext`/`dramaticContext`/`dramaticContext.emotionalScene`, `scene.nearbyNpcs[].dialogueProfile`, `scene.nearbyNpcs[].dialogueProfile.dramaticRole`, `scene.nearbyNpcs[].emotionalProfile` y `scene.relationshipDynamics` no suman operaciones: viajan dentro de respuestas existentes para variar escenas, mejorar dialogos, sostener subtexto, mostrar gestos/tension entre NPCs y mantener HUD final sin tocar calculos mecanicos.
 - El schema `admin-extra` es solo lectura, usa `operationId` prefijados por `admin` y no debe usarse para juego normal.

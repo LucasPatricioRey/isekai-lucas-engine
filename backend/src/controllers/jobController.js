@@ -80,6 +80,7 @@ async function completeShiftController(req, res) {
       skipMealIds: body.skipMealIds || [],
       completionSummary: body.completionSummary || "",
       allowLateCompletion: Boolean(body.allowLateCompletion),
+      mealTiming: body.mealTiming || "before_work_cost",
     });
 
     return res.json({

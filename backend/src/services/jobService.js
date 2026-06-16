@@ -440,14 +440,20 @@ function applyMealBenefit(gameState, meal) {
   };
 }
 
-function buildPhysicalBreakdown({ before, mealChanges = [], activityCost, unappliedMealNames = [] }) {
+function buildPhysicalBreakdown({ before, mealChanges = [], activityCost, unappliedMealNames = [], mealTiming = "before_work_cost" }) {
   const afterMeals = {
-    satiety: activityCost?.satiety?.before ?? before.satiety,
-    energy: activityCost?.energy?.before ?? before.energy,
+    satiety:
+      mealTiming === "after_work_cost"
+        ? mealChanges.reduce((value, meal) => meal.satiety?.after ?? value, activityCost?.satiety?.after ?? before.satiety)
+        : activityCost?.satiety?.before ?? before.satiety,
+    energy:
+      mealTiming === "after_work_cost"
+        ? mealChanges.reduce((value, meal) => meal.energy?.after ?? value, activityCost?.energy?.after ?? before.energy)
+        : activityCost?.energy?.before ?? before.energy,
   };
   const final = {
-    satiety: activityCost?.satiety?.after ?? afterMeals.satiety,
-    energy: activityCost?.energy?.after ?? afterMeals.energy,
+    satiety: mealTiming === "after_work_cost" ? afterMeals.satiety : activityCost?.satiety?.after ?? afterMeals.satiety,
+    energy: mealTiming === "after_work_cost" ? afterMeals.energy : activityCost?.energy?.after ?? afterMeals.energy,
   };
   const mealTotals = mealChanges.reduce(
     (totals, meal) => ({
@@ -472,6 +478,15 @@ function buildPhysicalBreakdown({ before, mealChanges = [], activityCost, unappl
     `Saciedad: ${before.satiety}->${afterMeals.satiety} por comida de contrato ->${final.satiety} tras trabajo`,
     `Energía: ${before.energy}->${afterMeals.energy} por comida de contrato ->${final.energy} tras trabajo`,
   ];
+
+  if (mealTiming === "after_work_cost" && mealChanges.length > 0) {
+    displayLines.splice(
+      0,
+      displayLines.length,
+      `Saciedad: ${before.satiety}->${activityCost?.satiety?.after ?? before.satiety} tras trabajo ->${final.satiety} por comida de contrato`,
+      `Energia: ${before.energy}->${activityCost?.energy?.after ?? before.energy} tras trabajo ->${final.energy} por comida de contrato`
+    );
+  }
 
   if (mealChanges.length === 0) {
     displayLines.splice(
@@ -500,6 +515,7 @@ function buildPhysicalBreakdown({ before, mealChanges = [], activityCost, unappl
     afterMeals,
     final,
     mealTotals,
+    mealTiming,
     workCost: {
       satiety: activityCost?.satiety?.delta || 0,
       energy: activityCost?.energy?.delta || 0,
@@ -634,6 +650,7 @@ async function completeShift({
   skipMealIds = [],
   completionSummary = "",
   allowLateCompletion = false,
+  mealTiming = "before_work_cost",
 } = {}) {
   const session = await mongoose.startSession();
   let result;
@@ -686,6 +703,15 @@ async function completeShift({
       const flags = getContractFlags(contract);
       const shiftLedger = getShiftLedgerForDay(flags, gameState.currentDay);
       const mealLedger = getMealLedgerForDay(flags, gameState.currentDay);
+      if (!["before_work_cost", "after_work_cost"].includes(mealTiming)) {
+        const error = new Error("mealTiming invalido para completeJobShift.");
+        error.statusCode = 400;
+        error.details = {
+          mealTiming,
+          allowed: ["before_work_cost", "after_work_cost"],
+        };
+        throw error;
+      }
       const before = {
         day: gameState.currentDay,
         time: gameState.time,
@@ -814,6 +840,7 @@ async function completeShift({
         throw error;
       }
       const mealChanges = [];
+      const mealsToApplyAfterWork = [];
       const mealAppliedIds = [];
       const mealMarkedConsumedIds = [];
       const mealInferredConsumedIds = [];
@@ -856,6 +883,11 @@ async function completeShift({
           continue;
         }
 
+        if (mealTiming === "after_work_cost") {
+          mealsToApplyAfterWork.push(meal);
+          continue;
+        }
+
         const mealChange = applyMealBenefit(gameState, meal);
         mealLedger[meal.mealId] = {
           mealId: meal.mealId,
@@ -871,11 +903,26 @@ async function completeShift({
       }
 
       const activityCost = applyShiftActivityCost(gameState, shift);
+      for (const meal of mealsToApplyAfterWork) {
+        const mealChange = applyMealBenefit(gameState, meal);
+        mealLedger[meal.mealId] = {
+          mealId: meal.mealId,
+          day: gameState.currentDay,
+          time: shift.endTime,
+          sourceShiftId: shift.shiftId,
+          status: "applied_by_complete_shift_after_work",
+          satietyDelta: mealChange.satiety.delta,
+          energyDelta: mealChange.energy.delta,
+        };
+        mealAppliedIds.push(meal.mealId);
+        mealChanges.push(mealChange);
+      }
       const physicalBreakdown = buildPhysicalBreakdown({
         before,
         mealChanges,
         activityCost,
         unappliedMealNames: mealAvailableNotConsumedNames,
+        mealTiming,
       });
       const coveredPendingAccumulations = markPendingAccumulationsCoveredByShift(gameState, shift);
       const beforeMoney = gameState.moneyCopper;

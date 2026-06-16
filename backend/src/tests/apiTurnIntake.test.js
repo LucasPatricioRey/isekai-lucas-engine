@@ -487,10 +487,11 @@ describe("turn intake API", () => {
     assert.equal(response.status, 200, JSON.stringify(response.data));
     assert.equal(response.data.ok, true);
     assert.equal(response.data.route.supported, true);
-    assert.equal(response.data.route.suggestedOperation, "actionPlan");
+    assert.equal(response.data.route.suggestedOperation, "executeActionPlan");
     assert.equal(response.data.directorPacket.mode, "action_plan_ready");
     assert.equal(response.data.actionPacket, undefined);
-    assert.equal(response.data.actionPlanPacket.selectedOperation, "actionPlan");
+    assert.equal(response.data.actionPlanPacket.selectedOperation, "executeActionPlan");
+    assert.equal(response.data.actionPlanPacket.endpoint.path, "/api/turn/action-plan/execute");
     assert.equal(response.data.actionPlanPacket.operations.length, 2);
 
     const [completeOperation, magicOperation] = response.data.actionPlanPacket.operations;
@@ -498,6 +499,7 @@ describe("turn intake API", () => {
     assert.equal(completeOperation.request.pathParams.shiftId, "shift_test_turn_intake_afternoon_1400_2030");
     assert.equal(completeOperation.request.body.contractId, tempContractId);
     assert.equal(completeOperation.request.body.allowLateCompletion, true);
+    assert.equal(completeOperation.request.body.mealTiming, "after_work_cost");
     assert.deepEqual(completeOperation.request.body.consumeIncludedMealIds, ["meal_test_turn_intake_main"]);
     assert.equal(magicOperation.selectedOperation, "applyTurn");
     assert.equal(magicOperation.dependsOnPrevious, true);
@@ -509,27 +511,38 @@ describe("turn intake API", () => {
       magicOperation.request.magicPractice[0].techniqueId,
       "technique_mana_meditation_basic"
     );
-    assert.deepEqual(response.data.directorPacket.actionPolicy.gptShouldCall, [
-      "completeJobShift",
-      "applyTurn",
-    ]);
+    assert.deepEqual(response.data.directorPacket.actionPolicy.gptShouldCall, ["executeActionPlan"]);
     assert.equal(response.data.directorPacket.actionPolicy.gptShouldNotCall.includes("getCompactContext"), true);
+    assert.equal(response.data.directorPacket.actionPolicy.gptShouldNotCall.includes("applyTurn"), true);
 
-    const completeShift = await post(
-      `/api/jobs/shifts/${completeOperation.request.pathParams.shiftId}/complete`,
-      completeOperation.request.body
+    const executed = await post("/api/turn/action-plan/execute", response.data.actionPlanPacket.request);
+    assert.equal(executed.status, 200, JSON.stringify(executed.data));
+    assert.equal(executed.data.ok, true);
+    assert.equal(executed.data.operationCount, 2);
+    assert.deepEqual(
+      executed.data.operationsExecuted.map((operation) => operation.selectedOperation),
+      ["completeJobShift", "applyTurn"]
     );
-    assert.equal(completeShift.status, 200, JSON.stringify(completeShift.data));
-    assert.equal(completeShift.data.ok, true);
-
-    const dryRunMagic = await post("/api/turn/apply", {
-      ...magicOperation.request,
-      dryRun: true,
-      clientTurnId: `${magicOperation.request.clientTurnId}-dryrun`,
-    });
-    assert.equal(dryRunMagic.status, 200, JSON.stringify(dryRunMagic.data));
-    assert.equal(dryRunMagic.data.dryRun, true);
-    assert.equal(dryRunMagic.data.changes.magicPractice[0].techniqueId, "technique_mana_meditation_basic");
+    assert.ok(
+      executed.data.aggregateDisplayBundle.changeLines.some((line) =>
+        String(line).includes("Turno laboral completado")
+      )
+    );
+    assert.ok(
+      executed.data.aggregateDisplayBundle.changeLines.some((line) =>
+        String(line).includes("Dinero:")
+      )
+    );
+    assert.ok(
+      executed.data.aggregateDisplayBundle.changeLines.some((line) =>
+        String(line).includes("Práctica mágica") || String(line).includes("Practica magica")
+      )
+    );
+    assert.ok(
+      executed.data.aggregateDisplayBundle.renderLines.some((line) =>
+        String(line).includes("17:05→21:30")
+      )
+    );
   });
 
   it("returns a resolver request for sleeping until a target time", async () => {
@@ -562,6 +575,33 @@ describe("turn intake API", () => {
     );
     assert.equal(response.data.directorPacket.actionPolicy.gptShouldCall.includes("resolveTurn"), true);
     assert.equal(response.data.directorPacket.actionPolicy.gptShouldNotCall.includes("getCompactContext"), true);
+  });
+
+  it("returns a resolver request for resting until a target time", async () => {
+    await createFixture();
+    await GameState.updateOne({ gameId: tempGameId }, { $set: { time: "06:00", block: "Mañana" } });
+
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas va a descansar hasta que sean las 14.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.route.suggestedOperation, "resolveTurn");
+    assert.equal(response.data.route.capabilityId, "rest_duration");
+    assert.deepEqual(
+      response.data.resolverPacket.resolverRequest.sequence,
+      [
+        {
+          type: "rest",
+          category: "descanso_sentado",
+          reason: "Descansar hasta una hora concreta indicada por el jugador.",
+          minutes: 480,
+        },
+      ]
+    );
   });
 
   it("returns a resolver request for internal room movement plus timed rest", async () => {

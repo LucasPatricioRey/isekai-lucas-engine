@@ -305,7 +305,7 @@ function inferDomains(text) {
     ],
     ["work", /\b(trabaja|turno|tardanza|contrato|servir|mesa|platos|jornada|asistencia|llegada tarde)\b/],
     ["time_activity", /\b(espera|esperar|aguarda|aguardar)\b/],
-    ["rest_biology", /\b(descansa|duerme|dormir|come|comer|bebe|beber|hambre|cansancio|energia|saciedad|cama|se acuesta)\b/],
+    ["rest_biology", /\b(descansa|descansar|duerme|dormir|come|comer|bebe|beber|hambre|cansancio|energia|saciedad|cama|se acuesta)\b/],
     ["economy", /\b(compra|vende|paga|precio|stock|monedas|cobre|plata|oro)\b/],
     ["mission_event", /\b(mision|cartelera|evento|recompensa|reporte|gremio)\b/],
     ["inventory_evidence", /\b(inventario|mochila|muestra|evidencia|pelo gris|nota|daga|objeto)\b/],
@@ -480,6 +480,9 @@ function detectCompleteJobShiftPlan(text = "") {
   return {
     consumeContractMeal: /\b(comida|plato|cena)\b.*\b(contrato|incluida|incluido)\b/.test(text),
     allowLateCompletion: /\b(tarde|tardanza|llego tarde|llega tarde)\b/.test(text),
+    contractMealTiming: /\b(cierre|cerrar|fin del turno|terminar el turno|termina el turno)\b.*\b(luego|despues|despues de eso)\b.*\b(comida|plato|cena)\b.*\b(contrato|incluida|incluido)\b/.test(text)
+      ? "after_work_cost"
+      : "before_work_cost",
   };
 }
 
@@ -548,6 +551,7 @@ function commonResolverPlan({ text = "", destinationAliases = DEFAULT_DESTINATIO
   };
 
   addCue("sleep_until", /\b(duerme|dormir|se acuesta|acostarse)\b.*\bhasta\b/);
+  addCue("rest_until", /\b(descansa|descansar|se sienta|sentado|se acuesta|acostado)\b.*\bhasta\b/);
   addCue("wait_until", /\b(espera|esperar|aguarda)\b.*\bhasta\b/);
   addCue("rest", /\b(descansa|descansar|se sienta|sentado|se acuesta|acostado|duerme|dormir)\b/);
   addCue("wait", /\b(espera|esperar|aguarda)\b/);
@@ -570,6 +574,22 @@ function commonResolverPlan({ text = "", destinationAliases = DEFAULT_DESTINATIO
         targetTime,
         reason: "Dormir hasta una hora concreta indicada por el jugador.",
         capabilityId: "sleep_until_time",
+      });
+      continue;
+    }
+
+    if (cue.kind === "rest_until") {
+      const targetTime = clockNear(normalized, cue.index);
+      if (!targetTime) {
+        unsupportedReasons.push("rest_until sin hora objetivo clara");
+        continue;
+      }
+      steps.push({
+        type: "rest",
+        category: detectRestCategory(normalized, cue.index),
+        targetTime,
+        reason: "Descansar hasta una hora concreta indicada por el jugador.",
+        capabilityId: "rest_duration",
       });
       continue;
     }
@@ -778,7 +798,7 @@ function routeTurnIntent({ text = "", aiClassification = null } = {}) {
   ]);
 
   const likelyMutation = textMatchesAny(normalized, [
-    /\b(trabaja|entrena|practica|corre|viaja|camina|vuelve|regresa|sale|entra|sube|baja|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|descansa|duerme|dormir|espera|esperar|aguarda|aguardar|come|comer|bebe|beber|compra|vende|paga|pide|pedir|toma|agarra|usa|ataca|intenta|conjura|lanza|lanzar|descarga|acepta|rechaza|reporta|completa|investiga|revisa)\b/,
+    /\b(trabaja|entrena|practica|corre|viaja|camina|vuelve|regresa|sale|entra|sube|baja|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|descansa|descansar|duerme|dormir|espera|esperar|aguarda|aguardar|come|comer|bebe|beber|compra|vende|paga|pide|pedir|toma|agarra|usa|ataca|intenta|conjura|lanza|lanzar|descarga|acepta|rechaza|reporta|completa|investiga|revisa)\b/,
   ]);
   const likelySocial =
     domains.includes("social") &&

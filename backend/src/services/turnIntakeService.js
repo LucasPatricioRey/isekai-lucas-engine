@@ -527,7 +527,7 @@ function actionPlanPolicy(operations = []) {
   return {
     mutate: true,
     timeAdvance: true,
-    gptShouldCall: operations.map((operation) => operation.selectedOperation).filter(Boolean),
+    gptShouldCall: ["executeActionPlan"],
     gptShouldNotCall: [
       "getCompactContext",
       "searchDocs",
@@ -540,10 +540,12 @@ function actionPlanPolicy(operations = []) {
       "previewSkillProgression",
       "previewMagicPractice",
       "previewResolveTurn",
+      "completeJobShift",
+      "applyTurn",
       "applyTurn_dryRun",
     ],
     narrationInstruction:
-      "Ejecutar las operaciones de actionPlanPacket en orden exacto, sin consultas intermedias; narrar con la ultima respuesta/displayBundle.",
+      "Llamar executeActionPlan con actionPlanPacket.request; narrar con aggregateDisplayBundle/displayBundle de esa respuesta.",
   };
 }
 
@@ -569,6 +571,7 @@ async function buildCompleteJobShiftActionPacket({ route = {}, text = "", gameSt
     completionSummary: text,
     allowLateCompletion: Boolean(plan.allowLateCompletion || needsLateCompletionFlag),
     consumeIncludedMealIds,
+    mealTiming: plan.contractMealTiming || "before_work_cost",
   };
 
   return {
@@ -801,6 +804,22 @@ function operationFromActionPacket(packet = {}, { order = 1, dependsOnPrevious =
   };
 }
 
+function detectActionPlanUnresolvedSlots(text = "") {
+  const normalized = normalizeText(text);
+  const slots = [];
+  if (/\b(almuerzo|desayuno)\b/.test(normalized) && !/\b(almuerzo|desayuno)\b.{0,40}\b(contrato|incluid[ao]|racion|mochila)\b/.test(normalized)) {
+    slots.push({
+      slotId: "meal_source_unresolved",
+      type: "meal",
+      severity: "warning",
+      reason: "El texto menciona una comida sin indicar origen mecanico claro.",
+      displayLine:
+        "Comida no resuelta automaticamente: se menciono almuerzo/desayuno sin origen claro; no se aplico stock, racion ni beneficio.",
+    });
+  }
+  return slots;
+}
+
 async function buildShiftThenSafeMagicActionPlanPacket({ route = {}, text = "", gameState = {} } = {}) {
   if (route.capabilityId !== "complete_job_shift") return null;
 
@@ -843,31 +862,50 @@ async function buildShiftThenSafeMagicActionPlanPacket({ route = {}, text = "", 
       },
     }),
   ];
+  const unresolvedSlots = detectActionPlanUnresolvedSlots(text);
+  const clientPlanId = makeActionClientTurnId({ gameState, text, operation: "plan" });
+  const summary = {
+    capabilityId: "composite_shift_then_safe_magic",
+    sourceCapabilityId: route.capabilityId,
+    actionSummary: text,
+    operationCount: operations.length,
+    startsAt: {
+      day: gameState.currentDay,
+      time: gameState.time || "",
+    },
+    expectedFinal: {
+      day: magicPacket.request?.timeAdvance?.toDay,
+      time: magicPacket.request?.timeAdvance?.to,
+    },
+    includedMealIds: completePacket.summary?.consumeIncludedMealIds || [],
+    magicTechniqueId: magicPacket.summary?.techniqueId || "",
+  };
 
   return {
     schemaVersion: "turn_intake_action_plan_packet_v1",
-    selectedOperation: "actionPlan",
+    selectedOperation: "executeActionPlan",
+    operationId: "executeActionPlan",
     supported: true,
     executionMode: "sequential",
+    endpoint: {
+      method: "POST",
+      path: "/api/turn/action-plan/execute",
+    },
     operations,
-    summary: {
-      capabilityId: "composite_shift_then_safe_magic",
-      sourceCapabilityId: route.capabilityId,
-      operationCount: operations.length,
-      startsAt: {
-        day: gameState.currentDay,
-        time: gameState.time || "",
-      },
-      expectedFinal: {
-        day: magicPacket.request?.timeAdvance?.toDay,
-        time: magicPacket.request?.timeAdvance?.to,
-      },
-      includedMealIds: completePacket.summary?.consumeIncludedMealIds || [],
-      magicTechniqueId: magicPacket.summary?.techniqueId || "",
+    unresolvedSlots,
+    summary,
+    request: {
+      gameId: gameState.gameId || DEFAULT_GAME_ID,
+      clientPlanId,
+      responseProfile: "compact",
+      actionSummary: text,
+      operations,
+      unresolvedSlots,
+      summary,
     },
     actionPolicy: actionPlanPolicy(operations),
     boundary:
-      "Plan compuesto materializado por backend. Ejecutar todas las operaciones en orden exacto; no intercalar narracion, busquedas, previews ni fallback entre pasos.",
+      "Plan compuesto materializado por backend. Llamar executeActionPlan con request; no ejecutar operaciones individuales ni intercalar busquedas/previews.",
   };
 }
 
@@ -1158,7 +1196,7 @@ function buildDirectorPacket({
   const resolverReady = route?.supported === true && route?.suggestedOperation === "resolveTurn" && resolverPacket;
   const actionPlanReady =
     route?.supported === true &&
-    route?.suggestedOperation === "actionPlan" &&
+    route?.suggestedOperation === "executeActionPlan" &&
     actionPlanPacket?.supported === true;
   const actionReady =
     route?.supported === true &&
@@ -1412,7 +1450,7 @@ async function buildNarratorPacket({
       route = {
         ...route,
         supported: true,
-        suggestedOperation: "actionPlan",
+        suggestedOperation: "executeActionPlan",
         fallbackReason: "",
         confidence: "high",
       };
