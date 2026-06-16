@@ -1,3 +1,8 @@
+const {
+  parseTurnClauses,
+  targetTimeFromRelativeText,
+} = require("./turnClauseParserService");
+
 const DEFAULT_DESTINATION_ALIASES = [
   {
     locationId: "loc_hoshimori_grulla_azul",
@@ -303,8 +308,8 @@ function inferDomains(text) {
       "travel",
       /\b(viaja|camina|corre|vuelve|regresa|sale|entra|sube|baja|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|ruta|camino|sendero)\b/,
     ],
-    ["work", /\b(trabaja|turno|tardanza|contrato|servir|mesa|platos|jornada|asistencia|llegada tarde)\b/],
-    ["time_activity", /\b(espera|esperar|aguarda|aguardar)\b/],
+    ["work", /\b(trabaja|trabajar|ayuda|ayudando|ayudar|turno|tardanza|contrato|servir|mesa|mesas|platos|jornada|asistencia|llegada tarde)\b/],
+    ["time_activity", /\b(espera|esperar|aguarda|aguardar|se queda)\b/],
     ["rest_biology", /\b(descansa|descansar|duerme|dormir|come|comer|bebe|beber|hambre|cansancio|energia|saciedad|cama|se acuesta)\b/],
     ["economy", /\b(compra|vende|paga|precio|stock|monedas|cobre|plata|oro)\b/],
     ["mission_event", /\b(mision|cartelera|evento|recompensa|reporte|gremio)\b/],
@@ -428,7 +433,7 @@ function clockFromText(text = "") {
 
 function clockNear(text = "", cueIndex = -1) {
   const slice = cueIndex >= 0 ? text.slice(cueIndex, cueIndex + 120) : text;
-  return clockFromText(slice);
+  return clockFromText(slice) || targetTimeFromRelativeText(slice);
 }
 
 function regexIndex(text = "", pattern) {
@@ -485,7 +490,8 @@ function isInternalMovement(text = "", cueIndex = -1) {
 function detectCompleteJobShiftPlan(text = "") {
   if (
     !textMatchesAny(text, [
-      /\b(trabaja|trabajar|turno|jornada)\b.*\b(hasta|al)\b.*\b(cierre|cerrar|fin del turno|terminar el turno|termina el turno)\b/,
+      /\b(trabaja|trabajar|ayuda|ayudando|ayudar|turno|jornada)\b.*\b(hasta|al)\b.*\b(cierre|cerrar|fin del turno|terminar el turno|termina el turno)\b/,
+      /\b(trabaja|trabajar|ayuda|ayudando|ayudar|turno|jornada)\b.*\b(resto del turno|lo que queda del turno|resto de la jornada|lo que queda de la jornada)\b/,
       /\b(cierra|cerrar|termina|terminar|completa|completar)\b.*\b(turno|jornada)\b/,
       /\b(hasta la hora de cierre|hasta cerrar|hasta que cierre)\b/,
     ])
@@ -553,6 +559,8 @@ function detectSafeMagicPracticePlan(text = "") {
     techniqueId = "technique_mana_breathing_basic";
   } else if (/\b(flujo interno|sentir flujo|percibir flujo)\b/.test(text)) {
     techniqueId = "technique_internal_flow_sense";
+  } else if (/\b(practica|practicar|entrena|entrenar|ejercita|ejercitar)\b.{0,48}\bmana\b|\bmana\b.{0,48}\b(practica|practicar|entrena|entrenar|ejercita|ejercitar)\b/.test(text)) {
+    techniqueId = "technique_mana_meditation_basic";
   }
   if (!techniqueId) return null;
 
@@ -572,6 +580,7 @@ function detectSafeMagicPracticePlan(text = "") {
 
 function commonResolverPlan({ text = "", destinationAliases = DEFAULT_DESTINATION_ALIASES } = {}) {
   const normalized = normalizeText(text);
+  const clausePlan = parseTurnClauses(normalized);
   const cues = [];
   const addCue = (kind, pattern) => {
     const index = regexIndex(normalized, pattern);
@@ -580,10 +589,11 @@ function commonResolverPlan({ text = "", destinationAliases = DEFAULT_DESTINATIO
 
   addCue("sleep_until", /\b(duerme|dormir|se acuesta|acostarse)\b.*\bhasta\b/);
   addCue("rest_until", /\b(descansa|descansar|se sienta|sentado|se acuesta|acostado)\b.*\bhasta\b/);
+  addCue("work_until", /\b(trabaja|trabajar|ayuda|ayudando|ayudar|se queda)\b.*\bhasta\b/);
   addCue("wait_until", /\b(espera|esperar|aguarda)\b.*\bhasta\b/);
   addCue("rest", /\b(descansa|descansar|se sienta|sentado|se acuesta|acostado|duerme|dormir)\b/);
   addCue("wait", /\b(espera|esperar|aguarda)\b/);
-  addCue("work_segment", /\b(trabaja|trabajar|sirve mesas|servir mesas|atiende mesas|limpia mesas|ayuda a cerrar|ordena mesas)\b/);
+  addCue("work_segment", /\b(trabaja|trabajar|sirve mesas|servir mesas|atiende mesas|limpia mesas|ayuda a cerrar|ordena mesas|ayuda|ayudando|ayudar)\b/);
   addCue("travel", /\b(vuelve|regresa|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|camina|corre|sale hacia|entra en)\b/);
 
   const steps = [];
@@ -638,6 +648,33 @@ function commonResolverPlan({ text = "", destinationAliases = DEFAULT_DESTINATIO
       continue;
     }
 
+    if (cue.kind === "work_until") {
+      const targetTime = clockNear(normalized, cue.index);
+      const clause = clausePlan.clauses.find(
+        (entry) =>
+          cue.index >= entry.startIndex - 2 &&
+          cue.index <= entry.endIndex + 2 &&
+          (entry.operationClasses || []).includes("work_segment")
+      );
+      if (!targetTime || !clause) {
+        if (!targetTime) unsupportedReasons.push("work_until sin hora objetivo clara");
+        continue;
+      }
+      steps.push({
+        type: "work_segment",
+        targetTime,
+        allowTruncate: true,
+        intensity: /\b(fuerte|intenso|intensidad alta)\b/.test(normalized)
+          ? "strong"
+          : /\b(suave|ligero|tranquilo|intensidad baja)\b/.test(normalized)
+            ? "light"
+            : "normal",
+        reason: "Trabajo parcial hasta una referencia horaria indicada por el jugador.",
+        capabilityId: "work_segment",
+      });
+      continue;
+    }
+
     if (cue.kind === "rest") {
       const duration = durationNear(normalized, cue.index);
       if (!duration) {
@@ -675,6 +712,7 @@ function commonResolverPlan({ text = "", destinationAliases = DEFAULT_DESTINATIO
     if (cue.kind === "work_segment") {
       const duration = durationNear(normalized, cue.index);
       if (!duration) {
+        if (steps.some((step) => step.type === "work_segment" && step.targetTime)) continue;
         unsupportedReasons.push("work_segment sin duracion explicita");
         continue;
       }
@@ -749,6 +787,13 @@ function commonResolverPlan({ text = "", destinationAliases = DEFAULT_DESTINATIO
     capabilityId,
     steps: dedupedSteps,
     unsupportedReasons,
+    clausePlan: {
+      schemaVersion: clausePlan.schemaVersion,
+      clauseCount: clausePlan.clauseCount,
+      isCompound: clausePlan.isCompound,
+      operationClasses: clausePlan.operationClasses,
+      domains: clausePlan.domains,
+    },
   };
 }
 
@@ -801,8 +846,9 @@ function routeFromCapability({
 
 function routeTurnIntent({ text = "", aiClassification = null, destinationAliases = DEFAULT_DESTINATION_ALIASES } = {}) {
   const normalized = normalizeText(text);
+  const clausePlan = parseTurnClauses(normalized);
   const aiDomains = asArray(aiClassification?.domains).map((domain) => String(domain || "").trim()).filter(Boolean);
-  const domains = unique([...inferDomains(normalized), ...aiDomains]);
+  const domains = unique([...inferDomains(normalized), ...clausePlan.domains, ...aiDomains]);
   const mechanicalDomains = domains.filter((domain) => domain !== "scene");
 
   const continueScene = textMatchesAny(normalized, [
@@ -827,6 +873,7 @@ function routeTurnIntent({ text = "", aiClassification = null, destinationAliase
 
   const likelyMutation = textMatchesAny(normalized, [
     /\b(trabaja|entrena|practica|corre|viaja|camina|vuelve|regresa|sale|entra|sube|baja|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|descansa|descansar|duerme|dormir|espera|esperar|aguarda|aguardar|come|comer|bebe|beber|compra|vende|paga|pide|pedir|toma|agarra|usa|ataca|intenta|conjura|lanza|lanzar|descarga|acepta|rechaza|reporta|completa|investiga|revisa)\b/,
+    /\b(trabaja|trabajar|ayuda|ayudando|ayudar|se queda|entrena|practica|corre|viaja|camina|vuelve|regresa|sale|entra|sube|baja|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|descansa|descansar|duerme|dormir|espera|esperar|aguarda|aguardar|come|comer|bebe|beber|compra|vende|paga|pide|pedir|toma|agarra|usa|ataca|intenta|conjura|lanza|lanzar|descarga|acepta|rechaza|reporta|completa|investiga|revisa)\b/,
   ]);
   const likelySocial =
     domains.includes("social") &&
@@ -850,6 +897,7 @@ function routeTurnIntent({ text = "", aiClassification = null, destinationAliase
     likelySocial &&
     textMatchesAny(normalized, [
       /\b(permiso|autoriza|autorizar|autorizacion|negocia|convenc|promete|promesa|secreto|confiesa)\b/,
+      /\b(si puede|si podria|puedo|podria|puede)\b.{0,60}\b(trabajar|trabajo|turno|jornada)\b/,
     ])
   ) {
     return routeFromCapability({
@@ -866,17 +914,21 @@ function routeTurnIntent({ text = "", aiClassification = null, destinationAliase
 
   const earlySimpleMealPurchasePlan = detectSimpleMealPurchasePlan(normalized);
   if (earlySimpleMealPurchasePlan) {
-    return routeFromCapability({
-      capabilityId: "simple_meal_purchase",
-      intent: "simple_meal_purchase",
-      domains: unique(["economy", "rest_biology", ...domains.filter((domain) => !["economy", "rest_biology"].includes(domain))]),
-      needsMutation: true,
-      suggestedOperation: "applyTurn",
-      supported: false,
-      confidence: "medium",
-      fallbackReason: "Requiere materializar stock, precio e item desde Mongo antes de llamar applyTurn.",
-      slots: { simpleMealPurchasePlan: earlySimpleMealPurchasePlan },
-    });
+    if (clausePlan.hasWorkCompletion || clausePlan.hasWorkSegment || clausePlan.hasSafeMagicPractice) {
+      // Compound turns should keep flowing through the broader planner instead of being reduced to only a meal.
+    } else {
+      return routeFromCapability({
+        capabilityId: "simple_meal_purchase",
+        intent: "simple_meal_purchase",
+        domains: unique(["economy", "rest_biology", ...domains.filter((domain) => !["economy", "rest_biology"].includes(domain))]),
+        needsMutation: true,
+        suggestedOperation: "applyTurn",
+        supported: false,
+        confidence: "medium",
+        fallbackReason: "Requiere materializar stock, precio e item desde Mongo antes de llamar applyTurn.",
+        slots: { simpleMealPurchasePlan: earlySimpleMealPurchasePlan },
+      });
+    }
   }
 
   if (likelySocial && (!likelyMutation || isReadOnlyNpcTaskQuestion(normalized))) {
@@ -941,7 +993,7 @@ function routeTurnIntent({ text = "", aiClassification = null, destinationAliase
         supported: false,
         confidence: "medium",
         fallbackReason: "Requiere materializar contrato/turno activo desde Mongo antes de llamar completeJobShift.",
-        slots: { completeJobShiftPlan },
+        slots: { completeJobShiftPlan, clausePlan },
       });
     }
 
@@ -956,7 +1008,7 @@ function routeTurnIntent({ text = "", aiClassification = null, destinationAliase
         supported: false,
         confidence: "medium",
         fallbackReason: "Requiere materializar tecnica magica segura y tiempo desde Mongo antes de llamar applyTurn.",
-        slots: { safeMagicPracticePlan },
+        slots: { safeMagicPracticePlan, clausePlan },
       });
     }
 
@@ -985,6 +1037,7 @@ function routeTurnIntent({ text = "", aiClassification = null, destinationAliase
       slots: {
         commonResolverCandidate: Boolean(resolverPlan.steps.length),
         unsupportedResolverReasons: resolverPlan.unsupportedReasons,
+        clausePlan,
       },
       resolverPlan: resolverPlan.steps.length ? resolverPlan : null,
     });

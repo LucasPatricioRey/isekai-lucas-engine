@@ -1,6 +1,6 @@
 # GPT Actions Operation Matrix
 
-Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.json` usado en GPT Builder.
+Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.json` tecnico. Para GPT Builder de partida normal usar `openapi-gpt-action-game.json`, que expone solo `playTurn`.
 
 | Operacion | Endpoint | Full | Compact | Tipo | Dominio |
 |---|---|---:|---:|---|---|
@@ -53,6 +53,7 @@ Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.j
 | previewWorldTick | `POST /api/world/tick/preview` | si | si | preview | gameplay |
 
 Notas:
+- El schema game-only contiene solo `POST /api/turn/play`; el GPT de juego no debe ver `intakeTurn`, `resolveTurn`, `applyTurn`, `executeActionPlan`, previews ni lecturas mecanicas.
 - El compact mantiene hasta 30 operaciones para respetar el limite practico de GPT Builder.
 - Desde C32, `playTurn` es la Action principal de partida: clasifica, ejecuta internamente si corresponde y devuelve `narrativePacket`/`displayBundle`; el GPT no debe encadenar herramientas mecanicas despues.
 - Desde C24A, `searchDocs` acepta filtros `ruleId`, `source`, `domain`, `priority`, `tag`, `appliesTo` y `limit`; esto permite consultar rule cards criticas sin agregar una operacion nueva.

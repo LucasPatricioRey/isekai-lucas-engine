@@ -130,4 +130,27 @@ describe("turn capability router", () => {
     assert.equal(result.route.slots.completeJobShiftPlan.consumeContractMeal, true);
     assert.equal(result.route.slots.completeJobShiftPlan.contractMealTiming, "before_work_cost");
   });
+
+  it("does not reduce work plus mana practice to only the magic clause", () => {
+    const result = routeTurnIntent({
+      text: "Lucas trabaja el resto del turno y despues practica respiracion de mana.",
+    });
+
+    assert.equal(result.route.capabilityId, "complete_job_shift");
+    assert.equal(result.route.slots.completeJobShiftPlan.consumeContractMeal, false);
+    assert.equal(result.route.slots.clausePlan.hasWorkCompletion, true);
+    assert.equal(result.route.slots.clausePlan.hasSafeMagicPractice, true);
+  });
+
+  it("routes inn help until a relative time as work_segment instead of narrateOnly", () => {
+    const result = routeTurnIntent({
+      text: "Lucas se queda hasta la tarde ayudando en la posada.",
+    });
+
+    assert.equal(result.route.needsMutation, true);
+    assert.equal(result.route.capabilityId, "work_segment");
+    assert.equal(result.route.resolverPlan.steps[0].type, "work_segment");
+    assert.equal(result.route.resolverPlan.steps[0].targetTime, "14:00");
+    assert.equal(result.route.resolverPlan.steps[0].allowTruncate, true);
+  });
 });

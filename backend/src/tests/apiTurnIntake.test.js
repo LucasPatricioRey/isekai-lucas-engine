@@ -935,6 +935,45 @@ describe("turn intake API", () => {
     assert.equal(response.data.narratorPacket.socialPacket.targetPresence.canNarrateDirectly, true);
   });
 
+  it("returns an action plan for shift completion followed by safe mana breathing", async () => {
+    await createFixture();
+    await GameState.updateOne({ gameId: tempGameId }, { $set: { time: "14:00", block: "Tarde" } });
+
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas trabaja el resto del turno y despues practica respiracion de mana.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.route.suggestedOperation, "executeActionPlan");
+    assert.equal(response.data.actionPlanPacket.selectedOperation, "executeActionPlan");
+    assert.deepEqual(
+      response.data.actionPlanPacket.operations.map((operation) => operation.selectedOperation),
+      ["completeJobShift", "applyTurn"]
+    );
+    assert.equal(response.data.actionPlanPacket.summary.magicTechniqueId, "technique_mana_breathing_basic");
+  });
+
+  it("returns a resolver packet for timed inn help instead of narrateOnly", async () => {
+    await createFixture();
+    await GameState.updateOne({ gameId: tempGameId }, { $set: { time: "09:00", block: "Ma\u00f1ana" } });
+
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas se queda hasta la tarde ayudando en la posada.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.route.suggestedOperation, "resolveTurn");
+    assert.equal(response.data.resolverPacket.resolverRequest.sequence[0].type, "work_segment");
+    assert.equal(response.data.resolverPacket.resolverRequest.sequence[0].minutes, 300);
+    assert.equal(response.data.resolverPacket.resolverRequest.sequence[0].allowTruncate, true);
+  });
+
   it("routes complex social requests to the existing fallback flow", async () => {
     const response = await post("/api/turn/intake", {
       gameId: tempGameId,

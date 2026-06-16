@@ -40,15 +40,21 @@ Mantener instrucciones tecnicas fuera de la narracion. El GPT puede razonar con 
 
 ## OpenAPI / Actions
 
-Para el GPT Builder normal, pegar el contenido completo de:
+Para el GPT Builder normal de partida, pegar el contenido completo de:
+
+- `docs/openapi-gpt-action-game.json`
+
+Ese schema expone solo `playTurn`. El GPT manda el texto libre del jugador y narra con `narrativePacket`/`displayBundle`; no elige endpoints mecanicos.
+
+Para modo tecnico/debug o transicion, usar:
 
 - `docs/openapi-gpt-action-compact.json`
 
-Este schema mantiene hasta 30 operaciones y usa `applyTurn.missionPatch` para aceptar, reportar, verificar, completar, fallar o expirar misiones sin exponer mutadores directos de misiones. También expone `applyTurn.worldEventPatches` para resolver/cancelar eventos existentes y guardar progreso parcial sin agregar nuevas operaciones. `applyTurn.evidencePatches` guarda muestras, rastros, notas u objetos narrativos no vendibles; no reemplaza `inventoryPatch` ni crea loot.
+El schema compacto mantiene hasta 30 operaciones y usa `applyTurn.missionPatch` para aceptar, reportar, verificar, completar, fallar o expirar misiones sin exponer mutadores directos de misiones. También expone `applyTurn.worldEventPatches` para resolver/cancelar eventos existentes y guardar progreso parcial sin agregar nuevas operaciones. `applyTurn.evidencePatches` guarda muestras, rastros, notas u objetos narrativos no vendibles; no reemplaza `inventoryPatch` ni crea loot.
 Para vinculos sociales, expone `POST /api/npcs/social/impact/preview` y `applyTurn.npcRelationshipPatches`. El backend guarda ledger social diario, aplica caps por NPC/eje, pondera perfil social por NPC y expone `socialLedgerToday`, `scene.nearbyNpcs[].socialProfile` y `scene.nearbyNpcs[].relationshipState` en contexto compacto. Resolver o dejar vencer eventos diarios por `applyTurn.worldEventPatches` puede crear consecuencias sociales automaticas sobre `affectedNpcIds`. `GET /api/combat/enemies` queda solo en el schema full para conservar el limite de 30 operaciones.
 `applyTurn`, `completeJobShift` y `context/compact` pueden devolver `narrativeHints`/`narrativeContext`; `context/compact` tambien expone `ruleLookupContract`, `dramaticContext`, `dramaticContext.emotionalScene`, `scene.nearbyNpcs[].dialogueProfile`, `scene.nearbyNpcs[].dialogueProfile.dramaticRole`, `scene.nearbyNpcs[].emotionalProfile` y `scene.relationshipDynamics`. `ruleLookupContract` indica que rule cards buscar por `searchDocs` antes de preview/mutacion; el resto es guia narrativa. Nada de esto crea dinero, EXP, relacion, loot, dano ni curacion por si solo.
 Cuando cambien `docs/rules_engine.md` o `docs/world_bible.md`, ejecutar `npm run seed:documents` contra MongoDB para que `GET /api/search/docs` vea la misma version que Knowledge. Desde C24D, ese seed tambien publica 31 rule cards criticas consultables por `ruleId`, por ejemplo `format.skill_progress`, `format.mechanical_changes`, `format.response_hud_exact`, `skills.exp_evaluation_antifarm`, `social.relationship_logic` y `economy.trade_stock_property`, sin sumar operaciones al Action principal.
-La lectura normal por turno debe empezar por `GET /api/context/compact`. Si hace falta estado mecanico directo de Lucas, usar `GET /api/characters/char_lucas/state`.
+La partida normal debe empezar cada turno con `POST /api/turn/play`. `GET /api/context/compact` queda para debug/diagnostico o pedidos tecnicos explicitos.
 
 El schema full de referencia tecnica queda en:
 
@@ -148,7 +154,11 @@ Condicion minima para abrir Preview:
 
 ## URLs para importar desde GPT Builder
 
-Action principal compacta:
+Action principal de juego:
+
+- `https://isekai-lucas-engine.onrender.com/docs/openapi-gpt-action-game.json`
+
+Action tecnica compacta:
 
 - `https://isekai-lucas-engine.onrender.com/docs/openapi-gpt-action-compact.json`
 

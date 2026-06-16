@@ -26,6 +26,7 @@ const app = express();
 
 const PUBLIC_DOC_FILES = new Set([
   "openapi-gpt-action.json",
+  "openapi-gpt-action-game.json",
   "openapi-gpt-action-compact.json",
   "openapi-gpt-action-admin.json",
   "openapi-gpt-action-admin-extra.json",

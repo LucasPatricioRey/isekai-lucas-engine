@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions",
-    "version": "2.32.0",
-    "description": "Schema normal para GPT Actions. Incluye playTurn como fachada principal de partida, intakeTurn transicional, previews, lecturas y mutadores controlados."
+    "version": "2.33.0",
+    "description": "Schema normal de referencia tecnica. Incluye playTurn, intakeTurn transicional, previews, lecturas y mutadores controlados."
   },
   "servers": [
     {

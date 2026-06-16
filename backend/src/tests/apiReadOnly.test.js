@@ -218,6 +218,13 @@ describe("read-only API coverage", () => {
     assert.equal(compact.data.openapi, "3.1.0");
     assert.match(compact.data.servers[0].url, /^http:\/\/127\.0\.0\.1:\d+$/);
 
+    const game = await get("/docs/openapi-gpt-action-game.json");
+    assert.equal(game.status, 200);
+    assert.equal(game.data.openapi, "3.1.0");
+    assert.equal(Object.keys(game.data.paths).length, 1);
+    assert.ok(game.data.paths["/api/turn/play"]);
+    assert.match(game.data.servers[0].url, /^http:\/\/127\.0\.0\.1:\d+$/);
+
     const adminExtra = await get("/docs/openapi-gpt-action-admin-extra.json");
     assert.equal(adminExtra.status, 200);
     assert.equal(adminExtra.data.openapi, "3.1.0");
