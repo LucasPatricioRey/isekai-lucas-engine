@@ -5,6 +5,7 @@ const Location = require("../models/Location");
 const Npc = require("../models/Npc");
 const NpcMemory = require("../models/NpcMemory");
 const KnowledgeRecord = require("../models/KnowledgeRecord");
+const EventLog = require("../models/EventLog");
 const {
   assert,
   post,
@@ -24,6 +25,7 @@ async function cleanupFixture() {
     Npc.deleteMany({ npcId: tempNpcId }),
     NpcMemory.deleteMany({ npcId: tempNpcId }),
     KnowledgeRecord.deleteMany({ gameId: tempGameId }),
+    EventLog.deleteMany({ gameId: tempGameId }),
   ]);
   tempGameId = "";
   tempLocationId = "";
@@ -158,6 +160,61 @@ describe("turn intake API", () => {
     assert.equal(response.data.narratorPacket.socialPacket.targetNpc.name, "Lira Test");
     assert.equal(response.data.narratorPacket.socialPacket.targetPresence.canNarrateDirectly, true);
     assert.equal(response.data.narratorPacket.socialPacket.mutationBoundary.includes("No modificar"), true);
+  });
+
+  it("keeps calm NPC comments on the social read-only route without treating location nouns as travel", async () => {
+    await createFixture();
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas le hace un comentario tranquilo a Lira Test sobre lo silenciosa que quedo la posada.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.intent, "social_scene");
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.route.needsMutation, false);
+    assert.equal(response.data.route.suggestedOperation, "narrateOnly");
+    assert.equal(response.data.route.domains.includes("travel"), false);
+    assert.equal(response.data.narratorPacket.packetProfile, "social_scene");
+    assert.equal(response.data.narratorPacket.socialPacket.targetNpc.name, "Lira Test");
+    assert.ok(
+      response.data.narratorPacket.displayBundle.stateLines.some((line) =>
+        line === "NPCs visibles/cerca: Lira Test."
+      )
+    );
+  });
+
+  it("does not keep the scene in a private room after a latest log says Lucas came downstairs", async () => {
+    await createFixture();
+    await EventLog.create({
+      logId: `log_${tempGameId}_downstairs`,
+      gameId: tempGameId,
+      day: 19,
+      timeStart: "22:10",
+      locationId: tempLocationId,
+      type: "social",
+      summary: "Lucas baja desde su cuarto para buscar a Lira Test y conversa un rato en voz baja.",
+      involvedNpcIds: [tempNpcId],
+      visibility: "private",
+      source: "player_action",
+    });
+
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas le hace un comentario tranquilo a Lira Test sobre lo silenciosa que quedo la posada.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.intent, "social_scene");
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.narratorPacket.state.narrativeLocation.privacy, "location_scope");
+    assert.equal(
+      response.data.narratorPacket.state.narrativeLocation.displayName,
+      "Sala social de prueba"
+    );
+    assert.equal(response.data.narratorPacket.socialPacket.targetPresence.canNarrateDirectly, true);
   });
 
   it("routes complex social requests to the existing fallback flow", async () => {

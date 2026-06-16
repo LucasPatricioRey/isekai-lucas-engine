@@ -43,8 +43,11 @@ function inferDomains(text) {
   const domains = [];
   const checks = [
     ["magic", /\b(magia|mana|hechizo|conjur|electric|rayo|chispa|medita|aqua)\b/],
-    ["social", /\b(habla|charla|conversa|bromea|dile|dice|pregunta|pide|saluda|agradece|disculpa|yara|fern|roberto|nia|eddan|garrick|mara|sael|doran)\b/],
-    ["travel", /\b(viaja|camina|corre|vuelve|va al|ir al|ruta|camino|sendero|bosque|gremio|posada)\b/],
+    ["social", /\b(habla|charla|conversa|bromea|comenta|comentario|responde|dile|dice|pregunta|pide|saluda|agradece|disculpa|yara|fern|roberto|nia|eddan|garrick|mara|sael|doran)\b/],
+    [
+      "travel",
+      /\b(viaja|camina|corre|vuelve|regresa|sale|entra|sube|baja|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|ruta|camino|sendero)\b/,
+    ],
     ["work", /\b(trabaja|turno|tardanza|contrato|servir|mesa|platos|roberto)\b/],
     ["rest_biology", /\b(descansa|duerme|come|bebe|hambre|cansancio|energia|saciedad|cama)\b/],
     ["economy", /\b(compra|vende|paga|precio|stock|monedas|cobre|plata|oro)\b/],
@@ -61,7 +64,12 @@ function inferDomains(text) {
 }
 
 function isSimpleSocialText(text) {
-  if (!textMatchesAny(text, [/\b(habla|charla|conversa|bromea|saluda|agradece|disculpa|dice)\b/])) {
+  if (
+    !textMatchesAny(text, [
+      /\b(habla|charla|conversa|bromea|saluda|agradece|disculpa|dice|comenta|comentario|responde)\b/,
+      /\ble hace un comentario\b/,
+    ])
+  ) {
     return false;
   }
 
@@ -103,9 +111,13 @@ function classifyTurn({ text = "", aiClassification = null } = {}) {
   ]);
 
   const likelyMutation = textMatchesAny(normalized, [
-    /\b(trabaja|entrena|practica|corre|viaja|camina|vuelve|va al|ir al|descansa|duerme|come|bebe|compra|vende|paga|toma|agarra|usa|ataca|conjura|lanza|acepta|rechaza|reporta|completa|investiga|revisa)\b/,
+    /\b(trabaja|entrena|practica|corre|viaja|camina|vuelve|regresa|sale|entra|sube|baja|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|descansa|duerme|come|bebe|compra|vende|paga|toma|agarra|usa|ataca|conjura|lanza|acepta|rechaza|reporta|completa|investiga|revisa)\b/,
   ]);
-  const likelySocial = domains.includes("social") && /\b(habla|charla|conversa|bromea|dice|pregunta|saluda|agradece|disculpa|pide)\b/.test(normalized);
+  const likelySocial =
+    domains.includes("social") &&
+    /\b(habla|charla|conversa|bromea|dice|pregunta|saluda|agradece|disculpa|pide|comenta|comentario|responde)\b/.test(
+      normalized
+    );
 
   if (continueScene || observeOnly || (!normalized && !likelyMutation)) {
     return {
@@ -160,7 +172,7 @@ function classifyTurn({ text = "", aiClassification = null } = {}) {
       suggestedOperation: "resolveTurn_or_existing_flow",
       supported: false,
       confidence: "medium",
-      fallbackReason: "Fase 1 solo cubre narracion sin mutacion.",
+      fallbackReason: "La ruta rapida read-only no cubre esta accion; usar resolver o flujo existente.",
     };
   }
 
@@ -307,8 +319,9 @@ function inferNarrativeLocation({ location = null, parentLocation = null, latest
   );
   const isInn = /grulla|posada|inn|tavern/.test(locationText);
   const roomMention = /\b(cuarto|habitacion|cama|sube a su cuarto|en su cuarto)\b/.test(summary);
+  const movedOutOfRoom = /\b(baja desde su cuarto|baja de su cuarto|sale de su cuarto|sale del cuarto|baja a la sala|baja al comedor|baja a la cocina|vuelve a la sala|vuelve al comedor)\b/.test(summary);
 
-  if (isInn && roomMention) {
+  if (isInn && roomMention && !movedOutOfRoom) {
     return {
       locationId: location?.locationId || "",
       canonicalName: locationName,
@@ -329,6 +342,18 @@ function inferNarrativeLocation({ location = null, parentLocation = null, latest
     parentLocationName: parentLocation?.name || "",
     privacy: "location_scope",
   };
+}
+
+function composePresenceLine(visible = [], nearby = []) {
+  const visibleNames = visible.map((npc) => npc.name || npc.npcId);
+  const nearbyNames = nearby.map((npc) => npc.name || npc.npcId);
+  return visibleNames.length && nearbyNames.length
+    ? `${visibleNames.join(", ")}; cerca/probables: ${nearbyNames.join(", ")}`
+    : visibleNames.length
+      ? visibleNames.join(", ")
+      : nearbyNames.length
+        ? `cerca/probables: ${nearbyNames.join(", ")}`
+        : "ninguno visible";
 }
 
 function summarizeNpcPresence(npcs = [], location = null, narrativeLocation = null) {
@@ -361,21 +386,34 @@ function summarizeNpcPresence(npcs = [], location = null, narrativeLocation = nu
     }
   }
 
-  const visibleNames = visible.map((npc) => npc.name || npc.npcId);
-  const nearbyNames = nearby.map((npc) => npc.name || npc.npcId);
-  const line = visibleNames.length && nearbyNames.length
-    ? `${visibleNames.join(", ")}; cerca/probables: ${nearbyNames.join(", ")}`
-    : visibleNames.length
-      ? visibleNames.join(", ")
-      : nearbyNames.length
-        ? `cerca/probables: ${nearbyNames.join(", ")}`
-        : "ninguno visible";
-
   return {
     visible,
     nearby,
-    line,
+    line: composePresenceLine(visible, nearby),
     offscreenHint: "",
+  };
+}
+
+function includeSocialTargetInPresence(npcPresence = {}, socialPacket = null) {
+  const target = socialPacket?.targetNpc;
+  if (!target?.npcId) return npcPresence;
+  const visible = [...(npcPresence.visible || [])];
+  const nearby = [...(npcPresence.nearby || [])];
+  const alreadyListed = [...visible, ...nearby].some((npc) => npc.npcId === target.npcId);
+  if (!alreadyListed) {
+    visible.push({
+      npcId: target.npcId,
+      name: target.name,
+      role: target.role || "",
+      currentTask: target.currentTask || "",
+      availability: target.availability || {},
+    });
+  }
+  return {
+    ...npcPresence,
+    visible,
+    nearby,
+    line: composePresenceLine(visible, nearby),
   };
 }
 
@@ -631,7 +669,7 @@ async function buildNarratorPacket({ text = "", aiClassification = null, gameId 
         .limit(16)
         .lean()
     : [];
-  const npcPresence = summarizeNpcPresence(npcs, location, narrativeLocation);
+  let npcPresence = summarizeNpcPresence(npcs, location, narrativeLocation);
   const visibleEvents = activeEvents.filter((event) => eventVisibleToLucas(event, { locationIds }));
   let socialPacket = null;
   if (route.intent === "social_scene") {
@@ -647,6 +685,7 @@ async function buildNarratorPacket({ text = "", aiClassification = null, gameId 
       };
     }
   }
+  npcPresence = includeSocialTargetInPresence(npcPresence, socialPacket);
   const displayBundle = buildNoMutationDisplayBundle({
     gameState,
     narrativeLocation,
