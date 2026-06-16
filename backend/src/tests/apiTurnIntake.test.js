@@ -174,6 +174,18 @@ async function createFixture() {
     startDay: 19,
     shifts: [
       {
+        shiftId: "shift_test_turn_intake_morning_0700_1200",
+        name: "Turno manana La Grulla Azul",
+        startTime: "07:00",
+        endTime: "12:00",
+        activityCategory: "trabajo_normal",
+        expectedMinutes: 300,
+        payCopper: 70,
+        status: "active",
+        includedMealIds: ["meal_test_turn_intake_light"],
+        lateGraceMinutes: 0,
+      },
+      {
         shiftId: "shift_test_turn_intake_afternoon_1400_2030",
         name: "Turno tarde La Grulla Azul",
         startTime: "14:00",
@@ -187,6 +199,13 @@ async function createFixture() {
       },
     ],
     mealBenefits: [
+      {
+        mealId: "meal_test_turn_intake_light",
+        name: "Comida ligera/desayuno de contrato",
+        satietyBonus: 20,
+        energyBonus: 2,
+        notes: "Fixture de comida ligera incluida para intake.",
+      },
       {
         mealId: "meal_test_turn_intake_main",
         name: "Comida principal de contrato",
@@ -542,6 +561,80 @@ describe("turn intake API", () => {
       executed.data.aggregateDisplayBundle.renderLines.some((line) =>
         String(line).includes("17:05→21:30")
       )
+    );
+  });
+
+  it("keeps wait-to-afternoon shift plans on the afternoon shift despite light meal wording", async () => {
+    await createFixture();
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      {
+        $set: {
+          currentDay: 21,
+          locationId: "loc_hoshimori_grulla_azul",
+          time: "07:00",
+          block: "Ma\u00f1ana",
+        },
+      }
+    );
+
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text:
+        "Lucas espera a que sean las 14 de forma tranquila, despues trabaja el turno de la tarde hasta la hora de cierre, luego pide la comida ligera incluida por contrato para comer, sube a su cuarto y practica meditacion de mana durante una hora.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.route.suggestedOperation, "executeActionPlan");
+    assert.equal(response.data.actionPlanPacket.selectedOperation, "executeActionPlan");
+    assert.equal(response.data.actionPlanPacket.operations.length, 3);
+    assert.deepEqual(
+      response.data.actionPlanPacket.operations.map((operation) => operation.selectedOperation),
+      ["resolveTurn", "completeJobShift", "applyTurn"]
+    );
+
+    const [waitOperation, completeOperation, magicOperation] = response.data.actionPlanPacket.operations;
+    assert.equal(waitOperation.request.sequence[0].minutes, 420);
+    assert.equal(completeOperation.request.pathParams.shiftId, "shift_test_turn_intake_afternoon_1400_2030");
+    assert.deepEqual(completeOperation.request.body.consumeIncludedMealIds, ["meal_test_turn_intake_main"]);
+    assert.equal(completeOperation.request.body.mealTiming, "after_work_cost");
+    assert.equal(completeOperation.expectedStateBefore.time, "14:00");
+    assert.equal(magicOperation.expectedStateBefore.time, "20:30");
+    assert.equal(magicOperation.request.timeAdvance.from, "20:30");
+    assert.equal(magicOperation.request.timeAdvance.to, "21:30");
+    assert.equal(
+      response.data.actionPlanPacket.unresolvedSlots.some((slot) => slot.slotId === "contract_meal_label_mismatch"),
+      true
+    );
+
+    const executed = await post("/api/turn/action-plan/execute", response.data.actionPlanPacket.request);
+    assert.equal(executed.status, 200, JSON.stringify(executed.data));
+    assert.equal(executed.data.ok, true);
+    assert.equal(executed.data.operationCount, 3);
+    assert.deepEqual(
+      executed.data.operationsExecuted.map((operation) => operation.selectedOperation),
+      ["resolveTurn", "completeJobShift", "applyTurn"]
+    );
+    assert.ok(
+      executed.data.aggregateDisplayBundle.changeLines.some((line) =>
+        String(line).includes("Turno laboral completado")
+      )
+    );
+    assert.ok(
+      executed.data.aggregateDisplayBundle.changeLines.some((line) =>
+        String(line).includes("Dinero:")
+      )
+    );
+    assert.ok(
+      executed.data.aggregateDisplayBundle.changeLines.some((line) =>
+        String(line).includes("Pr\u00e1ctica m\u00e1gica") || String(line).includes("Practica magica")
+      )
+    );
+    assert.equal(
+      executed.data.warnings.some((line) => String(line).includes("Comida de contrato corregida por turno")),
+      true
     );
   });
 

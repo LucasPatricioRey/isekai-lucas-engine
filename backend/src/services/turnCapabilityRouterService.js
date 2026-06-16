@@ -477,12 +477,24 @@ function detectCompleteJobShiftPlan(text = "") {
     return null;
   }
 
+  const waitUntilMatch = text.match(/\b(?:espera|esperar|descansa|descansar|aguarda|aguardar|se queda)\b.{0,80}\b(?:hasta|a que sean)\b.{0,20}\b(?:las\s*)?(\d{1,2})(?::(\d{2}))?\b/);
+  const preferredShiftStartTime =
+    /\b(turno\s+de\s+la\s+tarde|turno\s+tarde|tarde)\b/.test(text)
+      ? "14:00"
+      : /\b(turno\s+de\s+la\s+manana|turno\s+manana|manana)\b/.test(text)
+        ? "07:00"
+        : "";
+
   return {
     consumeContractMeal: /\b(comida|plato|cena)\b.*\b(contrato|incluida|incluido)\b/.test(text),
     allowLateCompletion: /\b(tarde|tardanza|llego tarde|llega tarde)\b/.test(text),
     contractMealTiming: /\b(cierre|cerrar|fin del turno|terminar el turno|termina el turno)\b.*\b(luego|despues|despues de eso)\b.*\b(comida|plato|cena)\b.*\b(contrato|incluida|incluido)\b/.test(text)
       ? "after_work_cost"
       : "before_work_cost",
+    preferredShiftStartTime,
+    waitUntilTime: waitUntilMatch
+      ? `${String(Number(waitUntilMatch[1])).padStart(2, "0")}:${String(waitUntilMatch[2] || "00").padStart(2, "0")}`
+      : "",
   };
 }
 

@@ -498,6 +498,66 @@ function selectActiveShift(contract = {}, gameState = {}) {
   );
 }
 
+function shiftMatchesPreferredTime(shift = {}, preferredStartTime = "") {
+  return preferredStartTime && shift.startTime === preferredStartTime;
+}
+
+function shiftMatchesText(shift = {}, normalizedText = "") {
+  const name = normalizeText(`${shift.shiftId || ""} ${shift.name || ""}`);
+  if (/\b(turno\s+de\s+la\s+tarde|turno\s+tarde)\b/.test(normalizedText)) {
+    return shiftMatchesPreferredTime(shift, "14:00") || /\btarde\b/.test(name);
+  }
+  if (/\b(turno\s+de\s+la\s+manana|turno\s+manana)\b/.test(normalizedText)) {
+    return shiftMatchesPreferredTime(shift, "07:00") || /\bmanana\b/.test(name);
+  }
+  return false;
+}
+
+function selectShiftForCompletion(contract = {}, gameState = {}, { text = "", plan = {} } = {}) {
+  const shifts = (contract.shifts || []).filter((shift) => shift.status !== "inactive");
+  const normalizedText = normalizeText(text);
+  return (
+    shifts.find((shift) => shiftMatchesPreferredTime(shift, plan.preferredShiftStartTime || "")) ||
+    shifts.find((shift) => shiftMatchesText(shift, normalizedText)) ||
+    shifts.find((shift) => shiftContainsTime(shift, plan.effectiveTime || gameState.time || "")) ||
+    selectActiveShift(contract, gameState)
+  );
+}
+
+function contractMealLabelMismatch({ text = "", shift = null, contract = null } = {}) {
+  const normalized = normalizeText(text);
+  if (!shift || !contract || !/\b(comida|plato|cena)\b.*\b(contrato|incluida|incluido)\b/.test(normalized)) {
+    return null;
+  }
+
+  const requestedLight = /\b(ligera|ligero|desayuno)\b/.test(normalized);
+  const requestedMain = /\b(principal|cena|almuerzo)\b/.test(normalized);
+  if (!requestedLight && !requestedMain) return null;
+
+  const mealIds = new Set(shift.includedMealIds || []);
+  const mealNames = (contract.mealBenefits || [])
+    .filter((meal) => mealIds.has(meal.mealId))
+    .map((meal) => normalizeText(`${meal.mealId || ""} ${meal.name || ""}`))
+    .join(" ");
+  const selectedLooksLight = /\b(light|ligera|ligero|desayuno|breakfast)\b/.test(mealNames);
+  const selectedLooksMain = /\b(main|principal|cena|almuerzo)\b/.test(mealNames);
+
+  if ((requestedLight && selectedLooksMain) || (requestedMain && selectedLooksLight)) {
+    return {
+      slotId: "contract_meal_label_mismatch",
+      type: "contract_meal",
+      severity: "warning",
+      requested: requestedLight ? "light" : "main",
+      selectedMealIds: Array.from(mealIds),
+      reason:
+        "La etiqueta de comida pedida no coincide con la comida incluida por el turno seleccionado; se usa la comida canonica del turno.",
+      displayLine:
+        "Comida de contrato corregida por turno: se usa la comida incluida canonica del turno seleccionado.",
+    };
+  }
+  return null;
+}
+
 function operationActionPolicy(selectedOperation = "") {
   const call = selectedOperation ? [selectedOperation] : [];
   return {
@@ -553,10 +613,10 @@ async function buildCompleteJobShiftActionPacket({ route = {}, text = "", gameSt
   const characterId = gameState.characterId || "char_lucas";
   const contract = await JobContract.findOne({ characterId, status: "active" }).lean();
   if (!contract) return null;
-  const shift = selectActiveShift(contract, gameState);
+  const plan = route.slots?.completeJobShiftPlan || {};
+  const shift = selectShiftForCompletion(contract, gameState, { text, plan });
   if (!shift?.shiftId) return null;
 
-  const plan = route.slots?.completeJobShiftPlan || {};
   const currentMinutes = timeToMinutes(gameState.time || "");
   const shiftStartMinutes = timeToMinutes(shift.startTime);
   const needsLateCompletionFlag =
@@ -598,6 +658,14 @@ async function buildCompleteJobShiftActionPacket({ route = {}, text = "", gameSt
       shiftEndTime: shift.endTime || "",
       characterId,
       consumeIncludedMealIds,
+      contractMealBenefits: (contract.mealBenefits || [])
+        .filter((meal) => consumeIncludedMealIds.includes(meal.mealId))
+        .map((meal) => ({
+          mealId: meal.mealId,
+          name: meal.name || meal.mealId,
+          satietyBonus: meal.satietyBonus || 0,
+          energyBonus: meal.energyBonus || 0,
+        })),
     },
     actionPolicy: operationActionPolicy("completeJobShift"),
     boundary:
@@ -826,13 +894,80 @@ async function buildShiftThenSafeMagicActionPlanPacket({ route = {}, text = "", 
   const safeMagicPlan = detectSafeMagicPracticePlan(normalizeText(text));
   if (!safeMagicPlan?.techniqueId) return null;
 
-  const completePacket = await buildCompleteJobShiftActionPacket({ route, text, gameState });
+  const completePlan = route.slots?.completeJobShiftPlan || {};
+  const operations = [];
+  let effectiveGameState = { ...gameState };
+
+  if (completePlan.waitUntilTime) {
+    const waitMinutes = minutesUntilTargetTime(gameState, completePlan.waitUntilTime);
+    const target = Number.isInteger(waitMinutes) && waitMinutes > 0
+      ? addMinutesToStateTime(gameState, waitMinutes)
+      : null;
+    if (target) {
+      operations.push({
+        order: operations.length + 1,
+        selectedOperation: "resolveTurn",
+        operationId: "resolveTurn",
+        endpoint: {
+          method: "POST",
+          path: "/api/turn/resolve",
+        },
+        request: {
+          gameId: gameState.gameId || DEFAULT_GAME_ID,
+          clientTurnId: makeActionClientTurnId({ gameState, text, operation: "wait" }),
+          responseProfile: "compact",
+          actionFamily: "rest",
+          actionSummary: `Lucas espera de forma tranquila hasta las ${completePlan.waitUntilTime}.`,
+          visibility: "private",
+          sequence: [
+            {
+              type: "wait",
+              minutes: waitMinutes,
+              category: "descanso_sentado",
+              reason: "Espera tranquila indicada por el jugador antes del turno laboral.",
+            },
+          ],
+        },
+        summary: {
+          capabilityId: "wait_until_shift_start",
+          fromDay: gameState.currentDay,
+          fromTime: gameState.time || "",
+          toDay: target.toDay,
+          toTime: target.to,
+          minutes: waitMinutes,
+        },
+        boundary:
+          "Operacion interna del plan: esperar/descansar hasta la hora indicada antes del turno. No ejecutar fuera de executeActionPlan.",
+      });
+      effectiveGameState = {
+        ...effectiveGameState,
+        currentDay: target.toDay,
+        time: target.to,
+      };
+    }
+  }
+
+  const completeRoute = {
+    ...route,
+    slots: {
+      ...(route.slots || {}),
+      completeJobShiftPlan: {
+        ...completePlan,
+        effectiveTime: effectiveGameState.time,
+      },
+    },
+  };
+  const completePacket = await buildCompleteJobShiftActionPacket({
+    route: completeRoute,
+    text,
+    gameState: effectiveGameState,
+  });
   if (!completePacket?.supported) return null;
   const shiftEndTime = completePacket.summary?.shiftEndTime;
   if (!shiftEndTime) return null;
 
   const virtualGameState = {
-    ...gameState,
+    ...effectiveGameState,
     time: shiftEndTime,
   };
   const magicRoute = {
@@ -849,20 +984,40 @@ async function buildShiftThenSafeMagicActionPlanPacket({ route = {}, text = "", 
   });
   if (!magicPacket?.supported) return null;
 
-  const operations = [
-    operationFromActionPacket(completePacket, { order: 1 }),
-    operationFromActionPacket(magicPacket, {
-      order: 2,
-      dependsOnPrevious: true,
-      expectedStateBefore: {
-        gameId: gameState.gameId || DEFAULT_GAME_ID,
-        day: gameState.currentDay,
-        time: shiftEndTime,
-        reason: "completeJobShift debe dejar el reloj en el cierre del turno antes de aplicar la practica magica.",
-      },
-    }),
-  ];
+  const completeOrder = operations.length + 1;
+  operations.push(operationFromActionPacket(completePacket, {
+    order: completeOrder,
+    dependsOnPrevious: completeOrder > 1,
+    expectedStateBefore: completeOrder > 1
+      ? {
+          gameId: gameState.gameId || DEFAULT_GAME_ID,
+          day: effectiveGameState.currentDay,
+          time: effectiveGameState.time,
+          reason: "La espera previa debe dejar el reloj en el inicio previsto del turno antes de completar el turno.",
+        }
+      : null,
+  }));
+  operations.push(operationFromActionPacket(magicPacket, {
+    order: operations.length + 1,
+    dependsOnPrevious: true,
+    expectedStateBefore: {
+      gameId: gameState.gameId || DEFAULT_GAME_ID,
+      day: effectiveGameState.currentDay,
+      time: shiftEndTime,
+      reason: "completeJobShift debe dejar el reloj en el cierre del turno antes de aplicar la practica magica.",
+    },
+  }));
   const unresolvedSlots = detectActionPlanUnresolvedSlots(text);
+  const mealMismatch = contractMealLabelMismatch({
+    text,
+    shift: {
+      includedMealIds: completePacket.summary?.consumeIncludedMealIds || [],
+    },
+    contract: {
+      mealBenefits: completePacket.summary?.contractMealBenefits || [],
+    },
+  });
+  if (mealMismatch) unresolvedSlots.push(mealMismatch);
   const clientPlanId = makeActionClientTurnId({ gameState, text, operation: "plan" });
   const summary = {
     capabilityId: "composite_shift_then_safe_magic",
@@ -872,6 +1027,10 @@ async function buildShiftThenSafeMagicActionPlanPacket({ route = {}, text = "", 
     startsAt: {
       day: gameState.currentDay,
       time: gameState.time || "",
+    },
+    effectiveShiftStart: {
+      day: effectiveGameState.currentDay,
+      time: effectiveGameState.time || "",
     },
     expectedFinal: {
       day: magicPacket.request?.timeAdvance?.toDay,

@@ -1,8 +1,9 @@
 const { applyTurn } = require("../controllers/turnController");
 const { completeShift } = require("./jobService");
+const { buildResolveTurnPayload } = require("./turnResolverService");
 const { renderBundleLines } = require("../utils/turnDisplayBundle");
 
-const SUPPORTED_OPERATIONS = new Set(["applyTurn", "completeJobShift"]);
+const SUPPORTED_OPERATIONS = new Set(["applyTurn", "completeJobShift", "resolveTurn"]);
 
 function uniqueLines(lines = []) {
   const seen = new Set();
@@ -222,6 +223,22 @@ async function invokeCompleteJobShift(operation = {}) {
   };
 }
 
+async function invokeResolveTurn(operation = {}) {
+  const requestBody = operation.request || operation.body || {};
+  const { applyTurnPayload, resolverPlan } = await buildResolveTurnPayload(requestBody, {
+    forceDryRun: false,
+  });
+  const { statusCode, payload } = await invokeApplyTurn(applyTurnPayload);
+  return {
+    statusCode,
+    payload: {
+      ...payload,
+      resolverPlan,
+      resolvedApplyTurnPayload: requestBody.includeResolvedPayload ? applyTurnPayload : undefined,
+    },
+  };
+}
+
 async function executeOperation(operation = {}) {
   const selectedOperation = operation.selectedOperation || operation.operationId || "";
   if (!SUPPORTED_OPERATIONS.has(selectedOperation)) {
@@ -233,6 +250,9 @@ async function executeOperation(operation = {}) {
   if (selectedOperation === "completeJobShift") {
     return invokeCompleteJobShift(operation);
   }
+  if (selectedOperation === "resolveTurn") {
+    return invokeResolveTurn(operation);
+  }
   return invokeApplyTurn(operation.request || operation.body || {});
 }
 
@@ -241,8 +261,22 @@ async function executeActionPlan(body = {}) {
   const operationResults = [];
 
   for (const operation of operations) {
-    const { statusCode, payload } = await executeOperation(operation);
-    operationResults.push(summarizePayload({ operation, payload, statusCode }));
+    try {
+      const { statusCode, payload } = await executeOperation(operation);
+      operationResults.push(summarizePayload({ operation, payload, statusCode }));
+    } catch (error) {
+      throw makePlanError(error.message || "executeActionPlan fallo durante una operacion.", {
+        errorCode: error.details?.errorCode || "ACTION_PLAN_OPERATION_FAILED",
+        failedOperation: {
+          order: operation.order,
+          selectedOperation: operation.selectedOperation || operation.operationId || "",
+          operationId: operation.operationId || operation.selectedOperation || "",
+        },
+        operationsAttempted: operationResults.length,
+        operationResults,
+        details: error.details || undefined,
+      }, error.statusCode || 500);
+    }
   }
 
   const actionSummary =

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions",
-    "version": "2.29.0",
+    "version": "2.30.0",
     "description": "Schema normal para GPT Actions. Incluye intakeTurn como Capability Router hacia narracion, resolveTurn, actionPacket o executeActionPlan, mas previews, lecturas y mutadores controlados."
   },
   "servers": [
@@ -2955,7 +2955,7 @@
           },
           "operations": {
             "type": "array",
-            "description": "Ordered operations from actionPlanPacket.operations. Do not edit by hand in normal play.",
+            "description": "Ordered operations from actionPlanPacket.operations. Backend may execute resolveTurn, completeJobShift and applyTurn internally. Do not edit by hand in normal play.",
             "items": {
               "type": "object",
               "additionalProperties": true
@@ -4546,7 +4546,7 @@
       "post": {
         "operationId": "executeActionPlan",
         "summary": "Ejecuta un actionPlanPacket completo y devuelve HUD agregado.",
-        "description": "Ejecuta operaciones materializadas por intakeTurn en orden y devuelve aggregateDisplayBundle. Usar cuando intakeTurn entregue actionPlanPacket.",
+        "description": "Executes an actionPlanPacket produced by intakeTurn in backend order, including internal resolveTurn/completeJobShift/applyTurn operations, and returns aggregateDisplayBundle.",
         "requestBody": {
           "required": true,
           "content": {
