@@ -12,6 +12,7 @@ const {
   startApi,
   stopApi,
 } = require("./apiTestClient");
+const { classifyTurn } = require("../services/turnIntakeService");
 
 let tempGameId = "";
 let tempLocationId = "";
@@ -183,6 +184,35 @@ describe("turn intake API", () => {
         line === "NPCs visibles/cerca: Lira Test."
       )
     );
+  });
+
+  it("classifies simple Roberto questions as social read-only instead of work fallback", () => {
+    const route = classifyTurn({
+      text: "Lucas le pregunta a Roberto si todavia queda mucho por cerrar.",
+    });
+
+    assert.equal(route.intent, "social_scene");
+    assert.equal(route.supported, true);
+    assert.equal(route.needsMutation, false);
+    assert.equal(route.suggestedOperation, "narrateOnly");
+    assert.equal(route.domains.includes("work"), false);
+  });
+
+  it("returns a social packet for simple questions about a visible NPC current task", async () => {
+    await createFixture();
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas le pregunta a Lira Test que esta haciendo.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.intent, "social_scene");
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.route.needsMutation, false);
+    assert.equal(response.data.route.suggestedOperation, "narrateOnly");
+    assert.equal(response.data.narratorPacket.packetProfile, "social_scene");
+    assert.equal(response.data.narratorPacket.socialPacket.targetNpc.name, "Lira Test");
   });
 
   it("does not keep the scene in a private room after a latest log says Lucas came downstairs", async () => {

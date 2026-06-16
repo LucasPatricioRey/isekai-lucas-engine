@@ -48,7 +48,7 @@ function inferDomains(text) {
       "travel",
       /\b(viaja|camina|corre|vuelve|regresa|sale|entra|sube|baja|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|ruta|camino|sendero)\b/,
     ],
-    ["work", /\b(trabaja|turno|tardanza|contrato|servir|mesa|platos|roberto)\b/],
+    ["work", /\b(trabaja|turno|tardanza|contrato|servir|mesa|platos|jornada|asistencia|llegada tarde)\b/],
     ["rest_biology", /\b(descansa|duerme|come|bebe|hambre|cansancio|energia|saciedad|cama)\b/],
     ["economy", /\b(compra|vende|paga|precio|stock|monedas|cobre|plata|oro)\b/],
     ["mission_event", /\b(mision|cartelera|evento|recompensa|reporte|gremio)\b/],
@@ -66,7 +66,7 @@ function inferDomains(text) {
 function isSimpleSocialText(text) {
   if (
     !textMatchesAny(text, [
-      /\b(habla|charla|conversa|bromea|saluda|agradece|disculpa|dice|comenta|comentario|responde)\b/,
+      /\b(habla|charla|conversa|bromea|saluda|agradece|disculpa|dice|pregunta|comenta|comentario|responde)\b/,
       /\ble hace un comentario\b/,
     ])
   ) {
