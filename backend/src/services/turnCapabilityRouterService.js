@@ -797,6 +797,26 @@ function commonResolverPlan({ text = "", destinationAliases = DEFAULT_DESTINATIO
   };
 }
 
+function compactClausePlan(clausePlan = {}) {
+  return {
+    schemaVersion: clausePlan.schemaVersion || "turn_clause_plan_v1",
+    clauseCount: clausePlan.clauseCount || 0,
+    isCompound: Boolean(clausePlan.isCompound),
+    domains: asArray(clausePlan.domains),
+    operationClasses: asArray(clausePlan.operationClasses),
+    hasWorkCompletion: Boolean(clausePlan.hasWorkCompletion),
+    hasWorkSegment: Boolean(clausePlan.hasWorkSegment),
+    hasSafeMagicPractice: Boolean(clausePlan.hasSafeMagicPractice),
+    hasMeal: Boolean(clausePlan.hasMeal),
+    clauses: asArray(clausePlan.clauses).map((clause) => ({
+      order: clause.order,
+      operationClasses: asArray(clause.operationClasses),
+      domains: asArray(clause.domains),
+      targetTime: clause.targetTime || "",
+    })),
+  };
+}
+
 function routeFromCapability({
   capabilityId,
   domains = [],
@@ -847,6 +867,7 @@ function routeFromCapability({
 function routeTurnIntent({ text = "", aiClassification = null, destinationAliases = DEFAULT_DESTINATION_ALIASES } = {}) {
   const normalized = normalizeText(text);
   const clausePlan = parseTurnClauses(normalized);
+  const routeClausePlan = compactClausePlan(clausePlan);
   const aiDomains = asArray(aiClassification?.domains).map((domain) => String(domain || "").trim()).filter(Boolean);
   const domains = unique([...inferDomains(normalized), ...clausePlan.domains, ...aiDomains]);
   const mechanicalDomains = domains.filter((domain) => domain !== "scene");
@@ -993,7 +1014,7 @@ function routeTurnIntent({ text = "", aiClassification = null, destinationAliase
         supported: false,
         confidence: "medium",
         fallbackReason: "Requiere materializar contrato/turno activo desde Mongo antes de llamar completeJobShift.",
-        slots: { completeJobShiftPlan, clausePlan },
+        slots: { completeJobShiftPlan, clausePlan: routeClausePlan },
       });
     }
 
@@ -1008,7 +1029,7 @@ function routeTurnIntent({ text = "", aiClassification = null, destinationAliase
         supported: false,
         confidence: "medium",
         fallbackReason: "Requiere materializar tecnica magica segura y tiempo desde Mongo antes de llamar applyTurn.",
-        slots: { safeMagicPracticePlan, clausePlan },
+        slots: { safeMagicPracticePlan, clausePlan: routeClausePlan },
       });
     }
 
@@ -1037,7 +1058,7 @@ function routeTurnIntent({ text = "", aiClassification = null, destinationAliase
       slots: {
         commonResolverCandidate: Boolean(resolverPlan.steps.length),
         unsupportedResolverReasons: resolverPlan.unsupportedReasons,
-        clausePlan,
+        clausePlan: routeClausePlan,
       },
       resolverPlan: resolverPlan.steps.length ? resolverPlan : null,
     });
