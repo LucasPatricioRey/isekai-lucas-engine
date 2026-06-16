@@ -55,6 +55,7 @@ function classifyTurn({ text = "", aiClassification = null } = {}) {
   const normalized = normalizeText(text);
   const aiDomains = asArray(aiClassification?.domains).map((domain) => String(domain || "").trim()).filter(Boolean);
   const domains = unique([...inferDomains(normalized), ...aiDomains]);
+  const mechanicalDomains = domains.filter((domain) => domain !== "scene");
 
   const continueScene = textMatchesAny(normalized, [
     /^continuar( historia)?$/,
@@ -70,6 +71,8 @@ function classifyTurn({ text = "", aiClassification = null } = {}) {
     /^lucas observa( alrededor)?$/,
     /^miro( alrededor)?$/,
     /^observo( alrededor)?$/,
+    /\b(lucas )?(se queda )?(mirando|observando|escuchando|mira|observa|escucha)\b.*\b(alrededor|entorno|cuarto|habitacion|sala|lugar|puerta|ventana)\b/,
+    /\b(echa|hecha) un vistazo\b/,
     /^pensar$/,
     /^lucas piensa$/,
   ]);
@@ -102,9 +105,20 @@ function classifyTurn({ text = "", aiClassification = null } = {}) {
     };
   }
 
-  if (likelyMutation || domains.length > 0) {
+  if (!likelyMutation && mechanicalDomains.length === 0) {
     return {
-      intent: domains.length > 1 ? "compound" : domains[0] || "player_action",
+      intent: observeOnly ? "observe_scene" : "continue_scene",
+      domains: domains.length ? domains : ["scene"],
+      needsMutation: false,
+      suggestedOperation: "narrateOnly",
+      supported: true,
+      confidence: aiClassification?.needsMutation === false ? "high" : "medium",
+    };
+  }
+
+  if (likelyMutation || mechanicalDomains.length > 0) {
+    return {
+      intent: mechanicalDomains.length > 1 ? "compound" : mechanicalDomains[0] || "player_action",
       domains: domains.length ? domains : ["scene"],
       needsMutation: true,
       suggestedOperation: "resolveTurn_or_existing_flow",

@@ -179,6 +179,22 @@ describe("read-only API coverage", () => {
     assert.equal(response.data.route.suggestedOperation, "resolveTurn_or_existing_flow");
   });
 
+  it("keeps passive look-around scene turns on the narrator-only route", async () => {
+    const response = await post("/api/turn/intake", {
+      text: "lucas se queda mirando a su alrededor",
+      aiClassification: {
+        intent: "scene",
+        domains: ["scene"],
+      },
+    });
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.intent, "observe_scene");
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.route.needsMutation, false);
+    assert.equal(response.data.route.suggestedOperation, "narrateOnly");
+  });
+
   it("serves read-only state audit for technical admin mode", async () => {
     const audit = await get("/api/context/audit-state");
     assert.equal(audit.status, 200);
