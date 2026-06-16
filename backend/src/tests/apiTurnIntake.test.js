@@ -194,7 +194,7 @@ describe("turn intake API", () => {
       timeStart: "22:10",
       locationId: tempLocationId,
       type: "social",
-      summary: "Lucas baja desde su cuarto para buscar a Lira Test y conversa un rato en voz baja.",
+      summary: "Lucas bajo desde su cuarto para buscar a Lira Test y conversa un rato en voz baja.",
       involvedNpcIds: [tempNpcId],
       visibility: "private",
       source: "player_action",

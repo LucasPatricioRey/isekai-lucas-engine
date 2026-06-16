@@ -326,7 +326,7 @@ function inferNarrativeLocation({ location = null, parentLocation = null, latest
   );
   const isInn = /grulla|posada|inn|tavern/.test(locationText);
   const roomMention = /\b(cuarto|habitacion|cama|sube a su cuarto|en su cuarto)\b/.test(summary);
-  const movedOutOfRoom = /\b(baja desde su cuarto|baja de su cuarto|sale de su cuarto|sale del cuarto|baja a la sala|baja al comedor|baja a la cocina|vuelve a la sala|vuelve al comedor)\b/.test(summary);
+  const movedOutOfRoom = /\b(baja desde su cuarto|bajo desde su cuarto|baja de su cuarto|bajo de su cuarto|sale de su cuarto|salio de su cuarto|sale del cuarto|salio del cuarto|baja a la sala|bajo a la sala|baja al comedor|bajo al comedor|baja a la cocina|bajo a la cocina|vuelve a la sala|volvio a la sala|vuelve al comedor|volvio al comedor)\b/.test(summary);
   const logIsCurrent = latestLogTouchesCurrentMoment(latestLog, gameState);
 
   if (isInn && roomMention && logIsCurrent && !movedOutOfRoom) {
