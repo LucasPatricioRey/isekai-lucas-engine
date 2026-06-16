@@ -79,6 +79,26 @@ async function createFixture() {
       status: "available",
       reason: "",
     },
+    routineBase: [
+      {
+        timeStart: "06:00",
+        timeEnd: "12:00",
+        locationId: tempLocationId,
+        task: "trabajo de sala y preparacion",
+      },
+      {
+        timeStart: "12:00",
+        timeEnd: "21:30",
+        locationId: tempLocationId,
+        task: "atencion de sala y cierre menor",
+      },
+      {
+        timeStart: "21:30",
+        timeEnd: "06:00",
+        locationId: tempLocationId,
+        task: "descansando",
+      },
+    ],
     personality: ["prudente", "observadora"],
     speechStyle: "frases breves, baja la voz antes de contradecir",
     values: ["respeto por el trabajo"],
@@ -161,6 +181,8 @@ describe("turn intake API", () => {
     assert.equal(response.data.narratorPacket.socialPacket.targetNpc.name, "Lira Test");
     assert.equal(response.data.narratorPacket.socialPacket.targetPresence.canNarrateDirectly, true);
     assert.equal(response.data.narratorPacket.socialPacket.mutationBoundary.includes("No modificar"), true);
+    assert.equal(response.data.directorPacket.schemaVersion, "turn_director_readonly_v1");
+    assert.equal(response.data.directorPacket.actionPolicy.gptShouldNotCall.includes("getNpcFull"), true);
   });
 
   it("keeps calm NPC comments on the social read-only route without treating location nouns as travel", async () => {
@@ -253,6 +275,61 @@ describe("turn intake API", () => {
     assert.equal(response.data.route.suggestedOperation, "narrateOnly");
     assert.equal(response.data.narratorPacket.packetProfile, "social_scene");
     assert.equal(response.data.narratorPacket.socialPacket.targetNpc.name, "Lira Test");
+    assert.equal(response.data.narratorPacket.socialPacket.questionContext.type, "work_pattern");
+    assert.equal(
+      response.data.narratorPacket.socialPacket.questionContext.routineBrief.typicalStart.time,
+      "06:00"
+    );
+  });
+
+  it("resolves continuity social schedule questions without naming the NPC", async () => {
+    await createFixture();
+    await EventLog.create({
+      logId: `log_${tempGameId}_latest_social`,
+      gameId: tempGameId,
+      day: 19,
+      timeStart: "11:55",
+      timeEnd: "12:00",
+      locationId: tempLocationId,
+      type: "social",
+      summary: "Lucas converso con Lira Test en voz baja.",
+      involvedNpcIds: [tempNpcId],
+      visibility: "private",
+      source: "player_action",
+      tags: ["social"],
+    });
+
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "y si tuvieras que decirme un horario, a que hora arrancas a trabajar?",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.intent, "social_scene");
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.narratorPacket.socialPacket.targetNpc.name, "Lira Test");
+    assert.equal(response.data.directorPacket.backendResolved.continuityTargetNpcId, tempNpcId);
+    assert.match(response.data.directorPacket.backendResolved.continuitySource, /latestSocialLog/);
+    assert.equal(response.data.directorPacket.questionContext.type, "routine_schedule");
+    assert.equal(response.data.directorPacket.questionContext.routineBrief.typicalStart.time, "06:00");
+    assert.equal(response.data.directorPacket.actionPolicy.gptShouldNotCall.includes("getCompactContext"), true);
+  });
+
+  it("accepts explicit lastTargetNpcId for continuity questions", async () => {
+    await createFixture();
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "a que hora arrancas a trabajar normalmente?",
+      lastTargetNpcId: tempNpcId,
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.narratorPacket.socialPacket.targetNpc.name, "Lira Test");
+    assert.equal(response.data.directorPacket.backendResolved.continuitySource, "request.lastTargetNpcId");
+    assert.equal(response.data.directorPacket.questionContext.routineBrief.typicalStart.time, "06:00");
   });
 
   it("allows read-only microtalk with a nearby probable NPC in the current scene scope", async () => {

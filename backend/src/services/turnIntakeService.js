@@ -39,18 +39,45 @@ function textMatchesAny(text, patterns = []) {
   return patterns.some((pattern) => pattern.test(text));
 }
 
-function isReadOnlyNpcTaskQuestion(text) {
+function isQuestionLike(text) {
   return textMatchesAny(text, [
-    /\bpregunta\b.*\b(si siempre trabaja|que esta haciendo|que esta contando|que cuenta|queda mucho por cerrar|por que sigue despiert|hasta tan tarde)\b/,
-    /\b(comenta|comentario|dice)\b.*\b(trabaja mucho|trabaja hasta tarde|sigue despiert|cerrar tan tarde)\b/,
+    /\?/,
+    /\b(pregunta|decime|decirme|dime|cuentame|contame|a que hora|cuando|que esta|que hace|que cuenta|que estas)\b/,
   ]);
+}
+
+function detectSocialQuestionType(text) {
+  if (
+    textMatchesAny(text, [
+      /\b(a que hora|horario|cuando)\b.*\b(empieza|empiezas|arranca|arrancas|trabaja|trabajas|abre|llega)\b/,
+      /\b(si tuvieras que decirme un horario|si tienes que decirme un horario|si tenes que decirme un horario)\b/,
+    ])
+  ) {
+    return "routine_schedule";
+  }
+  if (textMatchesAny(text, [/\b(si siempre trabaja|trabaja hasta tan tarde|hasta tan tarde)\b/])) {
+    return "work_pattern";
+  }
+  if (
+    textMatchesAny(text, [
+      /\b(que esta haciendo|que estas haciendo|que hace|que cuenta|que esta contando|que estas contando|que contando)\b/,
+      /\b(queda mucho por cerrar|queda mucho|cuanto falta por cerrar)\b/,
+    ])
+  ) {
+    return "current_task";
+  }
+  return isQuestionLike(text) ? "social_question" : "";
+}
+
+function isReadOnlyNpcTaskQuestion(text) {
+  return ["routine_schedule", "work_pattern", "current_task"].includes(detectSocialQuestionType(text));
 }
 
 function inferDomains(text) {
   const domains = [];
   const checks = [
     ["magic", /\b(magia|mana|hechizo|conjur|electric|rayo|chispa|medita|aqua)\b/],
-    ["social", /\b(habla|charla|conversa|bromea|comenta|comentario|responde|dile|dice|pregunta|pide|saluda|agradece|disculpa|yara|fern|roberto|nia|eddan|garrick|mara|sael|doran)\b/],
+    ["social", /\b(habla|charla|conversa|bromea|comenta|comentario|responde|dile|dice|decime|decirme|dime|cuentame|contame|pregunta|pide|saluda|agradece|disculpa|a que hora|horario|yara|fern|roberto|nia|eddan|garrick|mara|sael|doran|joren)\b/],
     [
       "travel",
       /\b(viaja|camina|corre|vuelve|regresa|sale|entra|sube|baja|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|ruta|camino|sendero)\b/,
@@ -74,7 +101,9 @@ function isSimpleSocialText(text) {
   if (
     !textMatchesAny(text, [
       /\b(habla|charla|conversa|bromea|saluda|agradece|disculpa|dice|pregunta|comenta|comentario|responde)\b/,
+      /\b(decime|decirme|dime|cuentame|contame)\b/,
       /\ble hace un comentario\b/,
+      /\b(a que hora|horario)\b/,
     ])
   ) {
     return false;
@@ -128,7 +157,7 @@ function classifyTurn({ text = "", aiClassification = null } = {}) {
   ]);
   const likelySocial =
     domains.includes("social") &&
-    /\b(habla|charla|conversa|bromea|dice|pregunta|saluda|agradece|disculpa|pide|comenta|comentario|responde)\b/.test(
+    /\b(habla|charla|conversa|bromea|dice|decime|decirme|dime|cuentame|contame|pregunta|saluda|agradece|disculpa|pide|comenta|comentario|responde|a que hora|horario)\b/.test(
       normalized
     );
 
@@ -211,6 +240,50 @@ function actorHintsFromClassification(aiClassification = null) {
   ].map((value) => String(value || "").trim()));
 }
 
+function normalizeNpcId(value = "") {
+  const text = String(value || "").trim();
+  return text.startsWith("npc_") ? text : "";
+}
+
+function latestSocialLog(logs = []) {
+  return logs.find((log) => {
+    if (isTechnicalLog(log)) return false;
+    const tags = (log.tags || []).map((tag) => String(tag || "").toLowerCase());
+    const type = String(log.type || "").toLowerCase();
+    const summary = normalizeText(log.summary || "");
+    const hasNpc = (log.involvedNpcIds || []).length > 0;
+    if (!hasNpc) return false;
+    return (
+      tags.includes("social") ||
+      type.includes("social") ||
+      type.includes("talk") ||
+      /\b(hablo|habla|converso|conversa|charlo|charla|pregunto|pregunta|saludo|saluda)\b/.test(summary)
+    );
+  }) || null;
+}
+
+function inferContinuityTargetNpcId({ latestLogs = [], lastTargetNpcId = "" } = {}) {
+  const direct = normalizeNpcId(lastTargetNpcId);
+  if (direct) {
+    return {
+      npcId: direct,
+      source: "request.lastTargetNpcId",
+    };
+  }
+
+  const log = latestSocialLog(latestLogs);
+  const npcId = normalizeNpcId((log?.involvedNpcIds || [])[0]);
+  return npcId
+    ? {
+        npcId,
+        source: `latestSocialLog:${log.logId || ""}`,
+      }
+    : {
+        npcId: "",
+        source: "",
+      };
+}
+
 function npcNameMatchesText(npc = {}, text = "", hints = []) {
   const normalizedText = normalizeText(text);
   const normalizedHints = hints.map(normalizeText);
@@ -226,11 +299,19 @@ function npcNameMatchesText(npc = {}, text = "", hints = []) {
   return Boolean(firstName && firstName.length >= 3 && normalizedText.includes(firstName));
 }
 
-function selectTargetNpc({ npcs = [], text = "", aiClassification = null } = {}) {
+function selectTargetNpc({ npcs = [], text = "", aiClassification = null, continuityTargetNpcId = "" } = {}) {
   const hints = actorHintsFromClassification(aiClassification);
-  return [...npcs]
+  const explicit = [...npcs]
     .sort((left, right) => String(right.name || "").length - String(left.name || "").length)
-    .find((npc) => npcNameMatchesText(npc, text, hints)) || null;
+    .find((npc) => npcNameMatchesText(npc, text, hints));
+  if (explicit) return explicit;
+
+  const continuity = normalizeNpcId(continuityTargetNpcId);
+  if (continuity && isQuestionLike(normalizeText(text))) {
+    return npcs.find((npc) => npc.npcId === continuity) || null;
+  }
+
+  return null;
 }
 
 function relationshipSummary(relationship = {}) {
@@ -295,6 +376,113 @@ function formatDiegeticDate(date = {}) {
   const month = date.month || "?";
   const year = date.year ?? "?";
   return `${day} de ${month}, A\u00f1o ${year}`;
+}
+
+function timeToMinutes(value = "") {
+  const match = String(value || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  return hours * 60 + minutes;
+}
+
+function routineContainsTime(entry = {}, time = "") {
+  const current = timeToMinutes(time);
+  const start = timeToMinutes(entry.timeStart);
+  const end = timeToMinutes(entry.timeEnd);
+  if (current === null || start === null || end === null) return false;
+  if (start === end) return true;
+  if (start < end) return current >= start && current < end;
+  return current >= start || current < end;
+}
+
+function isRestRoutineTask(task = "") {
+  const normalized = normalizeText(task);
+  return /\b(descans|durmi|duerm|suen|libre)\b/.test(normalized);
+}
+
+function routineLine(entry = {}) {
+  return `${entry.timeStart || "?"}-${entry.timeEnd || "?"}: ${entry.task || "sin tarea"}${
+    entry.locationId ? ` (${entry.locationId})` : ""
+  }`;
+}
+
+function buildRoutineBrief({ npc = {}, gameState = {}, questionType = "" } = {}) {
+  const routineBase = Array.isArray(npc.routineBase) ? npc.routineBase : [];
+  if (!routineBase.length) {
+    return {
+      schemaVersion: "npc_routine_brief_v1",
+      available: false,
+      questionType,
+      answerGuidance:
+        "No hay rutinaBase compacta para este NPC; responder con incertidumbre y no inventar horario exacto.",
+    };
+  }
+
+  const currentEntry = routineBase.find((entry) => routineContainsTime(entry, gameState.time)) || null;
+  const workEntries = routineBase.filter((entry) => !isRestRoutineTask(entry.task));
+  const typicalStart = workEntries[0] || null;
+  const relevantEntries =
+    questionType === "routine_schedule" || questionType === "work_pattern"
+      ? routineBase
+      : [
+          currentEntry,
+          typicalStart,
+        ].filter(Boolean);
+
+  return {
+    schemaVersion: "npc_routine_brief_v1",
+    available: true,
+    questionType,
+    currentTime: gameState.time || "",
+    currentEntry: currentEntry
+      ? {
+          timeStart: currentEntry.timeStart,
+          timeEnd: currentEntry.timeEnd,
+          locationId: currentEntry.locationId,
+          task: currentEntry.task,
+          displayLine: routineLine(currentEntry),
+        }
+      : null,
+    typicalStart: typicalStart
+      ? {
+          time: typicalStart.timeStart,
+          task: typicalStart.task,
+          locationId: typicalStart.locationId,
+          displayLine: routineLine(typicalStart),
+        }
+      : null,
+    relevantLines: relevantEntries.map(routineLine).slice(0, 6),
+    publicEnoughToAnswer: true,
+    answerGuidance:
+      questionType === "routine_schedule"
+        ? "Usar typicalStart.time como dato canonico si el NPC puede contestar; expresarlo natural, no como ficha tecnica."
+        : questionType === "work_pattern"
+          ? "Usar relevantLines/currentEntry para explicar el patron de trabajo o descanso del NPC sin recitar la tabla."
+          : "Usar currentEntry/currentTask para contestar con textura de escena.",
+  };
+}
+
+function buildQuestionContext({ text = "", targetNpc = null, gameState = {} } = {}) {
+  const normalized = normalizeText(text);
+  const questionType = detectSocialQuestionType(normalized);
+  if (!questionType) return null;
+  const routineBrief = ["routine_schedule", "work_pattern", "current_task"].includes(questionType)
+    ? buildRoutineBrief({ npc: targetNpc || {}, gameState, questionType })
+    : null;
+
+  return {
+    schemaVersion: "social_question_context_v1",
+    type: questionType,
+    playerQuestion: text,
+    targetNpcId: targetNpc?.npcId || "",
+    targetNpcName: targetNpc?.name || "",
+    canAnswerFromPacket: Boolean(routineBrief?.available || questionType === "social_question"),
+    routineBrief,
+    answerBoundary:
+      "Responder como NPC y con conocimiento permitido. No llamar getNpcFull/searchDocs/getCompactContext para esta pregunta si route.supported=true.",
+  };
 }
 
 function statLine(label, stat = {}) {
@@ -498,7 +686,7 @@ function sortMemories(left = {}, right = {}) {
   return String(right.createdTime || "").localeCompare(String(left.createdTime || ""));
 }
 
-async function buildSocialPacket({ gameId, text, targetNpc, targetPresence }) {
+async function buildSocialPacket({ gameId, text, targetNpc, targetPresence, questionContext = null }) {
   if (!targetNpc || !targetPresence.canNarrateDirectly) return null;
 
   const [memories, knowledgeRecords] = await Promise.all([
@@ -525,6 +713,7 @@ async function buildSocialPacket({ gameId, text, targetNpc, targetPresence }) {
     playerText: text,
     targetNpc: compactNpcSocialProfile(targetNpc),
     targetPresence,
+    ...(questionContext ? { questionContext } : {}),
     relevantMemories: memories.sort(sortMemories).slice(0, 3).map((memory) => ({
       memoryId: memory.memoryId,
       summary: truncateText(memory.summary || memory.fact || "", 180),
@@ -553,10 +742,67 @@ async function buildSocialPacket({ gameId, text, targetNpc, targetPresence }) {
       "Resolver como charla breve sin deltas numericos ni memoria nueva.",
       "NPC responde primero al tono visible de Lucas y despues al contenido.",
       "Usar tarea actual, objeto, pausa, gesto o cansancio; no respuesta generica.",
+      questionContext?.answerBoundary || "",
       "Si la charla busca permiso, promesa, secreto, informacion sensible o cambio social, este packet no alcanza.",
-    ],
+    ].filter(Boolean),
     mutationBoundary:
       "No modificar confianza, memoria, compromisos, trabajo, dinero, inventario ni tiempo desde social_packet.",
+  };
+}
+
+function buildDirectorPacket({
+  route,
+  text = "",
+  socialPacket = null,
+  questionContext = null,
+  continuityTarget = null,
+  narrativeLocation = null,
+  visibleEvents = [],
+} = {}) {
+  const narrateOnly = route?.supported === true && route?.suggestedOperation === "narrateOnly";
+  return {
+    schemaVersion: "turn_director_readonly_v1",
+    mode: narrateOnly ? "read_only_narration" : "fallback_required",
+    playerText: text,
+    selectedOperation: route?.suggestedOperation || "getCompactContext",
+    backendResolved: {
+      routeSupported: Boolean(route?.supported),
+      socialTargetResolved: Boolean(socialPacket?.targetNpc?.npcId),
+      questionResolved: Boolean(questionContext?.canAnswerFromPacket),
+      continuityTargetNpcId: continuityTarget?.npcId || "",
+      continuitySource: continuityTarget?.source || "",
+      narrativeLocation: narrativeLocation?.displayName || "",
+      visibleEventCount: visibleEvents.length,
+    },
+    socialTarget: socialPacket
+      ? {
+          npcId: socialPacket.targetNpc.npcId,
+          name: socialPacket.targetNpc.name,
+          presenceScope: socialPacket.targetPresence.scope,
+          availability: socialPacket.targetNpc.availability || {},
+        }
+      : null,
+    questionContext: questionContext || null,
+    actionPolicy: narrateOnly
+      ? {
+          mutate: false,
+          timeAdvance: false,
+          gptShouldNotCall: [
+            "getCompactContext",
+            "searchDocs",
+            "getNpcFull",
+            "previewSocialImpact",
+            "applyTurn",
+            "resolveTurn",
+          ],
+          narrationInstruction:
+            "Narrar con narratorPacket/socialPacket/displayBundle. No buscar mas contexto para este turno.",
+        }
+      : {
+          mutate: false,
+          fallback: route?.suggestedOperation || "getCompactContext",
+          reason: route?.fallbackReason || "Ruta read-only no soportada.",
+        },
   };
 }
 
@@ -644,7 +890,12 @@ function buildNoMutationDisplayBundle({ gameState, narrativeLocation, npcPresenc
   };
 }
 
-async function buildNarratorPacket({ text = "", aiClassification = null, gameId = DEFAULT_GAME_ID } = {}) {
+async function buildNarratorPacket({
+  text = "",
+  aiClassification = null,
+  gameId = DEFAULT_GAME_ID,
+  lastTargetNpcId = "",
+} = {}) {
   const gameState = await GameState.findOne({ gameId })
     .select("gameId currentDay diegeticDate block time locationId characterId lucasStatus moneyCopper activeEventIds")
     .lean();
@@ -661,7 +912,7 @@ async function buildNarratorPacket({ text = "", aiClassification = null, gameId 
       .select("locationId name type regionId parentLocationId dangerLevel visibleNpcIds probableNpcIds tags")
       .lean(),
     EventLog.find({ gameId })
-      .select("logId gameId day timeStart timeEnd locationId type summary visibility source tags")
+      .select("logId gameId day timeStart timeEnd locationId type summary visibility source tags involvedNpcIds")
       .sort({ day: -1, timeStart: -1, createdAt: -1 })
       .limit(8)
       .lean(),
@@ -680,10 +931,12 @@ async function buildNarratorPacket({ text = "", aiClassification = null, gameId 
   if (location?.parentLocationId) locationIds.push(location.parentLocationId);
 
   const latestLog = latestLogs.find((log) => !isTechnicalLog(log)) || null;
+  const continuityTarget = inferContinuityTargetNpcId({ latestLogs, lastTargetNpcId });
   const narrativeLocation = inferNarrativeLocation({ location, parentLocation, latestLog, gameState });
   const npcIds = unique([
     ...(location?.visibleNpcIds || []),
     ...(location?.probableNpcIds || []),
+    continuityTarget.npcId,
   ]);
   const npcQuery = location
     ? {
@@ -696,7 +949,7 @@ async function buildNarratorPacket({ text = "", aiClassification = null, gameId 
   const npcs = npcIds.length || location
     ? await Npc.find(npcQuery)
         .select(
-          "npcId name role currentLocationId currentTask availability personality speechStyle values tolerates rejects relationshipWithLucas socialProfile emotionalProfile flags.dialogueDirector"
+          "npcId name role homeLocationId currentLocationId currentTask availability personality speechStyle values tolerates rejects routineBase knownPublicFacts relationshipWithLucas socialProfile emotionalProfile flags.dialogueDirector"
         )
         .limit(16)
         .lean()
@@ -704,10 +957,17 @@ async function buildNarratorPacket({ text = "", aiClassification = null, gameId 
   let npcPresence = summarizeNpcPresence(npcs, location, narrativeLocation);
   const visibleEvents = activeEvents.filter((event) => eventVisibleToLucas(event, { locationIds }));
   let socialPacket = null;
+  let questionContext = null;
   if (route.intent === "social_scene") {
-    const targetNpc = selectTargetNpc({ npcs, text, aiClassification });
+    const targetNpc = selectTargetNpc({
+      npcs,
+      text,
+      aiClassification,
+      continuityTargetNpcId: continuityTarget.npcId,
+    });
     const targetPresence = socialPresenceForTarget(targetNpc, npcPresence, location, narrativeLocation);
-    socialPacket = await buildSocialPacket({ gameId, text, targetNpc, targetPresence });
+    questionContext = buildQuestionContext({ text, targetNpc, gameState });
+    socialPacket = await buildSocialPacket({ gameId, text, targetNpc, targetPresence, questionContext });
     if (!socialPacket) {
       route = {
         ...route,
@@ -725,12 +985,22 @@ async function buildNarratorPacket({ text = "", aiClassification = null, gameId 
     visibleEvents,
     latestLog,
   });
+  const directorPacket = buildDirectorPacket({
+    route,
+    text,
+    socialPacket,
+    questionContext,
+    continuityTarget,
+    narrativeLocation,
+    visibleEvents,
+  });
 
   return {
     ok: true,
     schemaVersion: SCHEMA_VERSION,
     readOnly: true,
     route,
+    directorPacket,
     narratorPacket: {
       schemaVersion: "narrator_packet_minimal_v1",
       packetProfile: socialPacket ? "social_scene" : "minimal_scene",
@@ -778,6 +1048,7 @@ async function buildNarratorPacket({ text = "", aiClassification = null, gameId 
         latestLog,
         socialPacket,
       }),
+      directorPacket,
       ...(socialPacket ? { socialPacket } : {}),
       displayBundle,
     },

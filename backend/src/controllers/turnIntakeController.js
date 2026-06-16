@@ -7,6 +7,12 @@ async function intakeTurn(req, res) {
       gameId: body.gameId || "isekai_lucas_main",
       text: body.text || body.playerText || body.userText || "",
       aiClassification: body.aiClassification || body.classification || null,
+      lastTargetNpcId:
+        body.lastTargetNpcId ||
+        body.sceneFocusNpcId ||
+        body.conversationContext?.lastTargetNpcId ||
+        body.conversationContext?.sceneFocusNpcId ||
+        "",
     });
 
     return res.json(payload);

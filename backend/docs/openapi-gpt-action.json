@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions",
-    "version": "2.23.0",
-    "description": "Schema normal para GPT Actions. Incluye intakeTurn para narracion read-only rapida de escena/social simple, resolveTurn/previewResolveTurn para acciones compuestas, applyTurn con dryRun/activitySegments, previews, lecturas y mutadores controlados."
+    "version": "2.24.0",
+    "description": "Schema normal para GPT Actions. Incluye intakeTurn como director read-only de escena/social, resolveTurn/previewResolveTurn para acciones compuestas, applyTurn con dryRun/activitySegments, previews, lecturas y mutadores controlados."
   },
   "servers": [
     {
@@ -82,6 +82,19 @@
               }
             },
             "additionalProperties": true
+          },
+          "lastTargetNpcId": {
+            "type": "string",
+            "description": "Opcional: ultimo NPC interlocutor si el texto continua una charla sin nombrarlo."
+          },
+          "sceneFocusNpcId": {
+            "type": "string",
+            "description": "Opcional: NPC foco de escena actual si el GPT lo conoce por la conversacion."
+          },
+          "conversationContext": {
+            "type": "object",
+            "description": "Opcional: pistas compactas de continuidad como lastTargetNpcId o sceneFocusNpcId.",
+            "additionalProperties": true
           }
         },
         "required": [
@@ -108,6 +121,11 @@
           },
           "narratorPacket": {
             "type": "object",
+            "additionalProperties": true
+          },
+          "directorPacket": {
+            "type": "object",
+            "description": "Decision read-only del backend: target social, questionContext, rutina/horario si aplica y lista de Actions que el GPT no debe llamar cuando narrateOnly.",
             "additionalProperties": true
           }
         },
@@ -2896,8 +2914,8 @@
     "/api/turn/intake": {
       "post": {
         "operationId": "intakeTurn",
-        "summary": "Clasifica texto y devuelve narratorPacket minimo read-only.",
-        "description": "Para continuar/mirar/pensar/social simple: si route.supported=true y suggestedOperation=narrateOnly, narrar con narratorPacket.displayBundle sin contexto pesado. Si supported=false, seguir fallback.",
+        "summary": "Director read-only: clasifica texto y devuelve packet compacto para narrar escena/social simple.",
+        "description": "Primera operacion de partida. Si route.supported=true y suggestedOperation=narrateOnly, narrar con directorPacket/narratorPacket/displayBundle sin llamar contexto, docs ni NPC full.",
         "requestBody": {
           "required": true,
           "content": {

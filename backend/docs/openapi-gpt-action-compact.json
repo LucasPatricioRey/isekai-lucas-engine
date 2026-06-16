@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Compact",
-    "version": "2.23.0",
-    "description": "Schema compacto con intakeTurn para narracion read-only rapida y resolveTurn/previewResolveTurn para acciones compuestas. intakeTurn devuelve narratorPacket/displayBundle para continuar/mirar/pensar/social simple; si detecta accion con cambios recomienda fallback. resolveTurn arma viaje, descanso, actividad, work_segment, tardanza, memoria NPC y EXP fisica conservadora. Mongo/backend siguen como canon."
+    "version": "2.24.0",
+    "description": "Schema compacto con intakeTurn como director read-only de escena/social: clasifica, busca Mongo y devuelve directorPacket/narratorPacket/displayBundle. resolveTurn cubre acciones compuestas normales. Mongo/backend siguen como canon."
   },
   "servers": [
     {
@@ -82,6 +82,19 @@
               }
             },
             "additionalProperties": true
+          },
+          "lastTargetNpcId": {
+            "type": "string",
+            "description": "Opcional: ultimo NPC interlocutor si el texto continua una charla sin nombrarlo."
+          },
+          "sceneFocusNpcId": {
+            "type": "string",
+            "description": "Opcional: NPC foco de escena actual si el GPT lo conoce por la conversacion."
+          },
+          "conversationContext": {
+            "type": "object",
+            "description": "Opcional: pistas compactas de continuidad como lastTargetNpcId o sceneFocusNpcId.",
+            "additionalProperties": true
           }
         },
         "required": [
@@ -138,6 +151,11 @@
           "narratorPacket": {
             "type": "object",
             "description": "Paquete minimo para narrar sin buscar reglas ni contexto completo. Si route.supported=false, usar solo route/fallback y no narrar desde este paquete.",
+            "additionalProperties": true
+          },
+          "directorPacket": {
+            "type": "object",
+            "description": "Decision read-only del backend: target social, questionContext, rutina/horario si aplica y lista de Actions que el GPT no debe llamar cuando narrateOnly.",
             "additionalProperties": true
           }
         },
@@ -2926,8 +2944,8 @@
     "/api/turn/intake": {
       "post": {
         "operationId": "intakeTurn",
-        "summary": "Clasifica el texto del jugador y devuelve un narratorPacket minimo read-only para continuaciones simples.",
-        "description": "Primera operacion de partida. Para continuar/mirar/pensar/social simple: si route.supported=true y suggestedOperation=narrateOnly, narrar con narratorPacket.displayBundle sin contexto pesado. Si supported=false, seguir fallback.",
+        "summary": "Director read-only: clasifica texto y devuelve packet compacto para narrar escena/social simple.",
+        "description": "Primera operacion de partida. Si route.supported=true y suggestedOperation=narrateOnly, narrar con directorPacket/narratorPacket/displayBundle sin llamar contexto, docs ni NPC full.",
         "requestBody": {
           "required": true,
           "content": {
