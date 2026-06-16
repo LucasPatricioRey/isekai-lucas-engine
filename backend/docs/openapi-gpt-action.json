@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions",
-    "version": "2.22.0",
-    "description": "Schema normal para GPT Actions. Incluye intakeTurn para narracion read-only rapida, resolveTurn/previewResolveTurn para acciones compuestas, applyTurn con dryRun/activitySegments, previews, lecturas y mutadores controlados."
+    "version": "2.23.0",
+    "description": "Schema normal para GPT Actions. Incluye intakeTurn para narracion read-only rapida de escena/social simple, resolveTurn/previewResolveTurn para acciones compuestas, applyTurn con dryRun/activitySegments, previews, lecturas y mutadores controlados."
   },
   "servers": [
     {
@@ -2897,7 +2897,7 @@
       "post": {
         "operationId": "intakeTurn",
         "summary": "Clasifica texto y devuelve narratorPacket minimo read-only.",
-        "description": "Para continuar/mirar/pensar: si route.supported=true y suggestedOperation=narrateOnly, narrar con narratorPacket.displayBundle sin getCompactContext/searchDocs/applyTurn. Si supported=false, seguir fallback.",
+        "description": "Para continuar/mirar/pensar/social simple: si route.supported=true y suggestedOperation=narrateOnly, narrar con narratorPacket.displayBundle sin contexto pesado. Si supported=false, seguir fallback.",
         "requestBody": {
           "required": true,
           "content": {

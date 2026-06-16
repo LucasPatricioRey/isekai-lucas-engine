@@ -1,8 +1,11 @@
 const GameState = require("../models/GameState");
 const Location = require("../models/Location");
 const Npc = require("../models/Npc");
+const NpcMemory = require("../models/NpcMemory");
+const KnowledgeRecord = require("../models/KnowledgeRecord");
 const EventLog = require("../models/EventLog");
 const WorldEvent = require("../models/WorldEvent");
+const { relationshipBand } = require("./socialLedgerService");
 const { formatCopper } = require("../utils/mechanicalChangeDisplay");
 
 const DEFAULT_GAME_ID = "isekai_lucas_main";
@@ -26,6 +29,12 @@ function unique(values = []) {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
+function truncateText(value = "", maxLength = 180) {
+  const text = String(value || "").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 1))}...`;
+}
+
 function textMatchesAny(text, patterns = []) {
   return patterns.some((pattern) => pattern.test(text));
 }
@@ -34,7 +43,7 @@ function inferDomains(text) {
   const domains = [];
   const checks = [
     ["magic", /\b(magia|mana|hechizo|conjur|electric|rayo|chispa|medita|aqua)\b/],
-    ["social", /\b(habla|dile|dice|pregunta|saluda|agradece|disculpa|yara|fern|roberto|nia|eddan|garrick|mara|sael|doran)\b/],
+    ["social", /\b(habla|charla|conversa|bromea|dile|dice|pregunta|pide|saluda|agradece|disculpa|yara|fern|roberto|nia|eddan|garrick|mara|sael|doran)\b/],
     ["travel", /\b(viaja|camina|corre|vuelve|va al|ir al|ruta|camino|sendero|bosque|gremio|posada)\b/],
     ["work", /\b(trabaja|turno|tardanza|contrato|servir|mesa|platos|roberto)\b/],
     ["rest_biology", /\b(descansa|duerme|come|bebe|hambre|cansancio|energia|saciedad|cama)\b/],
@@ -49,6 +58,22 @@ function inferDomains(text) {
   }
 
   return unique(domains);
+}
+
+function isSimpleSocialText(text) {
+  if (!textMatchesAny(text, [/\b(habla|charla|conversa|bromea|saluda|agradece|disculpa|dice)\b/])) {
+    return false;
+  }
+
+  return !textMatchesAny(text, [
+    /\b(permiso|autoriza|autorizar|negocia|convenc|promete|promesa|cita|secreto|confiesa|romance|besar|beso|amor)\b/,
+    /\b(amenaza|intimida|presiona|chantaje|acusa|denuncia|miente|roba)\b/,
+    /\b(mision|recompensa|reporte|prueba|evidencia|muestra|pista|cartelera|gremio)\b/,
+    /\b(compra|vende|paga|precio|stock|dinero|moneda|cobre|plata|oro|presta)\b/,
+    /\b(magia|mana|hechizo|conjura|rayo|electric|entrena|practica|combate|herida|cura)\b/,
+    /\b(turno|tardanza|contrato|trabajo|trabaja|jornada)\b/,
+    /\bpide\b(?!\s+disculpas?\b)/,
+  ]);
 }
 
 function classifyTurn({ text = "", aiClassification = null } = {}) {
@@ -80,7 +105,7 @@ function classifyTurn({ text = "", aiClassification = null } = {}) {
   const likelyMutation = textMatchesAny(normalized, [
     /\b(trabaja|entrena|practica|corre|viaja|camina|vuelve|va al|ir al|descansa|duerme|come|bebe|compra|vende|paga|toma|agarra|usa|ataca|conjura|lanza|acepta|rechaza|reporta|completa|investiga|revisa)\b/,
   ]);
-  const likelySocial = domains.includes("social") && /\b(habla|dice|pregunta|saluda|agradece|disculpa|pide)\b/.test(normalized);
+  const likelySocial = domains.includes("social") && /\b(habla|charla|conversa|bromea|dice|pregunta|saluda|agradece|disculpa|pide)\b/.test(normalized);
 
   if (continueScene || observeOnly || (!normalized && !likelyMutation)) {
     return {
@@ -94,6 +119,17 @@ function classifyTurn({ text = "", aiClassification = null } = {}) {
   }
 
   if (likelySocial) {
+    if (isSimpleSocialText(normalized)) {
+      return {
+        intent: "social_scene",
+        domains: unique(["social", ...domains]),
+        needsMutation: false,
+        suggestedOperation: "narrateOnly",
+        supported: true,
+        confidence: "medium",
+      };
+    }
+
     return {
       intent: "social",
       domains: unique(["social", ...domains]),
@@ -135,6 +171,94 @@ function classifyTurn({ text = "", aiClassification = null } = {}) {
     suggestedOperation: "narrateOnly",
     supported: true,
     confidence: "low",
+  };
+}
+
+function actorHintsFromClassification(aiClassification = null) {
+  return unique([
+    ...asArray(aiClassification?.targetNpcIds),
+    aiClassification?.targetNpcId,
+    ...asArray(aiClassification?.actors),
+    ...asArray(aiClassification?.actorNames),
+  ].map((value) => String(value || "").trim()));
+}
+
+function npcNameMatchesText(npc = {}, text = "", hints = []) {
+  const normalizedText = normalizeText(text);
+  const normalizedHints = hints.map(normalizeText);
+  const id = String(npc.npcId || "");
+  const name = String(npc.name || "");
+  const normalizedName = normalizeText(name);
+  const firstName = normalizeText(name.split(/\s+/)[0] || "");
+
+  if (normalizedHints.includes(normalizeText(id))) return true;
+  if (normalizedHints.includes(normalizedName)) return true;
+  if (firstName && normalizedHints.includes(firstName)) return true;
+  if (normalizedName && normalizedText.includes(normalizedName)) return true;
+  return Boolean(firstName && firstName.length >= 3 && normalizedText.includes(firstName));
+}
+
+function selectTargetNpc({ npcs = [], text = "", aiClassification = null } = {}) {
+  const hints = actorHintsFromClassification(aiClassification);
+  return [...npcs]
+    .sort((left, right) => String(right.name || "").length - String(left.name || "").length)
+    .find((npc) => npcNameMatchesText(npc, text, hints)) || null;
+}
+
+function relationshipSummary(relationship = {}) {
+  const fields = ["trust", "familiarity", "affection", "suspicion", "respect", "fear", "jealousy", "socialDebt"];
+  return Object.fromEntries(
+    fields.map((field) => {
+      const value = Number(relationship[field]) || 0;
+      return [
+        field,
+        {
+          value,
+          band: field === "socialDebt" ? null : relationshipBand(value),
+        },
+      ];
+    })
+  );
+}
+
+function compactNpcSocialProfile(npc = {}) {
+  const socialProfile = npc.socialProfile || {};
+  const emotionalProfile = npc.emotionalProfile || {};
+  const director = npc.flags?.dialogueDirector || null;
+
+  return {
+    npcId: npc.npcId,
+    name: npc.name,
+    role: npc.role || "",
+    currentTask: truncateText(npc.currentTask || "", 120),
+    availability: npc.availability || {},
+    relationship: relationshipSummary(npc.relationshipWithLucas || {}),
+    voice: {
+      speechStyle: truncateText(npc.speechStyle || "", 140),
+      personality: (npc.personality || []).slice(0, 5),
+      values: (npc.values || []).slice(0, 4),
+      tolerates: (npc.tolerates || []).slice(0, 3),
+      rejects: (npc.rejects || []).slice(0, 3),
+      boundaries: (socialProfile.boundaries || []).slice(0, 4),
+    },
+    emotional: {
+      defaultMood: truncateText(emotionalProfile.defaultMood || "", 100),
+      coreDrives: (emotionalProfile.coreDrives || []).slice(0, 2),
+      coreFears: (emotionalProfile.coreFears || []).slice(0, 2),
+      visibleTells: (emotionalProfile.visibleTells || []).slice(0, 3),
+      contradiction: truncateText(emotionalProfile.contradiction || "", 140),
+      sceneHooks: (emotionalProfile.sceneHooks || []).slice(0, 2),
+      rule: "No narrar mente privada; usar gesto, pausa, objeto, tarea o tono.",
+    },
+    dialogueDirector: director
+      ? {
+          cadence: truncateText(director.cadence || "", 90),
+          emotionalRule: truncateText(director.emotionalRule || "", 110),
+          reactFirst: truncateText(director.reactFirst || "", 100),
+          sampleBeats: (director.sampleBeats || []).slice(0, 2).map((line) => truncateText(line, 100)),
+          avoid: (director.avoid || []).slice(0, 2).map((line) => truncateText(line, 90)),
+        }
+      : null,
   };
 }
 
@@ -255,7 +379,118 @@ function summarizeNpcPresence(npcs = [], location = null, narrativeLocation = nu
   };
 }
 
-function buildNarrationBoundaries({ route, narrativeLocation, visibleEvents = [], latestLog = null } = {}) {
+function socialPresenceForTarget(targetNpc = null, npcPresence = {}, location = null, narrativeLocation = null) {
+  if (!targetNpc) return { scope: "none", canNarrateDirectly: false, reason: "No se detecto NPC objetivo." };
+  if (narrativeLocation?.privacy === "private_room_inferred") {
+    return {
+      scope: "not_visible_private_room",
+      canNarrateDirectly: false,
+      reason: "Lucas esta en un cuarto privado inferido; hablar con este NPC requiere nueva accion/traslado.",
+    };
+  }
+
+  if ((npcPresence.visible || []).some((npc) => npc.npcId === targetNpc.npcId)) {
+    return { scope: "visible", canNarrateDirectly: true, reason: "NPC visible en la escena." };
+  }
+  if (targetNpc.currentLocationId && targetNpc.currentLocationId === location?.locationId) {
+    return { scope: "same_location", canNarrateDirectly: true, reason: "NPC ubicado en la misma localizacion." };
+  }
+  if ((npcPresence.nearby || []).some((npc) => npc.npcId === targetNpc.npcId)) {
+    return {
+      scope: "nearby_probable",
+      canNarrateDirectly: false,
+      reason: "NPC cercano/probable, pero no confirmado como interlocutor directo.",
+    };
+  }
+
+  return {
+    scope: "not_present",
+    canNarrateDirectly: false,
+    reason: "NPC no confirmado como presente en la escena.",
+  };
+}
+
+function memoryImportanceRank(memory = {}) {
+  const ranks = {
+    critical: 4,
+    important: 3,
+    normal: 2,
+    minor: 1,
+  };
+  return ranks[memory.importance] || 0;
+}
+
+function sortMemories(left = {}, right = {}) {
+  const importanceDiff = memoryImportanceRank(right) - memoryImportanceRank(left);
+  if (importanceDiff !== 0) return importanceDiff;
+  const dayDiff = (Number(right.createdDay) || 0) - (Number(left.createdDay) || 0);
+  if (dayDiff !== 0) return dayDiff;
+  return String(right.createdTime || "").localeCompare(String(left.createdTime || ""));
+}
+
+async function buildSocialPacket({ gameId, text, targetNpc, targetPresence }) {
+  if (!targetNpc || !targetPresence.canNarrateDirectly) return null;
+
+  const [memories, knowledgeRecords] = await Promise.all([
+    NpcMemory.find({ npcId: targetNpc.npcId })
+      .select("memoryId npcId fact summary sourceType certainty emotionalWeight privacyLevel canShare createdDay createdTime importance tags")
+      .sort({ createdDay: -1, createdTime: -1 })
+      .limit(8)
+      .lean(),
+    KnowledgeRecord.find({
+      gameId,
+      holderNpcIds: targetNpc.npcId,
+      status: "active",
+      visibility: { $ne: "mechanical_only" },
+    })
+      .select("knowledgeId subjectType subjectId factKey fact summary sourceType certainty visibility canShare createdDay createdTime tags")
+      .sort({ createdDay: -1, createdTime: -1 })
+      .limit(6)
+      .lean(),
+  ]);
+
+  return {
+    schemaVersion: "social_packet_v1",
+    mode: "read_only_simple_social",
+    playerText: text,
+    targetNpc: compactNpcSocialProfile(targetNpc),
+    targetPresence,
+    relevantMemories: memories.sort(sortMemories).slice(0, 3).map((memory) => ({
+      memoryId: memory.memoryId,
+      summary: truncateText(memory.summary || memory.fact || "", 180),
+      sourceType: memory.sourceType,
+      certainty: memory.certainty,
+      emotionalWeight: memory.emotionalWeight,
+      privacyLevel: memory.privacyLevel,
+      canShare: Boolean(memory.canShare),
+      importance: memory.importance,
+    })),
+    knowledgeContext: {
+      shareable: knowledgeRecords
+        .filter((record) => record.canShare)
+        .slice(0, 3)
+        .map((record) => ({
+          knowledgeId: record.knowledgeId,
+          factKey: record.factKey,
+          summary: truncateText(record.summary || record.fact || "", 160),
+          certainty: record.certainty,
+          visibility: record.visibility,
+        })),
+      nonShareableCount: knowledgeRecords.filter((record) => !record.canShare).length,
+      rule: "No revelar knowledge/memories con canShare=false; usarlas solo como limite de tono si corresponde.",
+    },
+    sceneGuidance: [
+      "Resolver como charla breve sin deltas numericos ni memoria nueva.",
+      "NPC responde primero al tono visible de Lucas y despues al contenido.",
+      "Usar tarea actual, objeto, pausa, gesto o cansancio; no respuesta generica.",
+      "Si la charla busca permiso, promesa, secreto, informacion sensible o cambio social, este packet no alcanza.",
+    ],
+    mutationBoundary:
+      "No modificar confianza, memoria, compromisos, trabajo, dinero, inventario ni tiempo desde social_packet.",
+  };
+}
+
+function buildNarrationBoundaries({ route, narrativeLocation, visibleEvents = [], latestLog = null, socialPacket = null } = {}) {
   const boundaries = [
     "No mutar estado, no avanzar tiempo y no aplicar costes/EXP/dinero.",
     "No llamar searchDocs para narrateOnly si este paquete trae displayBundle.",
@@ -274,6 +509,10 @@ function buildNarrationBoundaries({ route, narrativeLocation, visibleEvents = []
   }
   if (!route.supported) {
     boundaries.push("Este paquete no cubre la accion; usar fallback recomendado.");
+  }
+  if (socialPacket) {
+    boundaries.push("Charla social simple: no aplicar deltas, promesas, permisos ni memoria persistente.");
+    boundaries.push("Usar socialPacket.targetNpc voz/relacion/conocimiento; no inventar secretos ni informacion no compartible.");
   }
 
   return boundaries;
@@ -345,7 +584,7 @@ async function buildNarratorPacket({ text = "", aiClassification = null, gameId 
     throw error;
   }
 
-  const route = classifyTurn({ text, aiClassification });
+  let route = classifyTurn({ text, aiClassification });
   const locationIds = unique([gameState.locationId]);
   const [location, latestLogs, activeEvents] = await Promise.all([
     Location.findOne({ locationId: gameState.locationId })
@@ -376,13 +615,38 @@ async function buildNarratorPacket({ text = "", aiClassification = null, gameId 
     ...(location?.visibleNpcIds || []),
     ...(location?.probableNpcIds || []),
   ]);
-  const npcs = npcIds.length
-    ? await Npc.find({ npcId: { $in: npcIds } })
-        .select("npcId name role currentLocationId currentTask availability")
+  const npcQuery = location
+    ? {
+        $or: [
+          { npcId: { $in: npcIds } },
+          { currentLocationId: { $in: locationIds } },
+        ],
+      }
+    : { npcId: { $in: npcIds } };
+  const npcs = npcIds.length || location
+    ? await Npc.find(npcQuery)
+        .select(
+          "npcId name role currentLocationId currentTask availability personality speechStyle values tolerates rejects relationshipWithLucas socialProfile emotionalProfile flags.dialogueDirector"
+        )
+        .limit(16)
         .lean()
     : [];
   const npcPresence = summarizeNpcPresence(npcs, location, narrativeLocation);
   const visibleEvents = activeEvents.filter((event) => eventVisibleToLucas(event, { locationIds }));
+  let socialPacket = null;
+  if (route.intent === "social_scene") {
+    const targetNpc = selectTargetNpc({ npcs, text, aiClassification });
+    const targetPresence = socialPresenceForTarget(targetNpc, npcPresence, location, narrativeLocation);
+    socialPacket = await buildSocialPacket({ gameId, text, targetNpc, targetPresence });
+    if (!socialPacket) {
+      route = {
+        ...route,
+        supported: false,
+        suggestedOperation: "getCompactContext",
+        fallbackReason: targetPresence.reason || "No se pudo construir socialPacket seguro.",
+      };
+    }
+  }
   const displayBundle = buildNoMutationDisplayBundle({
     gameState,
     narrativeLocation,
@@ -398,7 +662,7 @@ async function buildNarratorPacket({ text = "", aiClassification = null, gameId 
     route,
     narratorPacket: {
       schemaVersion: "narrator_packet_minimal_v1",
-      packetProfile: "minimal_scene",
+      packetProfile: socialPacket ? "social_scene" : "minimal_scene",
       gameId,
       playerText: text,
       state: {
@@ -441,7 +705,9 @@ async function buildNarratorPacket({ text = "", aiClassification = null, gameId 
         narrativeLocation,
         visibleEvents,
         latestLog,
+        socialPacket,
       }),
+      ...(socialPacket ? { socialPacket } : {}),
       displayBundle,
     },
   };

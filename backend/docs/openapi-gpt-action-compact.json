@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Compact",
-    "version": "2.22.0",
-    "description": "Schema compacto con intakeTurn para narracion read-only rapida y resolveTurn/previewResolveTurn para acciones compuestas. intakeTurn clasifica texto, devuelve narratorPacket minimo y displayBundle sin mutar para continuar historia/mirar/pensar; si detecta accion con cambios recomienda fallback. resolveTurn arma viaje, descanso, actividad, work_segment/trabajo parcial, tardanza laboral, memoria NPC y EXP fisica conservadora desde sequence[]; devuelve resolverPlan y displayBundle. Mongo/backend siguen como canon; searchDocs expone rule cards criticas; applyTurn/completeJobShift mantienen HUD canonico."
+    "version": "2.23.0",
+    "description": "Schema compacto con intakeTurn para narracion read-only rapida y resolveTurn/previewResolveTurn para acciones compuestas. intakeTurn devuelve narratorPacket/displayBundle para continuar/mirar/pensar/social simple; si detecta accion con cambios recomienda fallback. resolveTurn arma viaje, descanso, actividad, work_segment, tardanza, memoria NPC y EXP fisica conservadora. Mongo/backend siguen como canon."
   },
   "servers": [
     {
@@ -2927,7 +2927,7 @@
       "post": {
         "operationId": "intakeTurn",
         "summary": "Clasifica el texto del jugador y devuelve un narratorPacket minimo read-only para continuaciones simples.",
-        "description": "Primera operacion de partida. Para continuar/mirar/pensar: si route.supported=true y suggestedOperation=narrateOnly, narrar con narratorPacket.displayBundle sin getCompactContext/searchDocs/applyTurn. Si supported=false, seguir fallback.",
+        "description": "Primera operacion de partida. Para continuar/mirar/pensar/social simple: si route.supported=true y suggestedOperation=narrateOnly, narrar con narratorPacket.displayBundle sin contexto pesado. Si supported=false, seguir fallback.",
         "requestBody": {
           "required": true,
           "content": {
