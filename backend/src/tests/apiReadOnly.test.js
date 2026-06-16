@@ -3,8 +3,10 @@ const { after, before, describe, it } = require("node:test");
 const {
   assert,
   assertCanonState,
+  assertSameState,
   get,
   getCanonicalState,
+  post,
   startApi,
   stopApi,
 } = require("./apiTestClient");
@@ -135,6 +137,46 @@ describe("read-only API coverage", () => {
     assert.equal(minimalCompact.data.profile, "minimal_header");
     assert.equal(minimalCompact.data.context.profileContract.gameplayReady, false);
     assert.match(minimalCompact.data.context.profileContract.policy, /Do not write final/);
+  });
+
+  it("serves a minimal read-only narrator packet for continue_scene", async () => {
+    const beforeState = await getCanonicalState();
+    const response = await post("/api/turn/intake", {
+      text: "continuar historia",
+    });
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.readOnly, true);
+    assert.equal(response.data.route.intent, "continue_scene");
+    assert.equal(response.data.route.needsMutation, false);
+    assert.equal(response.data.route.suggestedOperation, "narrateOnly");
+    assert.equal(response.data.narratorPacket.packetProfile, "minimal_scene");
+    assert.ok(response.data.narratorPacket.displayBundle.renderLines.includes("## Estado actual"));
+    assert.ok(
+      response.data.narratorPacket.displayBundle.changeLines.includes(
+        "Sin cambios mecanicos nuevos. No avanzo el tiempo."
+      )
+    );
+    const payloadBytes = Buffer.byteLength(JSON.stringify(response.data), "utf8");
+    assert.ok(
+      payloadBytes < 25000,
+      `turn intake payload is ${payloadBytes} bytes and should stay under 25000`
+    );
+
+    const afterState = await getCanonicalState();
+    assertSameState(beforeState, afterState);
+  });
+
+  it("routes unsupported mutating turns away from narrator-only intake", async () => {
+    const response = await post("/api/turn/intake", {
+      text: "Lucas trabaja 45 minutos en el turno de tarde.",
+    });
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.readOnly, true);
+    assert.equal(response.data.route.supported, false);
+    assert.equal(response.data.route.needsMutation, true);
+    assert.equal(response.data.route.suggestedOperation, "resolveTurn_or_existing_flow");
   });
 
   it("serves read-only state audit for technical admin mode", async () => {

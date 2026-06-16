@@ -11,8 +11,8 @@ const MATRIX_PATH = path.join(DOCS_DIR, "gpt-actions-operation-matrix.md");
 const GPT_BUILDER_OPERATION_TEXT_LIMIT = 300;
 
 const EXPECTED_COMPACT = [
+  ["POST", "/api/turn/intake"],
   ["GET", "/api/context/compact"],
-  ["GET", "/api/characters/{characterId}/state"],
   ["GET", "/api/search/db"],
   ["GET", "/api/search/docs"],
   ["GET", "/api/npcs/{npcId}/full"],

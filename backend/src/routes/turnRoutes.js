@@ -2,6 +2,7 @@
 
 const requireApiKey = require("../middleware/requireApiKey");
 const { applyTurn } = require("../controllers/turnController");
+const { intakeTurn } = require("../controllers/turnIntakeController");
 const {
   applyResolvedTurn,
   previewResolvedTurn,
@@ -9,6 +10,7 @@ const {
 
 const router = express.Router();
 
+router.post("/intake", requireApiKey, intakeTurn);
 router.post("/apply", requireApiKey("gameplay"), applyTurn);
 router.post("/resolve/preview", requireApiKey, previewResolvedTurn);
 router.post("/resolve", requireApiKey("gameplay"), applyResolvedTurn);

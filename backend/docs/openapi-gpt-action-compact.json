@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Compact",
-    "version": "2.21.0",
-    "description": "Schema compacto con resolveTurn/previewResolveTurn para acciones compuestas en una sola Action y ApplyTurn con dryRun/activitySegments. resolveTurn arma viaje, descanso, actividad, work_segment/trabajo parcial, tardanza laboral, memoria NPC y EXP fisica conservadora desde sequence[]; devuelve resolverPlan y displayBundle. Checkpoints game_scoped evitan snapshots globales pesados y los traslados nulos no se renderizan. Mongo/backend siguen como canon; searchDocs expone rule cards criticas; applyTurn/completeJobShift mantienen HUD canonico."
+    "version": "2.22.0",
+    "description": "Schema compacto con intakeTurn para narracion read-only rapida y resolveTurn/previewResolveTurn para acciones compuestas. intakeTurn clasifica texto, devuelve narratorPacket minimo y displayBundle sin mutar para continuar historia/mirar/pensar; si detecta accion con cambios recomienda fallback. resolveTurn arma viaje, descanso, actividad, work_segment/trabajo parcial, tardanza laboral, memoria NPC y EXP fisica conservadora desde sequence[]; devuelve resolverPlan y displayBundle. Mongo/backend siguen como canon; searchDocs expone rule cards criticas; applyTurn/completeJobShift mantienen HUD canonico."
   },
   "servers": [
     {
@@ -36,6 +36,108 @@
           },
           "preview": {
             "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "TurnIntakeRequest": {
+        "type": "object",
+        "properties": {
+          "gameId": {
+            "type": "string",
+            "default": "isekai_lucas_main"
+          },
+          "text": {
+            "type": "string",
+            "description": "Texto literal del jugador. Usar para continuar historia, mirar, pensar o clasificar si el turno necesita mutacion."
+          },
+          "aiClassification": {
+            "type": "object",
+            "description": "Opcional: etiquetas deducidas por el GPT. El backend las valida/corrige de forma conservadora.",
+            "properties": {
+              "intent": {
+                "type": "string"
+              },
+              "domains": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "scene",
+                    "social",
+                    "travel",
+                    "work",
+                    "rest_biology",
+                    "magic",
+                    "economy",
+                    "inventory_evidence",
+                    "mission_event",
+                    "combat_injury"
+                  ]
+                }
+              },
+              "needsMutation": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "TurnIntakeResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "schemaVersion": {
+            "type": "string",
+            "example": "turn_intake_v1"
+          },
+          "readOnly": {
+            "type": "boolean",
+            "description": "Siempre true; esta operacion no muta Mongo."
+          },
+          "route": {
+            "type": "object",
+            "properties": {
+              "intent": {
+                "type": "string"
+              },
+              "domains": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "needsMutation": {
+                "type": "boolean"
+              },
+              "suggestedOperation": {
+                "type": "string",
+                "enum": [
+                  "narrateOnly",
+                  "getCompactContext",
+                  "resolveTurn_or_existing_flow"
+                ]
+              },
+              "supported": {
+                "type": "boolean"
+              },
+              "fallbackReason": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          "narratorPacket": {
+            "type": "object",
+            "description": "Paquete minimo para narrar sin buscar reglas ni contexto completo. Si route.supported=false, usar solo route/fallback y no narrar desde este paquete.",
             "additionalProperties": true
           }
         },
@@ -2821,6 +2923,41 @@
     }
   ],
   "paths": {
+    "/api/turn/intake": {
+      "post": {
+        "operationId": "intakeTurn",
+        "summary": "Clasifica el texto del jugador y devuelve un narratorPacket minimo read-only para continuaciones simples.",
+        "description": "Primera operacion de partida. Para continuar/mirar/pensar: si route.supported=true y suggestedOperation=narrateOnly, narrar con narratorPacket.displayBundle sin getCompactContext/searchDocs/applyTurn. Si supported=false, seguir fallback.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TurnIntakeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ruta/intencion y paquete minimo de narracion read-only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnIntakeResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-openai-isConsequential": false
+      }
+    },
     "/api/search/db": {
       "get": {
         "operationId": "searchDatabase",
@@ -4009,50 +4146,6 @@
         "responses": {
           "200": {
             "description": "Contexto compacto listo para GPT.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GenericResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "ApiKeyAuth": []
-          }
-        ],
-        "x-openai-isConsequential": false
-      }
-    },
-    "/api/characters/{characterId}/state": {
-      "get": {
-        "operationId": "getCharacterState",
-        "summary": "Obtiene estado mecanico directo de un personaje.",
-        "description": "Devuelve HP, MP, hambre, energia, dinero, inventario, equipo, skills, condiciones y acumuladores biologicos sin reconstruir desde logs.",
-        "parameters": [
-          {
-            "name": "characterId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "gameId",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "isekai_lucas_main"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Estado directo del personaje.",
             "content": {
               "application/json": {
                 "schema": {
