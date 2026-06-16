@@ -6,6 +6,9 @@ const Npc = require("../models/Npc");
 const NpcMemory = require("../models/NpcMemory");
 const KnowledgeRecord = require("../models/KnowledgeRecord");
 const EventLog = require("../models/EventLog");
+const JobContract = require("../models/JobContract");
+const Checkpoint = require("../models/Checkpoint");
+const BiologicalAccumulationArchive = require("../models/BiologicalAccumulationArchive");
 const {
   assert,
   post,
@@ -17,6 +20,8 @@ const { classifyTurn } = require("../services/turnIntakeService");
 let tempGameId = "";
 let tempLocationId = "";
 let tempNpcId = "";
+let tempCharacterId = "";
+let tempContractId = "";
 
 async function cleanupFixture() {
   if (!tempGameId) return;
@@ -27,10 +32,15 @@ async function cleanupFixture() {
     NpcMemory.deleteMany({ npcId: tempNpcId }),
     KnowledgeRecord.deleteMany({ gameId: tempGameId }),
     EventLog.deleteMany({ gameId: tempGameId }),
+    JobContract.deleteMany({ contractId: tempContractId }),
+    Checkpoint.deleteMany({ gameId: tempGameId }),
+    BiologicalAccumulationArchive.deleteMany({ gameId: tempGameId }),
   ]);
   tempGameId = "";
   tempLocationId = "";
   tempNpcId = "";
+  tempCharacterId = "";
+  tempContractId = "";
 }
 
 async function createFixture() {
@@ -39,6 +49,8 @@ async function createFixture() {
   tempGameId = `test_turn_intake_${suffix}`;
   tempLocationId = `loc_test_turn_intake_${suffix}`;
   tempNpcId = `npc_test_lira_${suffix}`;
+  tempCharacterId = `char_test_turn_intake_${suffix}`;
+  tempContractId = `job_contract_test_turn_intake_${suffix}`;
 
   const base = await GameState.findOne({ gameId: "isekai_lucas_main" }).lean();
   assert.ok(base, "Base GameState is required for turn intake tests.");
@@ -51,6 +63,7 @@ async function createFixture() {
     time: "12:00",
     block: "Mediod\u00eda",
     locationId: tempLocationId,
+    characterId: tempCharacterId,
     activeEventIds: [],
     activeMissionIds: [],
     flags: {},
@@ -149,6 +162,42 @@ async function createFixture() {
     createdTime: "11:00",
     importance: "normal",
     tags: ["testSuite"],
+  });
+  await JobContract.create({
+    contractId: tempContractId,
+    characterId: tempCharacterId,
+    jobId: "job_test_grulla_afternoon_intake",
+    title: "Test Turno tarde La Grulla Azul",
+    employerNpcId: "npc_roberto_valen",
+    locationId: "loc_hoshimori_grulla_azul",
+    status: "active",
+    startDay: 19,
+    shifts: [
+      {
+        shiftId: "shift_test_turn_intake_afternoon_1400_2030",
+        name: "Turno tarde La Grulla Azul",
+        startTime: "14:00",
+        endTime: "20:30",
+        activityCategory: "trabajo_normal",
+        expectedMinutes: 390,
+        payCopper: 70,
+        status: "active",
+        includedMealIds: ["meal_test_turn_intake_main"],
+        lateGraceMinutes: 0,
+      },
+    ],
+    mealBenefits: [
+      {
+        mealId: "meal_test_turn_intake_main",
+        name: "Comida principal de contrato",
+        satietyBonus: 30,
+        energyBonus: 5,
+        notes: "Fixture de comida incluida para intake.",
+      },
+    ],
+    source: "test_turn_intake",
+    tags: ["testSuite", tempGameId],
+    flags: { testSuite: true },
   });
 }
 
@@ -300,7 +349,7 @@ describe("turn intake API", () => {
     assert.equal(response.data.resolverPacket.resolverRequest.sequence[0].toLocationId, "loc_hoshimori_guild");
   });
 
-  it("does not build a common resolver request for magic practice", async () => {
+  it("returns an applyTurn action packet for safe mana meditation", async () => {
     await createFixture();
     const response = await post("/api/turn/intake", {
       gameId: tempGameId,
@@ -309,9 +358,264 @@ describe("turn intake API", () => {
 
     assert.equal(response.status, 200, JSON.stringify(response.data));
     assert.equal(response.data.ok, true);
-    assert.equal(response.data.route.supported, false);
-    assert.equal(response.data.route.suggestedOperation, "resolveTurn_or_existing_flow");
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.route.suggestedOperation, "applyTurn");
+    assert.equal(response.data.route.capabilityId, "safe_magic_practice");
     assert.equal(response.data.resolverPacket, undefined);
+    assert.equal(response.data.actionPacket.selectedOperation, "applyTurn");
+    assert.equal(response.data.directorPacket.mode, "action_ready");
+    assert.equal(response.data.actionPacket.request.actionFamily, "magic_practice");
+    assert.equal(response.data.actionPacket.request.timeAdvance.from, "12:00");
+    assert.equal(response.data.actionPacket.request.timeAdvance.to, "13:10");
+    assert.deepEqual(
+      response.data.actionPacket.request.activitySegments.map((segment) => segment.minutes),
+      [10, 60]
+    );
+    assert.equal(
+      response.data.actionPacket.request.magicPractice[0].techniqueId,
+      "technique_mana_meditation_basic"
+    );
+    assert.equal(response.data.directorPacket.actionPolicy.gptShouldCall.includes("applyTurn"), true);
+    assert.equal(response.data.directorPacket.actionPolicy.gptShouldNotCall.includes("listMagicTechniques"), true);
+
+    const beforeState = await GameState.findOne({ gameId: tempGameId }).lean();
+    const dryRun = await post("/api/turn/apply", {
+      ...response.data.actionPacket.request,
+      dryRun: true,
+      clientTurnId: `${response.data.actionPacket.request.clientTurnId}-dryrun`,
+    });
+    assert.equal(dryRun.status, 200, JSON.stringify(dryRun.data));
+    assert.equal(dryRun.data.dryRun, true);
+    assert.equal(dryRun.data.changes.magicPractice[0].techniqueId, "technique_mana_meditation_basic");
+    const afterState = await GameState.findOne({ gameId: tempGameId }).lean();
+    assert.equal(afterState.time, beforeState.time);
+  });
+
+  it("keeps risky electricity magic out of the fast action packet", async () => {
+    await createFixture();
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas intenta lanzar una descarga electrica durante diez minutos.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.supported, false);
+    assert.equal(response.data.route.capabilityId, "magic_practice");
+    assert.equal(response.data.actionPacket, undefined);
+    assert.equal(response.data.resolverPacket, undefined);
+  });
+
+  it("returns an applyTurn action packet for simple inn meal purchase", async () => {
+    await createFixture();
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      { $set: { locationId: "loc_hoshimori_grulla_azul", time: "10:30", block: "Ma\u00f1ana", moneyCopper: 1498 } }
+    );
+
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas pide una comida normal para comer.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.route.capabilityId, "simple_meal_purchase");
+    assert.equal(response.data.actionPacket.selectedOperation, "applyTurn");
+    assert.equal(response.data.actionPacket.request.actionFamily, "meal");
+    assert.equal(response.data.actionPacket.request.moneyPatch.deltaCopper, -35);
+    assert.equal(response.data.actionPacket.request.lucasPatch.satietyDelta, 30);
+    assert.equal(response.data.actionPacket.request.lucasPatch.energyDelta, 5);
+    assert.equal(response.data.actionPacket.request.shopStockPatches[0].shopId, "shop_grulla_azul_inn");
+    assert.equal(response.data.actionPacket.request.shopStockPatches[0].itemId, "item_comida_normal");
+    assert.equal(response.data.directorPacket.actionPolicy.gptShouldNotCall.includes("getShopStock"), true);
+
+    const beforeState = await GameState.findOne({ gameId: tempGameId }).lean();
+    const dryRun = await post("/api/turn/apply", {
+      ...response.data.actionPacket.request,
+      dryRun: true,
+      clientTurnId: `${response.data.actionPacket.request.clientTurnId}-dryrun`,
+    });
+    assert.equal(dryRun.status, 200, JSON.stringify(dryRun.data));
+    assert.equal(dryRun.data.dryRun, true);
+    assert.equal(dryRun.data.changes.money.delta, -35);
+    assert.equal(dryRun.data.changes.shopStocks[0].after.quantity, dryRun.data.changes.shopStocks[0].before.quantity - 1);
+    const afterState = await GameState.findOne({ gameId: tempGameId }).lean();
+    assert.equal(afterState.time, beforeState.time);
+  });
+
+  it("returns a completeJobShift action packet for closing the active shift with contract meal", async () => {
+    await createFixture();
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      { $set: { locationId: "loc_hoshimori_grulla_azul", time: "17:05", block: "Tarde" } }
+    );
+
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas trabaja hasta la hora de cierre y pide la comida por contrato.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.route.suggestedOperation, "completeJobShift");
+    assert.equal(response.data.route.capabilityId, "complete_job_shift");
+    assert.equal(response.data.actionPacket.selectedOperation, "completeJobShift");
+    assert.equal(response.data.actionPacket.request.pathParams.shiftId, "shift_test_turn_intake_afternoon_1400_2030");
+    assert.equal(response.data.actionPacket.request.body.contractId, tempContractId);
+    assert.equal(response.data.actionPacket.request.body.allowLateCompletion, true);
+    assert.deepEqual(response.data.actionPacket.request.body.consumeIncludedMealIds, ["meal_test_turn_intake_main"]);
+    assert.equal(response.data.directorPacket.actionPolicy.gptShouldCall.includes("completeJobShift"), true);
+    assert.equal(response.data.directorPacket.actionPolicy.gptShouldNotCall.includes("getCompactContext"), true);
+  });
+
+  it("returns an ordered action plan for closing shift, contract meal, and safe meditation", async () => {
+    await createFixture();
+    await GameState.updateOne(
+      { gameId: tempGameId },
+      { $set: { locationId: "loc_hoshimori_grulla_azul", time: "17:05", block: "Tarde" } }
+    );
+
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text:
+        "Lucas trabaja hasta la hora de cierre, luego pide la comida por contrato para comer, sube a su cuarto y practica meditacion de mana durante una hora.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.route.suggestedOperation, "actionPlan");
+    assert.equal(response.data.directorPacket.mode, "action_plan_ready");
+    assert.equal(response.data.actionPacket, undefined);
+    assert.equal(response.data.actionPlanPacket.selectedOperation, "actionPlan");
+    assert.equal(response.data.actionPlanPacket.operations.length, 2);
+
+    const [completeOperation, magicOperation] = response.data.actionPlanPacket.operations;
+    assert.equal(completeOperation.selectedOperation, "completeJobShift");
+    assert.equal(completeOperation.request.pathParams.shiftId, "shift_test_turn_intake_afternoon_1400_2030");
+    assert.equal(completeOperation.request.body.contractId, tempContractId);
+    assert.equal(completeOperation.request.body.allowLateCompletion, true);
+    assert.deepEqual(completeOperation.request.body.consumeIncludedMealIds, ["meal_test_turn_intake_main"]);
+    assert.equal(magicOperation.selectedOperation, "applyTurn");
+    assert.equal(magicOperation.dependsOnPrevious, true);
+    assert.equal(magicOperation.expectedStateBefore.time, "20:30");
+    assert.equal(magicOperation.request.actionFamily, "magic_practice");
+    assert.equal(magicOperation.request.timeAdvance.from, "20:30");
+    assert.equal(magicOperation.request.timeAdvance.to, "21:30");
+    assert.equal(
+      magicOperation.request.magicPractice[0].techniqueId,
+      "technique_mana_meditation_basic"
+    );
+    assert.deepEqual(response.data.directorPacket.actionPolicy.gptShouldCall, [
+      "completeJobShift",
+      "applyTurn",
+    ]);
+    assert.equal(response.data.directorPacket.actionPolicy.gptShouldNotCall.includes("getCompactContext"), true);
+
+    const completeShift = await post(
+      `/api/jobs/shifts/${completeOperation.request.pathParams.shiftId}/complete`,
+      completeOperation.request.body
+    );
+    assert.equal(completeShift.status, 200, JSON.stringify(completeShift.data));
+    assert.equal(completeShift.data.ok, true);
+
+    const dryRunMagic = await post("/api/turn/apply", {
+      ...magicOperation.request,
+      dryRun: true,
+      clientTurnId: `${magicOperation.request.clientTurnId}-dryrun`,
+    });
+    assert.equal(dryRunMagic.status, 200, JSON.stringify(dryRunMagic.data));
+    assert.equal(dryRunMagic.data.dryRun, true);
+    assert.equal(dryRunMagic.data.changes.magicPractice[0].techniqueId, "technique_mana_meditation_basic");
+  });
+
+  it("returns a resolver request for sleeping until a target time", async () => {
+    await createFixture();
+    await GameState.updateOne({ gameId: tempGameId }, { $set: { time: "22:30", block: "Noche" } });
+
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas se acuesta y duerme hasta las 06:00.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.readOnly, true);
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.route.suggestedOperation, "resolveTurn");
+    assert.equal(response.data.route.capabilityId, "sleep_until_time");
+    assert.equal(response.data.capabilityPacket.capabilityId, "sleep_until_time");
+    assert.equal(response.data.resolverPacket.resolverRequest.actionFamily, "rest");
+    assert.deepEqual(
+      response.data.resolverPacket.resolverRequest.sequence,
+      [
+        {
+          type: "rest",
+          category: "descanso_acostado",
+          reason: "Dormir hasta una hora concreta indicada por el jugador.",
+          minutes: 450,
+        },
+      ]
+    );
+    assert.equal(response.data.directorPacket.actionPolicy.gptShouldCall.includes("resolveTurn"), true);
+    assert.equal(response.data.directorPacket.actionPolicy.gptShouldNotCall.includes("getCompactContext"), true);
+  });
+
+  it("returns a resolver request for internal room movement plus timed rest", async () => {
+    await createFixture();
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas sube a su cuarto y se sienta en la cama durante 10 minutos.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.route.suggestedOperation, "resolveTurn");
+    assert.equal(response.data.route.capabilityId, "rest_duration");
+    assert.equal(response.data.resolverPacket.resolverRequest.actionFamily, "rest");
+    assert.deepEqual(
+      response.data.resolverPacket.resolverRequest.sequence,
+      [
+        {
+          type: "rest",
+          minutes: 10,
+          category: "descanso_acostado",
+          reason: "Descanso indicado por el jugador.",
+        },
+      ]
+    );
+  });
+
+  it("returns a resolver request for waiting until a target time", async () => {
+    await createFixture();
+    await GameState.updateOne({ gameId: tempGameId }, { $set: { time: "06:30", block: "Ma\u00f1ana" } });
+
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas espera hasta las 08:00.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.route.suggestedOperation, "resolveTurn");
+    assert.equal(response.data.route.capabilityId, "wait_until_time");
+    assert.equal(response.data.resolverPacket.resolverRequest.actionFamily, "general_action");
+    assert.deepEqual(
+      response.data.resolverPacket.resolverRequest.sequence,
+      [
+        {
+          type: "wait",
+          category: "actividad_normal",
+          reason: "Esperar hasta una hora concreta indicada por el jugador.",
+          minutes: 90,
+        },
+      ]
+    );
   });
 
   it("returns a social packet for simple questions about a visible NPC current task", async () => {

@@ -7,7 +7,15 @@ const NpcMemory = require("../models/NpcMemory");
 const KnowledgeRecord = require("../models/KnowledgeRecord");
 const EventLog = require("../models/EventLog");
 const WorldEvent = require("../models/WorldEvent");
+const JobContract = require("../models/JobContract");
+const MagicTechnique = require("../models/MagicTechnique");
+const Item = require("../models/Item");
+const ShopStock = require("../models/ShopStock");
 const { relationshipBand } = require("./socialLedgerService");
+const {
+  detectSafeMagicPracticePlan,
+  routeTurnIntent,
+} = require("./turnCapabilityRouterService");
 const { formatCopper } = require("../utils/mechanicalChangeDisplay");
 
 const DEFAULT_GAME_ID = "isekai_lucas_main";
@@ -18,43 +26,6 @@ const COMMON_RESOLVER_UNSUPPORTED_DOMAINS = new Set([
   "inventory_evidence",
   "combat_injury",
 ]);
-const DESTINATION_ALIASES = [
-  {
-    locationId: "loc_hoshimori_grulla_azul",
-    name: "La Grulla Azul",
-    patterns: [/\b(posada|grulla azul|la grulla)\b/],
-  },
-  {
-    locationId: "loc_hoshimori_guild",
-    name: "Gremio local de Hoshimori",
-    patterns: [/\b(gremio|guild)\b/],
-  },
-  {
-    locationId: "loc_hoshimori_guild_patio",
-    name: "Patio del gremio",
-    patterns: [/\b(patio del gremio|patio gremio)\b/],
-  },
-  {
-    locationId: "loc_hoshimori_forest_whispers_edge",
-    name: "Bosque de los Susurros - borde",
-    patterns: [/\b(borde del bosque|bosque de los susurros|bosque)\b/],
-  },
-  {
-    locationId: "loc_hoshimori_market",
-    name: "Mercado de Hoshimori",
-    patterns: [/\b(mercado)\b/],
-  },
-  {
-    locationId: "loc_hoshimori_plaza",
-    name: "Plaza de Hoshimori",
-    patterns: [/\b(plaza)\b/],
-  },
-  {
-    locationId: "loc_hoshimori_temple_serene_flame",
-    name: "Templo de la Llama Serena",
-    patterns: [/\b(templo|llama serena)\b/],
-  },
-];
 
 function normalizeText(value = "") {
   return String(value || "")
@@ -118,162 +89,8 @@ function isReadOnlyNpcTaskQuestion(text) {
   return ["routine_schedule", "work_pattern", "current_task"].includes(detectSocialQuestionType(text));
 }
 
-function inferDomains(text) {
-  const domains = [];
-  const checks = [
-    ["magic", /\b(magia|mana|hechizo|conjur|electric|rayo|chispa|medita|aqua)\b/],
-    ["social", /\b(habla|charla|conversa|bromea|comenta|comentario|responde|dile|dice|decime|decirme|dime|cuentame|contame|pregunta|pide|saluda|agradece|disculpa|a que hora|horario|yara|fern|roberto|nia|eddan|garrick|mara|sael|doran|joren)\b/],
-    [
-      "travel",
-      /\b(viaja|camina|corre|vuelve|regresa|sale|entra|sube|baja|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|ruta|camino|sendero)\b/,
-    ],
-    ["work", /\b(trabaja|turno|tardanza|contrato|servir|mesa|platos|jornada|asistencia|llegada tarde)\b/],
-    ["rest_biology", /\b(descansa|duerme|come|bebe|hambre|cansancio|energia|saciedad|cama)\b/],
-    ["economy", /\b(compra|vende|paga|precio|stock|monedas|cobre|plata|oro)\b/],
-    ["mission_event", /\b(mision|cartelera|evento|recompensa|reporte|gremio)\b/],
-    ["inventory_evidence", /\b(inventario|mochila|muestra|evidencia|pelo gris|nota|daga|objeto)\b/],
-    ["combat_injury", /\b(ataca|combate|golpea|herida|dano|sangre|enemigo|huye)\b/],
-  ];
-
-  for (const [domain, pattern] of checks) {
-    if (pattern.test(text)) domains.push(domain);
-  }
-
-  return unique(domains);
-}
-
-function isSimpleSocialText(text) {
-  if (
-    !textMatchesAny(text, [
-      /\b(habla|charla|conversa|bromea|saluda|agradece|disculpa|dice|pregunta|comenta|comentario|responde)\b/,
-      /\b(decime|decirme|dime|cuentame|contame)\b/,
-      /\ble hace un comentario\b/,
-      /\b(a que hora|horario)\b/,
-    ])
-  ) {
-    return false;
-  }
-
-  const asksAboutNpcTask = isReadOnlyNpcTaskQuestion(text);
-
-  const complexPatterns = [
-    /\b(permiso|autoriza|autorizar|negocia|convenc|promete|promesa|cita|secreto|confiesa|romance|besar|beso|amor)\b/,
-    /\b(amenaza|intimida|presiona|chantaje|acusa|denuncia|miente|roba)\b/,
-    /\b(mision|recompensa|reporte|prueba|evidencia|muestra|pista|cartelera|gremio)\b/,
-    /\b(compra|vende|paga|precio|stock|dinero|moneda|cobre|plata|oro|presta)\b/,
-    /\b(magia|mana|hechizo|conjura|rayo|electric|entrena|practica|combate|herida|cura)\b/,
-    /\bpide\b(?!\s+disculpas?\b)/,
-  ];
-  if (!asksAboutNpcTask) {
-    complexPatterns.push(/\b(turno|tardanza|contrato|trabajo|trabaja|jornada)\b/);
-  }
-
-  return !textMatchesAny(text, complexPatterns);
-}
-
 function classifyTurn({ text = "", aiClassification = null } = {}) {
-  const normalized = normalizeText(text);
-  const aiDomains = asArray(aiClassification?.domains).map((domain) => String(domain || "").trim()).filter(Boolean);
-  const domains = unique([...inferDomains(normalized), ...aiDomains]);
-  const mechanicalDomains = domains.filter((domain) => domain !== "scene");
-
-  const continueScene = textMatchesAny(normalized, [
-    /^continuar( historia)?$/,
-    /^continua(r)?( la)? historia$/,
-    /^seguir( escena| historia)?$/,
-    /^continua$/,
-    /^que pasa ahora\??$/,
-    /^sigue$/,
-  ]);
-
-  const observeOnly = textMatchesAny(normalized, [
-    /^lucas mira( alrededor)?$/,
-    /^lucas observa( alrededor)?$/,
-    /^miro( alrededor)?$/,
-    /^observo( alrededor)?$/,
-    /\b(lucas )?(se queda )?(mirando|observando|escuchando|mira|observa|escucha)\b.*\b(alrededor|entorno|cuarto|habitacion|sala|lugar|puerta|ventana)\b/,
-    /\b(echa|hecha) un vistazo\b/,
-    /^pensar$/,
-    /^lucas piensa$/,
-  ]);
-
-  const likelyMutation = textMatchesAny(normalized, [
-    /\b(trabaja|entrena|practica|corre|viaja|camina|vuelve|regresa|sale|entra|sube|baja|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|descansa|duerme|come|bebe|compra|vende|paga|toma|agarra|usa|ataca|conjura|lanza|acepta|rechaza|reporta|completa|investiga|revisa)\b/,
-  ]);
-  const likelySocial =
-    domains.includes("social") &&
-    /\b(habla|charla|conversa|bromea|dice|decime|decirme|dime|cuentame|contame|pregunta|saluda|agradece|disculpa|pide|comenta|comentario|responde|a que hora|horario)\b/.test(
-      normalized
-    );
-
-  if (continueScene || observeOnly || (!normalized && !likelyMutation)) {
-    return {
-      intent: continueScene ? "continue_scene" : "observe_scene",
-      domains: domains.length ? domains : ["scene"],
-      needsMutation: false,
-      suggestedOperation: "narrateOnly",
-      supported: true,
-      confidence: continueScene ? "high" : "medium",
-    };
-  }
-
-  if (likelySocial && (!likelyMutation || isReadOnlyNpcTaskQuestion(normalized))) {
-    if (isSimpleSocialText(normalized)) {
-      const routeDomains = isReadOnlyNpcTaskQuestion(normalized)
-        ? domains.filter((domain) => domain !== "work")
-        : domains;
-      return {
-        intent: "social_scene",
-        domains: unique(["social", ...routeDomains]),
-        needsMutation: false,
-        suggestedOperation: "narrateOnly",
-        supported: true,
-        confidence: "medium",
-      };
-    }
-
-    return {
-      intent: "social",
-      domains: unique(["social", ...domains]),
-      needsMutation: false,
-      suggestedOperation: "getCompactContext",
-      supported: false,
-      confidence: "medium",
-      fallbackReason: "Social complejo o con posible consecuencia; usar flujo social existente.",
-    };
-  }
-
-  if (!likelyMutation && mechanicalDomains.length === 0) {
-    return {
-      intent: observeOnly ? "observe_scene" : "continue_scene",
-      domains: domains.length ? domains : ["scene"],
-      needsMutation: false,
-      suggestedOperation: "narrateOnly",
-      supported: true,
-      confidence: aiClassification?.needsMutation === false ? "high" : "medium",
-    };
-  }
-
-  if (likelyMutation || mechanicalDomains.length > 0) {
-    return {
-      intent: mechanicalDomains.length > 1 ? "compound" : mechanicalDomains[0] || "player_action",
-      domains: domains.length ? domains : ["scene"],
-      needsMutation: true,
-      suggestedOperation: "resolveTurn_or_existing_flow",
-      supported: false,
-      confidence: "medium",
-      fallbackReason: "La ruta rapida read-only no cubre esta accion; usar resolver o flujo existente.",
-    };
-  }
-
-  return {
-    intent: "continue_scene",
-    domains: ["scene"],
-    needsMutation: false,
-    suggestedOperation: "narrateOnly",
-    supported: true,
-    confidence: "low",
-  };
+  return routeTurnIntent({ text, aiClassification }).route;
 }
 
 function actorHintsFromClassification(aiClassification = null) {
@@ -530,91 +347,6 @@ function buildQuestionContext({ text = "", targetNpc = null, gameState = {} } = 
   };
 }
 
-function regexIndex(text = "", pattern) {
-  const match = pattern.exec(text);
-  if (!match) return -1;
-  return match.index;
-}
-
-function extractDurations(text = "") {
-  const durations = [];
-  const pushMatches = (pattern, toMinutes) => {
-    for (const match of text.matchAll(pattern)) {
-      const minutes = toMinutes(match);
-      if (Number.isInteger(minutes) && minutes > 0) {
-        durations.push({
-          index: match.index,
-          text: match[0],
-          minutes,
-        });
-      }
-    }
-  };
-
-  pushMatches(/\b(\d{1,3})\s*(minutos?|mins?|m)\b/g, (match) => Number(match[1]));
-  pushMatches(/\b(\d{1,2})\s*(horas?|hs?|h)\b/g, (match) => Number(match[1]) * 60);
-
-  const wordDurations = [
-    ["cinco minutos", 5],
-    ["diez minutos", 10],
-    ["quince minutos", 15],
-    ["veinte minutos", 20],
-    ["treinta minutos", 30],
-    ["cuarenta minutos", 40],
-    ["cuarenta y cinco minutos", 45],
-    ["media hora", 30],
-    ["un cuarto de hora", 15],
-    ["una hora", 60],
-    ["un hora", 60],
-    ["dos horas", 120],
-    ["tres horas", 180],
-  ];
-
-  for (const [phrase, minutes] of wordDurations) {
-    const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    pushMatches(new RegExp(`\\b${escaped}\\b`, "g"), () => minutes);
-  }
-
-  return durations.sort((left, right) => left.index - right.index);
-}
-
-function durationNear(text = "", cueIndex = -1, { maxDistance = 96 } = {}) {
-  const durations = extractDurations(text);
-  if (durations.length === 0) return null;
-  if (cueIndex < 0) return durations[0];
-  return (
-    durations.find(
-      (duration) =>
-        duration.index >= cueIndex - 64 &&
-        duration.index <= cueIndex + maxDistance
-    ) || null
-  );
-}
-
-function detectRestCategory(text = "", cueIndex = -1) {
-  const slice = cueIndex >= 0 ? text.slice(Math.max(0, cueIndex - 30), cueIndex + 100) : text;
-  if (/\b(acostad|cama|duerme|dormir|dormia|siesta)\b/.test(slice)) return "descanso_acostado";
-  return "descanso_sentado";
-}
-
-function detectDestination(text = "") {
-  for (const destination of DESTINATION_ALIASES) {
-    if (destination.patterns.some((pattern) => pattern.test(text))) {
-      return destination;
-    }
-  }
-  return null;
-}
-
-function detectTravelPace(text = "", cueIndex = -1) {
-  const slice = cueIndex >= 0 ? text.slice(Math.max(0, cueIndex - 40), cueIndex + 120) : text;
-  if (/\b(a toda velocidad|sprint|maxima velocidad|lo mas rapido)\b/.test(slice)) return "full_speed";
-  if (/\b(corre|corriendo|correr)\b/.test(slice)) return "run";
-  if (/\b(rapido|rapidamente|apuro|prisa)\b/.test(slice)) return "hurry";
-  if (/\b(cuidado|cautela|despacio)\b/.test(slice)) return "careful";
-  return "walk";
-}
-
 function makeResolverClientTurnId({ gameState = {}, text = "" } = {}) {
   const hash = crypto
     .createHash("sha1")
@@ -624,112 +356,72 @@ function makeResolverClientTurnId({ gameState = {}, text = "" } = {}) {
   return `intake-d${gameState.currentDay || 0}-${String(gameState.time || "0000").replace(":", "")}-${hash}`;
 }
 
-function buildCommonResolverPacket({ route = {}, text = "", gameState = {} } = {}) {
-  const normalized = normalizeText(text);
-  if (!route.needsMutation) return null;
-  if ((route.domains || []).some((domain) => COMMON_RESOLVER_UNSUPPORTED_DOMAINS.has(domain))) return null;
-  if ((route.domains || []).includes("mission_event") && /\b(mision|cartelera|evento|recompensa|reporte)\b/.test(normalized)) {
-    return null;
-  }
+function minutesUntilTargetTime(gameState = {}, targetTime = "") {
+  const current = timeToMinutes(gameState.time || "");
+  const target = timeToMinutes(targetTime);
+  if (current === null || target === null) return null;
+  return target > current ? target - current : target + 1440 - current;
+}
 
-  const cues = [];
-  const addCue = (kind, pattern) => {
-    const index = regexIndex(normalized, pattern);
-    if (index >= 0) cues.push({ kind, index });
+function addMinutesToStateTime(gameState = {}, minutesToAdd = 0) {
+  const current = timeToMinutes(gameState.time || "");
+  const minutes = Number(minutesToAdd);
+  if (current === null || !Number.isFinite(minutes) || minutes <= 0) return null;
+  const total = current + Math.round(minutes);
+  const dayDelta = Math.floor(total / 1440);
+  const normalized = ((total % 1440) + 1440) % 1440;
+  const hours = Math.floor(normalized / 60);
+  const mins = normalized % 60;
+  return {
+    toDay: Number(gameState.currentDay || 0) + dayDelta,
+    to: `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`,
   };
+}
 
-  addCue("rest", /\b(descansa|descansar|se sienta|sentado|se acuesta|acostado|duerme|dormir)\b/);
-  addCue("wait", /\b(espera|esperar|aguarda)\b/);
-  addCue("work_segment", /\b(trabaja|trabajar|sirve mesas|servir mesas|atiende mesas|limpia mesas|ayuda a cerrar|ordena mesas)\b/);
-  addCue("travel", /\b(vuelve|regresa|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|camina|corre|sale hacia|entra en)\b/);
-
+function materializeResolverPlan({ route = {}, gameState = {} } = {}) {
   const steps = [];
   const unsupportedReasons = [];
+  const plan = route.resolverPlan || {};
 
-  for (const cue of cues.sort((left, right) => left.index - right.index)) {
-    if (cue.kind === "rest") {
-      const duration = durationNear(normalized, cue.index);
-      if (!duration) {
-        unsupportedReasons.push("rest sin duracion explicita");
+  for (const rawStep of plan.steps || []) {
+    const step = { ...rawStep };
+    delete step.capabilityId;
+    delete step.destinationName;
+
+    if (step.targetTime && !step.minutes) {
+      const minutes = minutesUntilTargetTime(gameState, step.targetTime);
+      if (!Number.isInteger(minutes) || minutes <= 0) {
+        unsupportedReasons.push(`${step.type || "step"} con targetTime invalido`);
         continue;
       }
-      steps.push({
-        type: "rest",
-        minutes: duration.minutes,
-        category: detectRestCategory(normalized, cue.index),
-        reason: "Descanso indicado por el jugador.",
-      });
+      step.minutes = minutes;
+      step.reason = step.reason || `Duracion calculada hasta ${step.targetTime}.`;
+    }
+
+    if (step.type === "travel" && (!step.toLocationId || step.toLocationId === gameState.locationId)) {
+      unsupportedReasons.push("travel sin destino nuevo claro");
       continue;
     }
 
-    if (cue.kind === "wait") {
-      const duration = durationNear(normalized, cue.index);
-      if (!duration) {
-        unsupportedReasons.push("wait sin duracion explicita");
-        continue;
-      }
-      steps.push({
-        type: "wait",
-        minutes: duration.minutes,
-        category: "actividad_normal",
-        reason: "Espera indicada por el jugador.",
-      });
-      continue;
-    }
-
-    if (cue.kind === "work_segment") {
-      const duration = durationNear(normalized, cue.index);
-      if (!duration) {
-        unsupportedReasons.push("work_segment sin duracion explicita");
-        continue;
-      }
-      steps.push({
-        type: "work_segment",
-        minutes: duration.minutes,
-        intensity: /\b(fuerte|intenso|intensidad alta)\b/.test(normalized)
-          ? "strong"
-          : /\b(suave|ligero|tranquilo|intensidad baja)\b/.test(normalized)
-            ? "light"
-            : "normal",
-        reason: "Trabajo parcial indicado por el jugador.",
-      });
-      continue;
-    }
-
-    if (cue.kind === "travel") {
-      const destination = detectDestination(normalized);
-      if (!destination || destination.locationId === gameState.locationId) {
-        unsupportedReasons.push("travel sin destino nuevo claro");
-        continue;
-      }
-      steps.push({
-        type: "travel",
-        toLocationId: destination.locationId,
-        pace: detectTravelPace(normalized, cue.index),
-        allowMultiSegment: true,
-        reason: `Traslado indicado por el jugador hacia ${destination.name}.`,
-      });
-    }
+    delete step.targetTime;
+    steps.push(step);
   }
 
-  const dedupedSteps = [];
-  for (const step of steps) {
-    const previous = dedupedSteps[dedupedSteps.length - 1];
-    if (
-      previous &&
-      previous.type === step.type &&
-      previous.type === "travel" &&
-      previous.toLocationId === step.toLocationId
-    ) {
-      continue;
-    }
-    dedupedSteps.push(step);
-  }
+  return {
+    steps,
+    unsupportedReasons: unique([
+      ...asArray(plan.unsupportedReasons),
+      ...unsupportedReasons,
+    ]),
+  };
+}
 
-  if (dedupedSteps.length === 0 || unsupportedReasons.length > 0) return null;
-  const hasWork = dedupedSteps.some((step) => step.type === "work_segment");
-  const hasTravel = dedupedSteps.some((step) => step.type === "travel");
-  const actionFamily = hasWork ? "job_shift" : hasTravel ? "travel" : "rest";
+function resolverPacketFromSteps({ route = {}, text = "", gameState = {}, steps = [], unsupportedReasons = [] } = {}) {
+  if (steps.length === 0 || unsupportedReasons.length > 0) return null;
+  const hasWork = steps.some((step) => step.type === "work_segment");
+  const hasTravel = steps.some((step) => step.type === "travel");
+  const hasRest = steps.some((step) => step.type === "rest");
+  const actionFamily = hasWork ? "job_shift" : hasTravel ? "travel" : hasRest ? "rest" : "general_action";
   const resolverRequest = {
     gameId: gameState.gameId || DEFAULT_GAME_ID,
     clientTurnId: makeResolverClientTurnId({ gameState, text }),
@@ -737,9 +429,10 @@ function buildCommonResolverPacket({ route = {}, text = "", gameState = {} } = {
     actionSummary: text,
     intent: {
       summary: text,
-      generatedBy: "turn_intake_common_resolver_v1",
+      generatedBy: route.resolverPlan ? "turn_capability_router_v1" : "turn_intake_common_resolver_v1",
+      capabilityId: route.capabilityId || "",
     },
-    sequence: dedupedSteps,
+    sequence: steps,
     responseProfile: "compact",
   };
 
@@ -753,6 +446,434 @@ function buildCommonResolverPacket({ route = {}, text = "", gameState = {} } = {
     boundary:
       "Usar resolveTurn con resolverRequest. No llamar getCompactContext/searchDocs/getNpcFull/previews para esta accion comun.",
   };
+}
+
+function buildCommonResolverPacket({ route = {}, text = "", gameState = {} } = {}) {
+  if (!route.needsMutation) return null;
+  if ((route.domains || []).some((domain) => COMMON_RESOLVER_UNSUPPORTED_DOMAINS.has(domain))) return null;
+  if ((route.domains || []).includes("mission_event") && /\b(mision|cartelera|evento|recompensa|reporte)\b/.test(normalizeText(text))) {
+    return null;
+  }
+
+  if (route.resolverPlan?.steps?.length) {
+    const materialized = materializeResolverPlan({ route, gameState });
+    const packet = resolverPacketFromSteps({
+      route,
+      text,
+      gameState,
+      steps: materialized.steps,
+      unsupportedReasons: materialized.unsupportedReasons,
+    });
+    if (packet) return packet;
+  }
+  return null;
+}
+
+function makeActionClientTurnId({ gameState = {}, text = "", operation = "action" } = {}) {
+  const hash = crypto
+    .createHash("sha1")
+    .update(`${operation}:${gameState.gameId || DEFAULT_GAME_ID}:${gameState.currentDay || 0}:${gameState.time || ""}:${text}`)
+    .digest("hex")
+    .slice(0, 12);
+  return `intake-${operation}-d${gameState.currentDay || 0}-${String(gameState.time || "0000").replace(":", "")}-${hash}`;
+}
+
+function shiftContainsTime(shift = {}, time = "") {
+  const current = timeToMinutes(time);
+  const start = timeToMinutes(shift.startTime);
+  const end = timeToMinutes(shift.endTime);
+  if (current === null || start === null || end === null) return false;
+  if (start === end) return true;
+  if (start < end) return current >= start && current < end;
+  return current >= start || current < end;
+}
+
+function selectActiveShift(contract = {}, gameState = {}) {
+  const shifts = (contract.shifts || []).filter((shift) => shift.status !== "inactive");
+  return (
+    shifts.find((shift) => shiftContainsTime(shift, gameState.time || "")) ||
+    shifts.find((shift) => String(shift.status || "") === "active") ||
+    shifts[0] ||
+    null
+  );
+}
+
+function operationActionPolicy(selectedOperation = "") {
+  const call = selectedOperation ? [selectedOperation] : [];
+  return {
+    mutate: true,
+    timeAdvance: true,
+    gptShouldCall: call,
+    gptShouldNotCall: [
+      "getCompactContext",
+      "searchDocs",
+      "searchDatabase",
+      "getNpcFull",
+      "listMagicTechniques",
+      "getMagicTechnique",
+      "getShopStock",
+      "previewActivityCost",
+      "previewSkillProgression",
+      "previewMagicPractice",
+      "previewResolveTurn",
+      "applyTurn_dryRun",
+    ],
+    narrationInstruction:
+      "Llamar solo la operacion indicada con el request preparado por actionPacket; despues narrar la respuesta guardada.",
+  };
+}
+
+function actionPlanPolicy(operations = []) {
+  return {
+    mutate: true,
+    timeAdvance: true,
+    gptShouldCall: operations.map((operation) => operation.selectedOperation).filter(Boolean),
+    gptShouldNotCall: [
+      "getCompactContext",
+      "searchDocs",
+      "searchDatabase",
+      "getNpcFull",
+      "listMagicTechniques",
+      "getMagicTechnique",
+      "getShopStock",
+      "previewActivityCost",
+      "previewSkillProgression",
+      "previewMagicPractice",
+      "previewResolveTurn",
+      "applyTurn_dryRun",
+    ],
+    narrationInstruction:
+      "Ejecutar las operaciones de actionPlanPacket en orden exacto, sin consultas intermedias; narrar con la ultima respuesta/displayBundle.",
+  };
+}
+
+async function buildCompleteJobShiftActionPacket({ route = {}, text = "", gameState = {} } = {}) {
+  const characterId = gameState.characterId || "char_lucas";
+  const contract = await JobContract.findOne({ characterId, status: "active" }).lean();
+  if (!contract) return null;
+  const shift = selectActiveShift(contract, gameState);
+  if (!shift?.shiftId) return null;
+
+  const plan = route.slots?.completeJobShiftPlan || {};
+  const currentMinutes = timeToMinutes(gameState.time || "");
+  const shiftStartMinutes = timeToMinutes(shift.startTime);
+  const needsLateCompletionFlag =
+    currentMinutes !== null &&
+    shiftStartMinutes !== null &&
+    currentMinutes > shiftStartMinutes;
+  const consumeIncludedMealIds = plan.consumeContractMeal ? [...(shift.includedMealIds || [])] : [];
+  const requestBody = {
+    gameId: gameState.gameId || DEFAULT_GAME_ID,
+    characterId,
+    contractId: contract.contractId,
+    completionSummary: text,
+    allowLateCompletion: Boolean(plan.allowLateCompletion || needsLateCompletionFlag),
+    consumeIncludedMealIds,
+  };
+
+  return {
+    schemaVersion: "turn_intake_action_packet_v1",
+    selectedOperation: "completeJobShift",
+    operationId: "completeJobShift",
+    supported: true,
+    endpoint: {
+      method: "POST",
+      path: `/api/jobs/shifts/${shift.shiftId}/complete`,
+    },
+    request: {
+      pathParams: {
+        shiftId: shift.shiftId,
+      },
+      body: requestBody,
+    },
+    summary: {
+      capabilityId: route.capabilityId,
+      contractId: contract.contractId,
+      shiftId: shift.shiftId,
+      shiftName: shift.name || shift.shiftId,
+      shiftStartTime: shift.startTime || "",
+      shiftEndTime: shift.endTime || "",
+      characterId,
+      consumeIncludedMealIds,
+    },
+    actionPolicy: operationActionPolicy("completeJobShift"),
+    boundary:
+      "Usar completeJobShift directamente. No llamar previewJobShift/getActiveJobContract/getCompactContext antes para este cierre laboral simple.",
+  };
+}
+
+async function buildSafeMagicPracticeActionPacket({ route = {}, text = "", gameState = {} } = {}) {
+  const plan = route.slots?.safeMagicPracticePlan || {};
+  if (!plan.techniqueId) return null;
+  const technique = await MagicTechnique.findOne({ techniqueId: plan.techniqueId }).lean();
+  if (!technique || technique.status !== "available") return null;
+
+  const minutes = Number(plan.minutes || technique.defaultMinutes || 0);
+  if (!Number.isInteger(minutes) || minutes < Number(technique.minMinutes || 1) || minutes > Number(technique.maxMinutes || minutes)) {
+    return null;
+  }
+  const precedingRestMinutes = Number(plan.precedingRestMinutes || 0);
+  const totalMinutes = minutes + (Number.isInteger(precedingRestMinutes) && precedingRestMinutes > 0 ? precedingRestMinutes : 0);
+  const target = addMinutesToStateTime(gameState, totalMinutes);
+  if (!target) return null;
+
+  const activitySegments = [];
+  if (precedingRestMinutes > 0) {
+    activitySegments.push({
+      category: "descanso_sentado",
+      minutes: precedingRestMinutes,
+      reason: "Descanso previo indicado por el jugador antes de practicar magia segura.",
+    });
+  }
+  activitySegments.push({
+    category: technique.activityCategory || "descanso_sentado",
+    minutes,
+    reason: `Practica segura de ${technique.name || technique.techniqueId}.`,
+  });
+
+  const applyTurnRequest = {
+    gameId: gameState.gameId || DEFAULT_GAME_ID,
+    clientTurnId: makeActionClientTurnId({ gameState, text, operation: "magic" }),
+    responseProfile: "compact",
+    actionFamily: "magic_practice",
+    actionSummary: text,
+    timeAdvance: {
+      fromDay: gameState.currentDay,
+      from: gameState.time,
+      toDay: target.toDay,
+      to: target.to,
+    },
+    activitySegments,
+    magicPractice: [
+      {
+        techniqueId: technique.techniqueId,
+        minutes,
+        reason: `Lucas practica ${technique.name || technique.techniqueId} de forma segura y sin efecto externo forzado.`,
+        modifiers: {
+          newTechnique: true,
+        },
+      },
+    ],
+    eventLogs: [
+      {
+        type: "magic_practice",
+        summary: text,
+        visibility: "private",
+        source: "player_action",
+        tags: ["turn_intake_action", "magic_practice", "safe_magic_practice"],
+      },
+    ],
+  };
+
+  return {
+    schemaVersion: "turn_intake_action_packet_v1",
+    selectedOperation: "applyTurn",
+    operationId: "applyTurn",
+    supported: true,
+    request: applyTurnRequest,
+    summary: {
+      capabilityId: route.capabilityId,
+      techniqueId: technique.techniqueId,
+      techniqueName: technique.name || technique.techniqueId,
+      minutes,
+      totalMinutes,
+      canProduceVisibleEffect: false,
+    },
+    actionPolicy: operationActionPolicy("applyTurn"),
+    boundary:
+      "Usar applyTurn directamente con este request. No buscar tecnicas ni hacer preview para practica magica segura.",
+  };
+}
+
+async function buildSimpleMealPurchaseActionPacket({ route = {}, text = "", gameState = {} } = {}) {
+  const plan = route.slots?.simpleMealPurchasePlan || {};
+  if (!plan.shopId || !plan.itemId) return null;
+  const [stock, item] = await Promise.all([
+    ShopStock.findOne({ shopId: plan.shopId, itemId: plan.itemId }).lean(),
+    Item.findOne({ itemId: plan.itemId }).lean(),
+  ]);
+  if (!stock || !item || stock.quantity <= 0) return null;
+  const price = Number(stock.currentPriceCopper ?? stock.basePriceCopper ?? item.basePriceCopper ?? 0);
+  if (!Number.isFinite(price) || price < 0) return null;
+  if (Number(gameState.moneyCopper || 0) < price) return null;
+  const minutes = Number(plan.minutes || 20);
+  if (!Number.isInteger(minutes) || minutes <= 0 || minutes > 120) return null;
+  const target = addMinutesToStateTime(gameState, minutes);
+  if (!target) return null;
+
+  const applyTurnRequest = {
+    gameId: gameState.gameId || DEFAULT_GAME_ID,
+    clientTurnId: makeActionClientTurnId({ gameState, text, operation: "meal" }),
+    responseProfile: "compact",
+    actionFamily: "meal",
+    actionSummary: text,
+    timeAdvance: {
+      fromDay: gameState.currentDay,
+      from: gameState.time,
+      toDay: target.toDay,
+      to: target.to,
+    },
+    activitySegments: [
+      {
+        category: "comer_tranquilo",
+        minutes,
+        reason: `Comer ${item.name || item.itemId} sentado con calma.`,
+      },
+    ],
+    lucasPatch: {
+      satietyDelta: Number(item.satietyBonus || 0),
+      energyDelta: Number(item.energyBonus || 0),
+      mpDelta: Number(item.mpBonus || 0),
+    },
+    moneyPatch: {
+      deltaCopper: -price,
+      reason: `Pago de ${item.name || item.itemId}.`,
+    },
+    shopStockPatches: [
+      {
+        shopId: stock.shopId,
+        itemId: stock.itemId,
+        deltaQuantity: -1,
+        reason: `Compra/consumo de ${item.name || item.itemId}.`,
+      },
+    ],
+    eventLogs: [
+      {
+        type: "meal",
+        summary: text,
+        visibility: "private",
+        source: "player_action",
+        tags: ["turn_intake_action", "meal", "shop_purchase"],
+        metadata: {
+          shopId: stock.shopId,
+          itemId: stock.itemId,
+          priceCopper: price,
+        },
+      },
+    ],
+  };
+
+  return {
+    schemaVersion: "turn_intake_action_packet_v1",
+    selectedOperation: "applyTurn",
+    operationId: "applyTurn",
+    supported: true,
+    request: applyTurnRequest,
+    summary: {
+      capabilityId: route.capabilityId,
+      shopId: stock.shopId,
+      itemId: item.itemId,
+      itemName: item.name || item.itemId,
+      priceCopper: price,
+      minutes,
+    },
+    actionPolicy: operationActionPolicy("applyTurn"),
+    boundary:
+      "Usar applyTurn directamente con este request. No llamar getShopStock/searchDatabase/previews para esta comida simple.",
+  };
+}
+
+async function buildSpecializedActionPacket({ route = {}, text = "", gameState = {} } = {}) {
+  if (!route.needsMutation) return null;
+  if (route.capabilityId === "complete_job_shift") {
+    return buildCompleteJobShiftActionPacket({ route, text, gameState });
+  }
+  if (route.capabilityId === "safe_magic_practice") {
+    return buildSafeMagicPracticeActionPacket({ route, text, gameState });
+  }
+  if (route.capabilityId === "simple_meal_purchase") {
+    return buildSimpleMealPurchaseActionPacket({ route, text, gameState });
+  }
+  return null;
+}
+
+function operationFromActionPacket(packet = {}, { order = 1, dependsOnPrevious = false, expectedStateBefore = null } = {}) {
+  return {
+    order,
+    selectedOperation: packet.selectedOperation,
+    operationId: packet.operationId || packet.selectedOperation,
+    endpoint: packet.endpoint || null,
+    request: packet.request || null,
+    summary: packet.summary || {},
+    boundary: packet.boundary || "",
+    dependsOnPrevious,
+    ...(expectedStateBefore ? { expectedStateBefore } : {}),
+  };
+}
+
+async function buildShiftThenSafeMagicActionPlanPacket({ route = {}, text = "", gameState = {} } = {}) {
+  if (route.capabilityId !== "complete_job_shift") return null;
+
+  const safeMagicPlan = detectSafeMagicPracticePlan(normalizeText(text));
+  if (!safeMagicPlan?.techniqueId) return null;
+
+  const completePacket = await buildCompleteJobShiftActionPacket({ route, text, gameState });
+  if (!completePacket?.supported) return null;
+  const shiftEndTime = completePacket.summary?.shiftEndTime;
+  if (!shiftEndTime) return null;
+
+  const virtualGameState = {
+    ...gameState,
+    time: shiftEndTime,
+  };
+  const magicRoute = {
+    ...route,
+    capabilityId: "safe_magic_practice",
+    slots: {
+      safeMagicPracticePlan: safeMagicPlan,
+    },
+  };
+  const magicPacket = await buildSafeMagicPracticeActionPacket({
+    route: magicRoute,
+    text,
+    gameState: virtualGameState,
+  });
+  if (!magicPacket?.supported) return null;
+
+  const operations = [
+    operationFromActionPacket(completePacket, { order: 1 }),
+    operationFromActionPacket(magicPacket, {
+      order: 2,
+      dependsOnPrevious: true,
+      expectedStateBefore: {
+        gameId: gameState.gameId || DEFAULT_GAME_ID,
+        day: gameState.currentDay,
+        time: shiftEndTime,
+        reason: "completeJobShift debe dejar el reloj en el cierre del turno antes de aplicar la practica magica.",
+      },
+    }),
+  ];
+
+  return {
+    schemaVersion: "turn_intake_action_plan_packet_v1",
+    selectedOperation: "actionPlan",
+    supported: true,
+    executionMode: "sequential",
+    operations,
+    summary: {
+      capabilityId: "composite_shift_then_safe_magic",
+      sourceCapabilityId: route.capabilityId,
+      operationCount: operations.length,
+      startsAt: {
+        day: gameState.currentDay,
+        time: gameState.time || "",
+      },
+      expectedFinal: {
+        day: magicPacket.request?.timeAdvance?.toDay,
+        time: magicPacket.request?.timeAdvance?.to,
+      },
+      includedMealIds: completePacket.summary?.consumeIncludedMealIds || [],
+      magicTechniqueId: magicPacket.summary?.techniqueId || "",
+    },
+    actionPolicy: actionPlanPolicy(operations),
+    boundary:
+      "Plan compuesto materializado por backend. Ejecutar todas las operaciones en orden exacto; no intercalar narracion, busquedas, previews ni fallback entre pasos.",
+  };
+}
+
+async function buildSpecializedActionPlanPacket({ route = {}, text = "", gameState = {} } = {}) {
+  if (!route.needsMutation) return null;
+  return buildShiftThenSafeMagicActionPlanPacket({ route, text, gameState });
 }
 
 function statLine(label, stat = {}) {
@@ -1026,15 +1147,34 @@ function buildDirectorPacket({
   socialPacket = null,
   questionContext = null,
   resolverPacket = null,
+  actionPacket = null,
+  actionPlanPacket = null,
+  capabilityPacket = null,
   continuityTarget = null,
   narrativeLocation = null,
   visibleEvents = [],
 } = {}) {
   const narrateOnly = route?.supported === true && route?.suggestedOperation === "narrateOnly";
   const resolverReady = route?.supported === true && route?.suggestedOperation === "resolveTurn" && resolverPacket;
+  const actionPlanReady =
+    route?.supported === true &&
+    route?.suggestedOperation === "actionPlan" &&
+    actionPlanPacket?.supported === true;
+  const actionReady =
+    route?.supported === true &&
+    actionPacket?.supported === true &&
+    ["applyTurn", "completeJobShift"].includes(actionPacket.selectedOperation);
   return {
     schemaVersion: "turn_director_readonly_v1",
-    mode: narrateOnly ? "read_only_narration" : resolverReady ? "resolver_ready" : "fallback_required",
+    mode: narrateOnly
+      ? "read_only_narration"
+      : resolverReady
+        ? "resolver_ready"
+        : actionPlanReady
+          ? "action_plan_ready"
+          : actionReady
+            ? "action_ready"
+            : "fallback_required",
     playerText: text,
     selectedOperation: route?.suggestedOperation || "getCompactContext",
     backendResolved: {
@@ -1042,11 +1182,19 @@ function buildDirectorPacket({
       socialTargetResolved: Boolean(socialPacket?.targetNpc?.npcId),
       questionResolved: Boolean(questionContext?.canAnswerFromPacket),
       resolverReady: Boolean(resolverReady),
+      actionPlanReady: Boolean(actionPlanReady),
+      actionReady: Boolean(actionReady),
       continuityTargetNpcId: continuityTarget?.npcId || "",
       continuitySource: continuityTarget?.source || "",
       narrativeLocation: narrativeLocation?.displayName || "",
       visibleEventCount: visibleEvents.length,
+      capabilityId: capabilityPacket?.capabilityId || route?.capabilityId || "",
+      capabilityDecision: capabilityPacket?.decision || route?.capabilityDecision || "",
+      capabilityExecutor: capabilityPacket?.executor || route?.capabilityExecutor || "",
     },
+    capabilityPacket: capabilityPacket || null,
+    actionPacket: actionPacket || null,
+    actionPlanPacket: actionPlanPacket || null,
     socialTarget: socialPacket
       ? {
           npcId: socialPacket.targetNpc.npcId,
@@ -1058,6 +1206,8 @@ function buildDirectorPacket({
     questionContext: questionContext || null,
     resolverRequest: resolverPacket?.resolverRequest || null,
     resolverPacket: resolverPacket || null,
+    actionRequest: actionPacket?.request || null,
+    actionPlan: actionPlanPacket?.operations || null,
     actionPolicy: resolverReady
       ? {
           mutate: true,
@@ -1074,6 +1224,10 @@ function buildDirectorPacket({
           narrationInstruction:
             "Llamar resolveTurn con resolverRequest y narrar la respuesta guardada. No buscar mas contexto antes.",
         }
+      : actionPlanReady
+      ? actionPlanPacket.actionPolicy
+      : actionReady
+      ? actionPacket.actionPolicy
       : narrateOnly
       ? {
           mutate: false,
@@ -1196,7 +1350,9 @@ async function buildNarratorPacket({
     throw error;
   }
 
-  let route = classifyTurn({ text, aiClassification });
+  const routedIntent = routeTurnIntent({ text, aiClassification });
+  let route = routedIntent.route;
+  const capabilityPacket = routedIntent.capabilityPacket;
   const locationIds = unique([gameState.locationId]);
   const [location, latestLogs, activeEvents] = await Promise.all([
     Location.findOne({ locationId: gameState.locationId })
@@ -1248,9 +1404,33 @@ async function buildNarratorPacket({
   let npcPresence = summarizeNpcPresence(npcs, location, narrativeLocation);
   const visibleEvents = activeEvents.filter((event) => eventVisibleToLucas(event, { locationIds }));
   let resolverPacket = null;
+  let actionPacket = null;
+  let actionPlanPacket = null;
   if (route.needsMutation) {
-    resolverPacket = buildCommonResolverPacket({ route, text, gameState });
-    if (resolverPacket) {
+    actionPlanPacket = await buildSpecializedActionPlanPacket({ route, text, gameState });
+    if (actionPlanPacket) {
+      route = {
+        ...route,
+        supported: true,
+        suggestedOperation: "actionPlan",
+        fallbackReason: "",
+        confidence: "high",
+      };
+    } else {
+      actionPacket = await buildSpecializedActionPacket({ route, text, gameState });
+    }
+    if (!actionPlanPacket && actionPacket) {
+      route = {
+        ...route,
+        supported: true,
+        suggestedOperation: actionPacket.selectedOperation,
+        fallbackReason: "",
+        confidence: "high",
+      };
+    } else if (!actionPlanPacket) {
+      resolverPacket = buildCommonResolverPacket({ route, text, gameState });
+    }
+    if (!actionPlanPacket && !actionPacket && resolverPacket) {
       route = {
         ...route,
         supported: true,
@@ -1295,6 +1475,9 @@ async function buildNarratorPacket({
     socialPacket,
     questionContext,
     resolverPacket,
+    actionPacket,
+    actionPlanPacket,
+    capabilityPacket,
     continuityTarget,
     narrativeLocation,
     visibleEvents,
@@ -1306,7 +1489,10 @@ async function buildNarratorPacket({
     readOnly: true,
     route,
     directorPacket,
+    capabilityPacket,
     ...(resolverPacket ? { resolverPacket } : {}),
+    ...(actionPacket ? { actionPacket } : {}),
+    ...(actionPlanPacket ? { actionPlanPacket } : {}),
     narratorPacket: {
       schemaVersion: "narrator_packet_minimal_v1",
       packetProfile: socialPacket ? "social_scene" : "minimal_scene",
@@ -1342,6 +1528,9 @@ async function buildNarratorPacket({
         visibility: event.visibility,
       })),
       hiddenEventCount: Math.max(0, activeEvents.length - visibleEvents.length),
+      capabilityPacket,
+      ...(actionPacket ? { actionPacket } : {}),
+      ...(actionPlanPacket ? { actionPlanPacket } : {}),
       immediateTensions: [
         Number(gameState.lucasStatus?.energy?.current) <= 25 ? "cansancio serio: debe sentirse en ritmo, postura y decision" : "",
         Number(gameState.lucasStatus?.satiety?.current) <= 45 ? "hambre relevante: no ignorar si la escena se alarga" : "",
@@ -1356,6 +1545,8 @@ async function buildNarratorPacket({
       }),
       directorPacket,
       ...(resolverPacket ? { resolverPacket } : {}),
+      ...(actionPacket ? { actionPacket } : {}),
+      ...(actionPlanPacket ? { actionPlanPacket } : {}),
       ...(socialPacket ? { socialPacket } : {}),
       displayBundle,
     },

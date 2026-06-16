@@ -203,6 +203,44 @@ describe("turn resolver API", () => {
     assert.equal(await TurnTrace.countDocuments({ clientTurnId }), 0);
   });
 
+  it("previews a generic wait segment emitted by intake without mutating state", async () => {
+    const beforeState = await getCanonicalState();
+    assertCanonState(beforeState);
+    const clientTurnId = `test-resolve-wait-preview-${Date.now()}`;
+
+    const response = await post("/api/turn/resolve/preview", {
+      gameId: "isekai_lucas_main",
+      clientTurnId,
+      actionFamily: "general_action",
+      includeResolvedPayload: true,
+      intent: {
+        summary: "Preview de resolver: Lucas espera una hora sin hacer otra cosa.",
+      },
+      sequence: [
+        {
+          type: "wait",
+          minutes: 60,
+          category: "actividad_normal",
+          reason: "Lucas espera sin hacer otra cosa.",
+        },
+      ],
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.dryRun, true);
+    assert.equal(response.data.clientTurnId, clientTurnId);
+    assert.equal(response.data.resolverPlan.elapsedMinutes, 60);
+    assert.equal(response.data.resolverPlan.generated.activitySegments.length, 1);
+    assert.equal(response.data.resolverPlan.generated.activitySegments[0].category, "actividad_normal");
+    assert.equal(response.data.resolvedApplyTurnPayload.actionFamily, "general_action");
+    assert.ok(response.data.displayBundle.renderLines.includes("## Estado actual"));
+
+    const afterState = await getCanonicalState();
+    assertSameState(beforeState, afterState);
+    assert.equal(await TurnTrace.countDocuments({ clientTurnId }), 0);
+  });
+
   it("applies rest, urgent travel, job lateness and apology as one isolated mutation", async () => {
     await cleanupResolverFixture();
     await createResolverFixture();

@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions Compact",
-    "version": "2.25.0",
-    "description": "Schema compacto con intakeTurn como director de escena/social y router de acciones comunes: devuelve directorPacket/narratorPacket o resolverPacket listo para resolveTurn. Mongo/backend siguen como canon."
+    "version": "2.28.0",
+    "description": "Schema compacto con intakeTurn como Capability Router: devuelve packets de narracion, resolveTurn, actionPacket o actionPlanPacket. Mongo/backend siguen como canon."
   },
   "servers": [
     {
@@ -137,6 +137,9 @@
                   "narrateOnly",
                   "getCompactContext",
                   "resolveTurn",
+                  "applyTurn",
+                  "completeJobShift",
+                  "actionPlan",
                   "resolveTurn_or_existing_flow"
                 ]
               },
@@ -159,9 +162,24 @@
             "description": "Decision del backend: target social, questionContext o resolverRequest; lista de Actions que el GPT debe/no debe llamar.",
             "additionalProperties": true
           },
+          "capabilityPacket": {
+            "type": "object",
+            "description": "Clasificacion semantica read-only del backend: capabilityId, dominio, riesgo, executor, decision, slots y resolverPlan si aplica.",
+            "additionalProperties": true
+          },
           "resolverPacket": {
             "type": "object",
             "description": "Plan read-only para acciones comunes con tiempo. Si existe y suggestedOperation=resolveTurn, llamar resolveTurn con resolverPacket.resolverRequest sin consultas extra.",
+            "additionalProperties": true
+          },
+          "actionPacket": {
+            "type": "object",
+            "description": "Request read-only ya materializado por backend para applyTurn o completeJobShift. Si existe, llamar solo esa operacion sin consultas extra.",
+            "additionalProperties": true
+          },
+          "actionPlanPacket": {
+            "type": "object",
+            "description": "Plan read-only de operaciones ya materializadas. Ejecutar operations[] en orden exacto, sin consultas ni previews intermedias.",
             "additionalProperties": true
           }
         },
@@ -2950,8 +2968,8 @@
     "/api/turn/intake": {
       "post": {
         "operationId": "intakeTurn",
-        "summary": "Director de turno: clasifica texto y devuelve packet compacto o resolverRequest.",
-        "description": "Primera operacion de partida. Si suggestedOperation=narrateOnly, narrar con packets. Si suggestedOperation=resolveTurn, llamar resolveTurn con resolverPacket.resolverRequest sin consultas extra.",
+        "summary": "Director de turno: clasifica texto y devuelve packets compactos.",
+        "description": "Primera operacion de partida. Puede devolver narrateOnly, resolverPacket, actionPacket o actionPlanPacket listo para ejecutar sin consultas extra.",
         "requestBody": {
           "required": true,
           "content": {
