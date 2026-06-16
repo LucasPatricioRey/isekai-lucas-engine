@@ -1,12 +1,8 @@
 const crypto = require("node:crypto");
 
-const GameState = require("../models/GameState");
-const Location = require("../models/Location");
 const Npc = require("../models/Npc");
 const NpcMemory = require("../models/NpcMemory");
 const KnowledgeRecord = require("../models/KnowledgeRecord");
-const EventLog = require("../models/EventLog");
-const WorldEvent = require("../models/WorldEvent");
 const JobContract = require("../models/JobContract");
 const MagicTechnique = require("../models/MagicTechnique");
 const Item = require("../models/Item");
@@ -16,6 +12,15 @@ const {
   detectSafeMagicPracticePlan,
   routeTurnIntent,
 } = require("./turnCapabilityRouterService");
+const {
+  buildTurnContext,
+  hydrateTurnSlotCatalogs,
+} = require("./turnContextService");
+const {
+  buildDestinationAliases,
+  resolveSafeMagicPracticeSlot,
+  resolveSimpleMealPurchaseSlot,
+} = require("./turnSlotResolverService");
 const { formatCopper } = require("../utils/mechanicalChangeDisplay");
 
 const DEFAULT_GAME_ID = "isekai_lucas_main";
@@ -89,8 +94,8 @@ function isReadOnlyNpcTaskQuestion(text) {
   return ["routine_schedule", "work_pattern", "current_task"].includes(detectSocialQuestionType(text));
 }
 
-function classifyTurn({ text = "", aiClassification = null } = {}) {
-  return routeTurnIntent({ text, aiClassification }).route;
+function classifyTurn({ text = "", aiClassification = null, destinationAliases = undefined } = {}) {
+  return routeTurnIntent({ text, aiClassification, destinationAliases }).route;
 }
 
 function actorHintsFromClassification(aiClassification = null) {
@@ -673,10 +678,16 @@ async function buildCompleteJobShiftActionPacket({ route = {}, text = "", gameSt
   };
 }
 
-async function buildSafeMagicPracticeActionPacket({ route = {}, text = "", gameState = {} } = {}) {
-  const plan = route.slots?.safeMagicPracticePlan || {};
+async function buildSafeMagicPracticeActionPacket({ route = {}, text = "", gameState = {}, turnContext = null } = {}) {
+  const rawPlan = route.slots?.safeMagicPracticePlan || {};
+  const resolvedSlot = turnContext
+    ? resolveSafeMagicPracticeSlot({ text, plan: rawPlan, context: turnContext })
+    : { plan: rawPlan, technique: null };
+  const plan = resolvedSlot.plan || rawPlan;
   if (!plan.techniqueId) return null;
-  const technique = await MagicTechnique.findOne({ techniqueId: plan.techniqueId }).lean();
+  const technique =
+    resolvedSlot.technique ||
+    await MagicTechnique.findOne({ techniqueId: plan.techniqueId }).lean();
   if (!technique || technique.status !== "available") return null;
 
   const minutes = Number(plan.minutes || technique.defaultMinutes || 0);
@@ -756,13 +767,19 @@ async function buildSafeMagicPracticeActionPacket({ route = {}, text = "", gameS
   };
 }
 
-async function buildSimpleMealPurchaseActionPacket({ route = {}, text = "", gameState = {} } = {}) {
-  const plan = route.slots?.simpleMealPurchasePlan || {};
+async function buildSimpleMealPurchaseActionPacket({ route = {}, text = "", gameState = {}, turnContext = null } = {}) {
+  const rawPlan = route.slots?.simpleMealPurchasePlan || {};
+  const resolvedSlot = turnContext
+    ? resolveSimpleMealPurchaseSlot({ text, plan: rawPlan, gameState, context: turnContext })
+    : { plan: rawPlan, stock: null, item: null };
+  const plan = resolvedSlot.plan || rawPlan;
   if (!plan.shopId || !plan.itemId) return null;
-  const [stock, item] = await Promise.all([
-    ShopStock.findOne({ shopId: plan.shopId, itemId: plan.itemId }).lean(),
-    Item.findOne({ itemId: plan.itemId }).lean(),
-  ]);
+  const [stock, item] = resolvedSlot.stock && resolvedSlot.item
+    ? [resolvedSlot.stock, resolvedSlot.item]
+    : await Promise.all([
+        ShopStock.findOne({ shopId: plan.shopId, itemId: plan.itemId }).lean(),
+        Item.findOne({ itemId: plan.itemId }).lean(),
+      ]);
   if (!stock || !item || stock.quantity <= 0) return null;
   const price = Number(stock.currentPriceCopper ?? stock.basePriceCopper ?? item.basePriceCopper ?? 0);
   if (!Number.isFinite(price) || price < 0) return null;
@@ -844,16 +861,16 @@ async function buildSimpleMealPurchaseActionPacket({ route = {}, text = "", game
   };
 }
 
-async function buildSpecializedActionPacket({ route = {}, text = "", gameState = {} } = {}) {
+async function buildSpecializedActionPacket({ route = {}, text = "", gameState = {}, turnContext = null } = {}) {
   if (!route.needsMutation) return null;
   if (route.capabilityId === "complete_job_shift") {
     return buildCompleteJobShiftActionPacket({ route, text, gameState });
   }
   if (route.capabilityId === "safe_magic_practice") {
-    return buildSafeMagicPracticeActionPacket({ route, text, gameState });
+    return buildSafeMagicPracticeActionPacket({ route, text, gameState, turnContext });
   }
   if (route.capabilityId === "simple_meal_purchase") {
-    return buildSimpleMealPurchaseActionPacket({ route, text, gameState });
+    return buildSimpleMealPurchaseActionPacket({ route, text, gameState, turnContext });
   }
   return null;
 }
@@ -888,7 +905,7 @@ function detectActionPlanUnresolvedSlots(text = "") {
   return slots;
 }
 
-async function buildShiftThenSafeMagicActionPlanPacket({ route = {}, text = "", gameState = {} } = {}) {
+async function buildShiftThenSafeMagicActionPlanPacket({ route = {}, text = "", gameState = {}, turnContext = null } = {}) {
   if (route.capabilityId !== "complete_job_shift") return null;
 
   const safeMagicPlan = detectSafeMagicPracticePlan(normalizeText(text));
@@ -981,6 +998,7 @@ async function buildShiftThenSafeMagicActionPlanPacket({ route = {}, text = "", 
     route: magicRoute,
     text,
     gameState: virtualGameState,
+    turnContext,
   });
   if (!magicPacket?.supported) return null;
 
@@ -1068,9 +1086,9 @@ async function buildShiftThenSafeMagicActionPlanPacket({ route = {}, text = "", 
   };
 }
 
-async function buildSpecializedActionPlanPacket({ route = {}, text = "", gameState = {} } = {}) {
+async function buildSpecializedActionPlanPacket({ route = {}, text = "", gameState = {}, turnContext = null } = {}) {
   if (!route.needsMutation) return null;
-  return buildShiftThenSafeMagicActionPlanPacket({ route, text, gameState });
+  return buildShiftThenSafeMagicActionPlanPacket({ route, text, gameState, turnContext });
 }
 
 function statLine(label, stat = {}) {
@@ -1538,41 +1556,17 @@ async function buildNarratorPacket({
   gameId = DEFAULT_GAME_ID,
   lastTargetNpcId = "",
 } = {}) {
-  const gameState = await GameState.findOne({ gameId })
-    .select("gameId currentDay diegeticDate block time locationId characterId lucasStatus moneyCopper activeEventIds")
-    .lean();
-  if (!gameState) {
-    const error = new Error(`No existe GameState para gameId: ${gameId}`);
-    error.statusCode = 404;
-    throw error;
-  }
-
-  const routedIntent = routeTurnIntent({ text, aiClassification });
+  const turnContext = await buildTurnContext({ gameId, lastTargetNpcId });
+  const { gameState, location, parentLocation, latestLogs, activeEvents } = turnContext;
+  const destinationAliases = buildDestinationAliases(turnContext.locationCatalog || []);
+  const routedIntent = routeTurnIntent({
+    text,
+    aiClassification,
+    destinationAliases: destinationAliases.length ? destinationAliases : undefined,
+  });
   let route = routedIntent.route;
   const capabilityPacket = routedIntent.capabilityPacket;
-  const locationIds = unique([gameState.locationId]);
-  const [location, latestLogs, activeEvents] = await Promise.all([
-    Location.findOne({ locationId: gameState.locationId })
-      .select("locationId name type regionId parentLocationId dangerLevel visibleNpcIds probableNpcIds tags")
-      .lean(),
-    EventLog.find({ gameId })
-      .select("logId gameId day timeStart timeEnd locationId type summary visibility source tags involvedNpcIds")
-      .sort({ day: -1, timeStart: -1, createdAt: -1 })
-      .limit(8)
-      .lean(),
-    WorldEvent.find({
-      gameId,
-      eventId: { $in: gameState.activeEventIds || [] },
-      status: { $in: ["active", "scheduled"] },
-    })
-      .select("eventId title status visibility affectedLocationIds")
-      .limit(5)
-      .lean(),
-  ]);
-  const parentLocation = location?.parentLocationId
-    ? await Location.findOne({ locationId: location.parentLocationId }).select("locationId name").lean()
-    : null;
-  if (location?.parentLocationId) locationIds.push(location.parentLocationId);
+  const locationIds = unique(turnContext.locationScopeIds?.length ? turnContext.locationScopeIds : [gameState.locationId]);
 
   const latestLog = latestLogs.find((log) => !isTechnicalLog(log)) || null;
   const continuityTarget = inferContinuityTargetNpcId({ latestLogs, lastTargetNpcId });
@@ -1604,7 +1598,8 @@ async function buildNarratorPacket({
   let actionPacket = null;
   let actionPlanPacket = null;
   if (route.needsMutation) {
-    actionPlanPacket = await buildSpecializedActionPlanPacket({ route, text, gameState });
+    await hydrateTurnSlotCatalogs(turnContext);
+    actionPlanPacket = await buildSpecializedActionPlanPacket({ route, text, gameState, turnContext });
     if (actionPlanPacket) {
       route = {
         ...route,
@@ -1614,7 +1609,7 @@ async function buildNarratorPacket({
         confidence: "high",
       };
     } else {
-      actionPacket = await buildSpecializedActionPacket({ route, text, gameState });
+      actionPacket = await buildSpecializedActionPacket({ route, text, gameState, turnContext });
     }
     if (!actionPlanPacket && actionPacket) {
       route = {

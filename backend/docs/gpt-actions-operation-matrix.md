@@ -4,6 +4,7 @@ Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.j
 
 | Operacion | Endpoint | Full | Compact | Tipo | Dominio |
 |---|---|---:|---:|---|---|
+| playTurn | `POST /api/turn/play` | si | si | fachada turno | gameplay |
 | listCheckpoints | `GET /api/checkpoints` | si | no | lectura | admin/debug |
 | getCheckpoint | `GET /api/checkpoints/{checkpointId}` | si | no | lectura | admin/debug |
 | getCharacterState | `GET /api/characters/{characterId}/state` | si | si | lectura | gameplay |
@@ -30,7 +31,7 @@ Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.j
 | getMissionDetail | `GET /api/missions/{missionId}` | si | si | lectura | gameplay |
 | getNpcFull | `GET /api/npcs/{npcId}/full` | si | si | lectura | gameplay |
 | previewSocialImpact | `POST /api/npcs/social/impact/preview` | si | si | preview | gameplay |
-| searchDatabase | `GET /api/search/db` | si | si | lectura | gameplay |
+| searchDatabase | `GET /api/search/db` | si | no | lectura | debug/admin |
 | searchDocs | `GET /api/search/docs` | si | si | lectura | gameplay/reglas |
 | listTravelRoutes | `GET /api/travel/routes` | si | no | lectura | gameplay |
 | getTravelRoute | `GET /api/travel/routes/{routeId}` | si | no | lectura | gameplay |
@@ -53,8 +54,9 @@ Comparacion entre `openapi-gpt-action.json` full y `openapi-gpt-action-compact.j
 
 Notas:
 - El compact mantiene hasta 30 operaciones para respetar el limite practico de GPT Builder.
+- Desde C32, `playTurn` es la Action principal de partida: clasifica, ejecuta internamente si corresponde y devuelve `narrativePacket`/`displayBundle`; el GPT no debe encadenar herramientas mecanicas despues.
 - Desde C24A, `searchDocs` acepta filtros `ruleId`, `source`, `domain`, `priority`, `tag`, `appliesTo` y `limit`; esto permite consultar rule cards criticas sin agregar una operacion nueva.
-- `getCompactContext` es la lectura principal por turno; `getFullContext` queda fuera del compact y solo debe usarse en debug/admin.
+- `getCompactContext` queda como fallback/lectura tecnica; `getFullContext` queda fuera del compact y solo debe usarse en debug/admin.
 - `getCharacterState` evita reconstruir HP/MP/inventario/skills desde logs.
 - `previewSocialImpact` pondera perfil social del NPC (`values/tolerates/rejects/socialProfile`) y sugiere deltas capados de confianza/familiaridad/respeto/afecto/etc.; el guardado real se hace con `applyTurn.npcRelationshipPatches` y crea ledger social diario. Tambien proyecta `relationshipState` para mostrar acceso, riesgos y bloqueos antes de mutar.
 - Mutadores directos de misiones, combate, restock y rollback quedan fuera; misiones se gestionan por `applyTurn.missionPatch` (`accept/report/verify/complete/fail/expire`) y eventos por `applyTurn.worldEventPatches`. Resolver/vencer eventos diarios puede crear consecuencias sociales automaticas sobre NPCs afectados y ledger social.
@@ -63,7 +65,7 @@ Notas:
 - El backend puede separar keys por scope: lecturas/previews aceptan keys validas de lectura, `applyTurn` usa scope gameplay y mutadores directos peligrosos usan scope admin-write. `API_KEY` sigue funcionando como fallback legacy mientras existan despliegues antiguos.
 - `applyTurn` y `completeJobShift` no estan marcados como consequential en el schema compacto para modo juego fluido sin confirmacion manual. El backend sigue validando y rechazando mutaciones invalidas.
 - `applyTurn.activityCost` no suma operaciones: todo `timeAdvance` positivo requiere `activityCost` o exencion explicita; acumula automaticamente actividades entre horas y procesa pendientes al llegar a `:00`.
-- `executeActionPlan` ejecuta planes compuestos ya materializados por `intakeTurn` y devuelve `aggregateDisplayBundle`; evita que el GPT fusione a mano `completeJobShift` + `applyTurn`. `previewResolveTurn` queda fuera del compact para mantener 30 operaciones.
+- `executeActionPlan` ejecuta planes compuestos ya materializados por `intakeTurn`/`playTurn` internamente y devuelve `aggregateDisplayBundle`; evita que el GPT fusione a mano `completeJobShift` + `applyTurn`. `previewResolveTurn` y `searchDatabase` quedan fuera del compact para mantener 30 operaciones.
 - `resolveTurn` reemplaza varios previews para acciones normales compuestas: desde `sequence[]` arma viaje, descanso, chequeo, `work_segment`/trabajo parcial, tardanza laboral, disculpa/memoria NPC, EXP fisica conservadora y un unico `applyTurn`. `listTravelRoutes` y `previewActivityCost` quedan fuera del compact porque `resolveTurn` y `applyTurn dryRun` cubren el flujo normal.
 - `narrativeHints`/`narrativeContext`/`dramaticContext`/`dramaticContext.emotionalScene`, `scene.nearbyNpcs[].dialogueProfile`, `scene.nearbyNpcs[].dialogueProfile.dramaticRole`, `scene.nearbyNpcs[].emotionalProfile` y `scene.relationshipDynamics` no suman operaciones: viajan dentro de respuestas existentes para variar escenas, mejorar dialogos, sostener subtexto, mostrar gestos/tension entre NPCs y mantener HUD final sin tocar calculos mecanicos.
 - El schema `admin-extra` es solo lectura, usa `operationId` prefijados por `admin` y no debe usarse para juego normal.

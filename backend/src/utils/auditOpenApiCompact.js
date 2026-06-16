@@ -11,9 +11,9 @@ const MATRIX_PATH = path.join(DOCS_DIR, "gpt-actions-operation-matrix.md");
 const GPT_BUILDER_OPERATION_TEXT_LIMIT = 300;
 
 const EXPECTED_COMPACT = [
+  ["POST", "/api/turn/play"],
   ["POST", "/api/turn/intake"],
   ["GET", "/api/context/compact"],
-  ["GET", "/api/search/db"],
   ["GET", "/api/search/docs"],
   ["GET", "/api/npcs/{npcId}/full"],
   ["GET", "/api/locations/{locationId}/full"],
@@ -45,6 +45,7 @@ const EXPECTED_COMPACT = [
 
 const COMPACT_EXCLUDED = [
   "GET /api/context/full",
+  "GET /api/search/db",
   "GET /api/checkpoints",
   "POST /api/checkpoints",
   "POST /api/checkpoints/{checkpointId}/rollback",
@@ -218,6 +219,11 @@ function main() {
     issues,
     "compact completeJobShift is non-consequential for fluid gameplay",
     compactOps.get("POST /api/jobs/shifts/{shiftId}/complete")?.["x-openai-isConsequential"] === false
+  );
+  assertCondition(
+    issues,
+    "compact playTurn is non-consequential for fluid gameplay",
+    compactOps.get("POST /api/turn/play")?.["x-openai-isConsequential"] === false
   );
   assertCondition(
     issues,

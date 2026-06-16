@@ -443,13 +443,29 @@ function detectRestCategory(text = "", cueIndex = -1) {
   return "descanso_sentado";
 }
 
-function detectDestination(text = "", aliases = DEFAULT_DESTINATION_ALIASES) {
-  for (const destination of aliases) {
-    if (destination.patterns.some((pattern) => pattern.test(text))) {
-      return destination;
-    }
+function destinationMatchScore(destination = {}, text = "") {
+  const aliasMatches = (destination.aliases || [])
+    .filter((alias) => new RegExp(`\\b${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+")}\\b`).test(text))
+    .map((alias) => alias.length);
+  if (aliasMatches.length) {
+    return Math.max(...aliasMatches) * 10 + (destination.parentLocationId ? 0 : 5);
   }
-  return null;
+  return (destination.patterns || []).some((pattern) => pattern.test(text)) ? 1 : 0;
+}
+
+function detectDestination(text = "", aliases = DEFAULT_DESTINATION_ALIASES) {
+  return aliases
+    .map((destination, index) => ({
+      destination,
+      index,
+      score: destinationMatchScore(destination, text),
+    }))
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => {
+      const scoreDiff = right.score - left.score;
+      if (scoreDiff !== 0) return scoreDiff;
+      return left.index - right.index;
+    })[0]?.destination || null;
 }
 
 function detectTravelPace(text = "", cueIndex = -1) {
@@ -783,7 +799,7 @@ function routeFromCapability({
   };
 }
 
-function routeTurnIntent({ text = "", aiClassification = null } = {}) {
+function routeTurnIntent({ text = "", aiClassification = null, destinationAliases = DEFAULT_DESTINATION_ALIASES } = {}) {
   const normalized = normalizeText(text);
   const aiDomains = asArray(aiClassification?.domains).map((domain) => String(domain || "").trim()).filter(Boolean);
   const domains = unique([...inferDomains(normalized), ...aiDomains]);
@@ -944,7 +960,7 @@ function routeTurnIntent({ text = "", aiClassification = null } = {}) {
       });
     }
 
-    const resolverPlan = commonResolverPlan({ text: normalized });
+    const resolverPlan = commonResolverPlan({ text: normalized, destinationAliases });
     const unsupportedDomain = domains.find((domain) =>
       ["magic", "economy", "inventory_evidence", "combat_injury"].includes(domain)
     );

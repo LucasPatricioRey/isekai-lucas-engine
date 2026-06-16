@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Isekai Lucas Engine GPT Actions",
-    "version": "2.31.0",
-    "description": "Schema normal para GPT Actions. Incluye intakeTurn como Capability Router hacia narracion, resolveTurn, actionPacket o executeActionPlan, mas previews, lecturas y mutadores controlados."
+    "version": "2.32.0",
+    "description": "Schema normal para GPT Actions. Incluye playTurn como fachada principal de partida, intakeTurn transicional, previews, lecturas y mutadores controlados."
   },
   "servers": [
     {
@@ -2978,6 +2978,120 @@
           "operations"
         ],
         "additionalProperties": true
+      },
+      "PlayTurnRequest": {
+        "type": "object",
+        "properties": {
+          "gameId": {
+            "type": "string",
+            "default": "isekai_lucas_main"
+          },
+          "text": {
+            "type": "string",
+            "description": "Texto literal del jugador. En partida normal, enviar siempre el turno completo a playTurn y narrar solo el paquete devuelto."
+          },
+          "aiClassification": {
+            "type": "object",
+            "description": "Opcional: etiquetas deducidas por el GPT. El backend las valida/corrige de forma conservadora.",
+            "properties": {
+              "intent": {
+                "type": "string"
+              },
+              "domains": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "scene",
+                    "social",
+                    "travel",
+                    "work",
+                    "rest_biology",
+                    "magic",
+                    "economy",
+                    "inventory_evidence",
+                    "mission_event",
+                    "combat_injury"
+                  ]
+                }
+              },
+              "needsMutation": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          },
+          "lastTargetNpcId": {
+            "type": "string",
+            "description": "Opcional: ultimo NPC interlocutor si el texto continua una charla sin nombrarlo."
+          },
+          "sceneFocusNpcId": {
+            "type": "string",
+            "description": "Opcional: NPC foco de escena actual si el GPT lo conoce por la conversacion."
+          },
+          "conversationContext": {
+            "type": "object",
+            "description": "Opcional: pistas compactas de continuidad como lastTargetNpcId o sceneFocusNpcId.",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "PlayTurnResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "schemaVersion": {
+            "type": "string",
+            "example": "turn_play_v1"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "read_only",
+              "applied",
+              "needs_clarification",
+              "blocked"
+            ],
+            "description": "Resultado canonico del turno. applied ya muto Mongo; read_only solo narra; needs_clarification pide concretar; blocked no debe mutar."
+          },
+          "readOnly": {
+            "type": "boolean"
+          },
+          "actionRequired": {
+            "type": "boolean",
+            "description": "Siempre false para el GPT de juego: no ejecutar endpoints mecanicos adicionales desde esta respuesta."
+          },
+          "playerText": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "object",
+            "description": "Decision compacta del backend: intent, capabilityId, selectedOperation interna, warnings y slots no resueltos.",
+            "additionalProperties": true
+          },
+          "narrativePacket": {
+            "type": "object",
+            "description": "Paquete compacto para narrar. Usar displayBundle/renderLines y narrationBoundaries; no reconstruir HUD ni hacer llamadas extra.",
+            "additionalProperties": true
+          },
+          "displayBundle": {
+            "type": "object",
+            "description": "HUD final canonico. Copiar renderLines cuando exista.",
+            "additionalProperties": true
+          },
+          "execution": {
+            "type": "object",
+            "description": "Resumen compacto de ejecucion interna si mode=applied. No contiene payloads internos largos.",
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
       }
     }
   },
@@ -2987,6 +3101,41 @@
     }
   ],
   "paths": {
+    "/api/turn/play": {
+      "post": {
+        "operationId": "playTurn",
+        "summary": "Resuelve un turno libre completo y devuelve paquete narrable.",
+        "description": "Operacion principal de partida. Enviar texto libre del jugador; el backend clasifica, ejecuta si corresponde y devuelve displayBundle. No llamar herramientas mecanicas despues.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlayTurnRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado canonico narrable del turno.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayTurnResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "x-openai-isConsequential": false
+      }
+    },
     "/api/turn/intake": {
       "post": {
         "operationId": "intakeTurn",
