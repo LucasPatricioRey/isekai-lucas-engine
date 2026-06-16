@@ -198,6 +198,28 @@ describe("turn intake API", () => {
     assert.equal(route.domains.includes("work"), false);
   });
 
+  it("classifies NPC work-topic questions as social read-only", () => {
+    const route = classifyTurn({
+      text: "Lucas le pregunta a Joren Pell si siempre trabaja hasta tan tarde.",
+    });
+
+    assert.equal(route.intent, "social_scene");
+    assert.deepEqual(route.domains, ["social"]);
+    assert.equal(route.supported, true);
+    assert.equal(route.needsMutation, false);
+    assert.equal(route.suggestedOperation, "narrateOnly");
+  });
+
+  it("keeps labor permission requests out of social read-only intake", () => {
+    const route = classifyTurn({
+      text: "Lucas le pregunta a Roberto si puede trabajar mañana durante el turno.",
+    });
+
+    assert.equal(route.intent, "social");
+    assert.equal(route.supported, false);
+    assert.equal(route.suggestedOperation, "getCompactContext");
+  });
+
   it("returns a social packet for simple questions about a visible NPC current task", async () => {
     await createFixture();
     const response = await post("/api/turn/intake", {
@@ -208,6 +230,24 @@ describe("turn intake API", () => {
     assert.equal(response.status, 200, JSON.stringify(response.data));
     assert.equal(response.data.ok, true);
     assert.equal(response.data.route.intent, "social_scene");
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.route.needsMutation, false);
+    assert.equal(response.data.route.suggestedOperation, "narrateOnly");
+    assert.equal(response.data.narratorPacket.packetProfile, "social_scene");
+    assert.equal(response.data.narratorPacket.socialPacket.targetNpc.name, "Lira Test");
+  });
+
+  it("returns a social packet for NPC work-topic questions without getNpcFull fallback", async () => {
+    await createFixture();
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas le pregunta a Lira Test si siempre trabaja hasta tan tarde.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.intent, "social_scene");
+    assert.deepEqual(response.data.route.domains, ["social"]);
     assert.equal(response.data.route.supported, true);
     assert.equal(response.data.route.needsMutation, false);
     assert.equal(response.data.route.suggestedOperation, "narrateOnly");

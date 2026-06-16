@@ -39,6 +39,13 @@ function textMatchesAny(text, patterns = []) {
   return patterns.some((pattern) => pattern.test(text));
 }
 
+function isReadOnlyNpcTaskQuestion(text) {
+  return textMatchesAny(text, [
+    /\bpregunta\b.*\b(si siempre trabaja|que esta haciendo|que esta contando|que cuenta|queda mucho por cerrar|por que sigue despiert|hasta tan tarde)\b/,
+    /\b(comenta|comentario|dice)\b.*\b(trabaja mucho|trabaja hasta tarde|sigue despiert|cerrar tan tarde)\b/,
+  ]);
+}
+
 function inferDomains(text) {
   const domains = [];
   const checks = [
@@ -73,15 +80,21 @@ function isSimpleSocialText(text) {
     return false;
   }
 
-  return !textMatchesAny(text, [
+  const asksAboutNpcTask = isReadOnlyNpcTaskQuestion(text);
+
+  const complexPatterns = [
     /\b(permiso|autoriza|autorizar|negocia|convenc|promete|promesa|cita|secreto|confiesa|romance|besar|beso|amor)\b/,
     /\b(amenaza|intimida|presiona|chantaje|acusa|denuncia|miente|roba)\b/,
     /\b(mision|recompensa|reporte|prueba|evidencia|muestra|pista|cartelera|gremio)\b/,
     /\b(compra|vende|paga|precio|stock|dinero|moneda|cobre|plata|oro|presta)\b/,
     /\b(magia|mana|hechizo|conjura|rayo|electric|entrena|practica|combate|herida|cura)\b/,
-    /\b(turno|tardanza|contrato|trabajo|trabaja|jornada)\b/,
     /\bpide\b(?!\s+disculpas?\b)/,
-  ]);
+  ];
+  if (!asksAboutNpcTask) {
+    complexPatterns.push(/\b(turno|tardanza|contrato|trabajo|trabaja|jornada)\b/);
+  }
+
+  return !textMatchesAny(text, complexPatterns);
 }
 
 function classifyTurn({ text = "", aiClassification = null } = {}) {
@@ -132,9 +145,12 @@ function classifyTurn({ text = "", aiClassification = null } = {}) {
 
   if (likelySocial) {
     if (isSimpleSocialText(normalized)) {
+      const routeDomains = isReadOnlyNpcTaskQuestion(normalized)
+        ? domains.filter((domain) => domain !== "work")
+        : domains;
       return {
         intent: "social_scene",
-        domains: unique(["social", ...domains]),
+        domains: unique(["social", ...routeDomains]),
         needsMutation: false,
         suggestedOperation: "narrateOnly",
         supported: true,
