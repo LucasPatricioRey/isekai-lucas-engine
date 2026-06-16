@@ -217,6 +217,35 @@ describe("turn intake API", () => {
     assert.equal(response.data.narratorPacket.socialPacket.targetPresence.canNarrateDirectly, true);
   });
 
+  it("does not infer private room from stale room logs after the clock has advanced", async () => {
+    await createFixture();
+    await GameState.updateOne({ gameId: tempGameId }, { $set: { time: "22:10", block: "Noche" } });
+    await EventLog.create({
+      logId: `log_${tempGameId}_stale_room`,
+      gameId: tempGameId,
+      day: 19,
+      timeStart: "20:30",
+      timeEnd: "21:55",
+      locationId: tempLocationId,
+      type: "magic_practice",
+      summary: "Lucas sube a su cuarto, cierra la puerta y practica meditacion de mana acostado en la cama.",
+      visibility: "private",
+      source: "player_action",
+    });
+
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas le hace un comentario tranquilo a Lira Test sobre lo silenciosa que quedo la posada.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.route.intent, "social_scene");
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.narratorPacket.state.narrativeLocation.privacy, "location_scope");
+    assert.equal(response.data.narratorPacket.socialPacket.targetPresence.canNarrateDirectly, true);
+  });
+
   it("routes complex social requests to the existing fallback flow", async () => {
     const response = await post("/api/turn/intake", {
       gameId: tempGameId,

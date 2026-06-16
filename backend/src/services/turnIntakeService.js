@@ -311,7 +311,14 @@ function eventVisibleToLucas(event = {}, { locationIds = [] } = {}) {
   return affected.some((locationId) => locationIds.includes(locationId));
 }
 
-function inferNarrativeLocation({ location = null, parentLocation = null, latestLog = null } = {}) {
+function latestLogTouchesCurrentMoment(latestLog = null, gameState = null) {
+  if (!latestLog || !gameState) return false;
+  if (Number(latestLog.day) !== Number(gameState.currentDay)) return false;
+  const currentTime = String(gameState.time || "");
+  return Boolean(currentTime && (latestLog.timeEnd === currentTime || latestLog.timeStart === currentTime));
+}
+
+function inferNarrativeLocation({ location = null, parentLocation = null, latestLog = null, gameState = null } = {}) {
   const locationName = location?.name || location?.locationId || "?";
   const summary = normalizeText(latestLog?.summary || "");
   const locationText = normalizeText(
@@ -320,8 +327,9 @@ function inferNarrativeLocation({ location = null, parentLocation = null, latest
   const isInn = /grulla|posada|inn|tavern/.test(locationText);
   const roomMention = /\b(cuarto|habitacion|cama|sube a su cuarto|en su cuarto)\b/.test(summary);
   const movedOutOfRoom = /\b(baja desde su cuarto|baja de su cuarto|sale de su cuarto|sale del cuarto|baja a la sala|baja al comedor|baja a la cocina|vuelve a la sala|vuelve al comedor)\b/.test(summary);
+  const logIsCurrent = latestLogTouchesCurrentMoment(latestLog, gameState);
 
-  if (isInn && roomMention && !movedOutOfRoom) {
+  if (isInn && roomMention && logIsCurrent && !movedOutOfRoom) {
     return {
       locationId: location?.locationId || "",
       canonicalName: locationName,
@@ -648,7 +656,7 @@ async function buildNarratorPacket({ text = "", aiClassification = null, gameId 
   if (location?.parentLocationId) locationIds.push(location.parentLocationId);
 
   const latestLog = latestLogs.find((log) => !isTechnicalLog(log)) || null;
-  const narrativeLocation = inferNarrativeLocation({ location, parentLocation, latestLog });
+  const narrativeLocation = inferNarrativeLocation({ location, parentLocation, latestLog, gameState });
   const npcIds = unique([
     ...(location?.visibleNpcIds || []),
     ...(location?.probableNpcIds || []),
