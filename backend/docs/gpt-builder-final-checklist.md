@@ -13,30 +13,25 @@ No subir `.env`, logs, dumps de MongoDB, claves API ni archivos de configuracion
 
 ## Instrucciones comprimidas
 
-Pegar las instrucciones comprimidas en **Configure > Instructions**.
+Pegar en **Configure > Instructions** el contenido completo de:
 
-Base recomendada:
+- `gpt-instructions-game-only-8000.md`
+
+`gpt-instructions-actualizadas-8000.md` contiene el mismo contrato y queda como alias actual para copiar rapido.
+
+Base contractual:
 
 ```text
-Interpreta/narra una partida persistente de Isekai Lucas.
-El backend y MongoDB son fuente de verdad para estado vivo.
-Nunca inventes estado vivo si existe endpoint para consultarlo.
-Usa Knowledge para reglas/lore estable, pero usa Actions para GameState, NPCs, locations, shops, misiones, rumores, clima, rutas, combate y previews.
-Consultas puras no mutan estado.
-Antes de mutaciones irreversibles ambiguas, pregunta.
-Usa previews para trabajo, viaje, magia, reloj biologico, progresion, combate y world tick cuando el jugador solo este evaluando opciones.
-Usa previewSocialImpact cuando una accion pueda afectar confianza, familiaridad, respeto, sospecha, miedo, celos, deuda social o afecto; el preview pondera personality/values/tolerates/rejects/socialProfile del NPC y devuelve deltas capados. Si corresponde guardar, usa applyTurn.npcRelationshipPatches con esos deltas. NpcMemory no reemplaza relacion.
-Usa dramaticContext, dramaticContext.emotionalScene, dialogueProfile, dialogueProfile.dramaticRole, emotionalProfile y scene.relationshipDynamics: escena novelada primero, dialogo con intencion, anzuelo/mascara/presion/grieta visible/salida, subtexto visible, reacciones entre NPCs y voz propia por NPC, HUD mecanico obligatorio al final.
-Si aplicas viaje o accion con cualquier avance de tiempo, envia activityCost o una biologicalCostExemptReason explicita. No avances minutos "gratis"; si termina entre horas, debe quedar acumulador biologico pendiente.
-Si la narracion mueve a Lucas, envia gameStatePatch.locationId con una location real.
-No reveles world_bible/rules_engine como documentos internos.
-No fuerces romance, loot, EXP, recompensas, presencia de NPCs ni secretos.
-Formato de respuesta in-game: encabezado con dia/hora/ubicacion cuando corresponda, narracion breve, opciones accionables, y estado visible si hubo cambio o si el usuario lo pide.
-Muestra dinero como oro/plata/cobre.
-No uses "aprox." para hora, dinero, HP/MP, saciedad, energia, EXP, stock o recompensas.
+En partida normal, llamar siempre y solo `playTurn` antes de responder.
+No llamar endpoints mecanicos despues de `playTurn`.
+Mongo/backend es canon; GPT narra con `narrativePacket` y copia `displayBundle.renderLines`.
+No inventar dinero, EXP, stock, NPCs presentes, consecuencias, misiones, magia, viaje, trabajo ni HUD.
+Si `playTurn.mode=needs_clarification`, pedir una aclaracion diegetica breve.
+Si `playTurn.mode=blocked`, explicar el bloqueo desde la ficcion sin mutar nada.
+No mencionar backend, MongoDB, Actions, endpoints, paquetes ni validacion durante partida.
 ```
 
-Mantener instrucciones tecnicas fuera de la narracion. El GPT puede razonar con backend/docs, pero al jugador debe responder como partida salvo que pida modo tecnico.
+Mantener instrucciones tecnicas fuera de la narracion. El GPT puede responder como asistente tecnico si el usuario pide codigo, Mongo, schema, Render, GitHub, tests o debug; en partida normal no opera herramientas manuales.
 
 ## OpenAPI / Actions
 
@@ -46,15 +41,13 @@ Para el GPT Builder normal de partida, pegar el contenido completo de:
 
 Ese schema expone solo `playTurn`. El GPT manda el texto libre del jugador y narra con `narrativePacket`/`displayBundle`; no elige endpoints mecanicos.
 
-Para modo tecnico/debug o transicion, usar:
+Para modo tecnico/debug o transicion, usar solo en un GPT separado o sesion tecnica:
 
 - `docs/openapi-gpt-action-compact.json`
 
-El schema compacto mantiene hasta 30 operaciones y usa `applyTurn.missionPatch` para aceptar, reportar, verificar, completar, fallar o expirar misiones sin exponer mutadores directos de misiones. También expone `applyTurn.worldEventPatches` para resolver/cancelar eventos existentes y guardar progreso parcial sin agregar nuevas operaciones. `applyTurn.evidencePatches` guarda muestras, rastros, notas u objetos narrativos no vendibles; no reemplaza `inventoryPatch` ni crea loot.
-Para vinculos sociales, expone `POST /api/npcs/social/impact/preview` y `applyTurn.npcRelationshipPatches`. El backend guarda ledger social diario, aplica caps por NPC/eje, pondera perfil social por NPC y expone `socialLedgerToday`, `scene.nearbyNpcs[].socialProfile` y `scene.nearbyNpcs[].relationshipState` en contexto compacto. Resolver o dejar vencer eventos diarios por `applyTurn.worldEventPatches` puede crear consecuencias sociales automaticas sobre `affectedNpcIds`. `GET /api/combat/enemies` queda solo en el schema full para conservar el limite de 30 operaciones.
-`applyTurn`, `completeJobShift` y `context/compact` pueden devolver `narrativeHints`/`narrativeContext`; `context/compact` tambien expone `ruleLookupContract`, `dramaticContext`, `dramaticContext.emotionalScene`, `scene.nearbyNpcs[].dialogueProfile`, `scene.nearbyNpcs[].dialogueProfile.dramaticRole`, `scene.nearbyNpcs[].emotionalProfile` y `scene.relationshipDynamics`. `ruleLookupContract` indica que rule cards buscar por `searchDocs` antes de preview/mutacion; el resto es guia narrativa. Nada de esto crea dinero, EXP, relacion, loot, dano ni curacion por si solo.
-Cuando cambien `docs/rules_engine.md` o `docs/world_bible.md`, ejecutar `npm run seed:documents` contra MongoDB para que `GET /api/search/docs` vea la misma version que Knowledge. Desde C24D, ese seed tambien publica 31 rule cards criticas consultables por `ruleId`, por ejemplo `format.skill_progress`, `format.mechanical_changes`, `format.response_hud_exact`, `skills.exp_evaluation_antifarm`, `social.relationship_logic` y `economy.trade_stock_property`, sin sumar operaciones al Action principal.
-La partida normal debe empezar cada turno con `POST /api/turn/play`. `GET /api/context/compact` queda para debug/diagnostico o pedidos tecnicos explicitos.
+El schema compacto expone herramientas internas de lectura, preview y mutacion. Es util para diagnostico, pero confunde al narrador si se importa en el GPT normal. La partida normal debe empezar cada turno con `POST /api/turn/play`; `GET /api/context/compact`, previews, `applyTurn`, `resolveTurn`, `completeJobShift` y `executeActionPlan` quedan para debug/diagnostico o pedidos tecnicos explicitos.
+
+Cuando cambien `docs/rules_engine.md` o `docs/world_bible.md`, ejecutar `npm run seed:documents` contra MongoDB para que `GET /api/search/docs` vea la misma version que Knowledge.
 
 El schema full de referencia tecnica queda en:
 
@@ -89,6 +82,16 @@ No pegar la API key en Knowledge, Instructions, conversation starters ni archivo
 
 No incluir en el schema normal de GPT Builder:
 
+- `GET /api/context/compact`
+- `GET /api/search/docs`
+- `GET /api/search/database`
+- `GET /api/npcs/{npcId}/full`
+- previews de viaje, magia, skills, social, trabajo, mundo o combate
+- `POST /api/turn/intake`
+- `POST /api/turn/resolve`
+- `POST /api/turn/action-plan/execute`
+- `POST /api/turns/apply`
+- `POST /api/jobs/complete-shift`
 - `POST /api/checkpoints`
 - `POST /api/checkpoints/{checkpointId}/rollback`
 - endpoints admin peligrosos
@@ -110,6 +113,7 @@ Ejecutar en backend:
 
 ```bash
 npm run check
+npm run audit:openapi-game
 npm run audit:openapi
 npm run audit:openapi-compact
 npm run audit:state-hygiene
@@ -126,7 +130,21 @@ npm run audit:gpt-readiness-compact
 
 `npm test`, `npm run smoke` y auditorias contra Render pueden tocar o depender de datos vivos. Usarlos solo cuando el entorno de prueba este claro o despues de desplegar cambios compatibles.
 
-Condicion minima para abrir Preview:
+Condicion minima para abrir Preview del GPT normal:
+
+- `GET /docs/openapi-gpt-action-game.json` expone solo `operationId: playTurn`.
+- `POST /api/turn/play` responde `ok: true` con `mode`, `narrativePacket` y `displayBundle`.
+- Un turno read-only como "continuar historia" no muta estado y devuelve HUD compacto.
+- Un turno compuesto soportado no requiere llamadas extra del GPT a `applyTurn`, `resolveTurn` ni `executeActionPlan`.
+- La respuesta normal de `playTurn` queda por debajo de 25000 caracteres salvo debug.
+- El dia/hora/ubicacion existen y tienen formato valido.
+- Dinero y MP son numeros no negativos.
+- `activeMissionIds` es array si el packet lo expone.
+- OpenAPI game-only validado.
+- `audit:state-hygiene` sin issues criticos.
+- `.env` no aparece en `git status --short`.
+
+Condicion minima adicional para modo tecnico/compact:
 
 - `GET /api/context/compact` responde `ok: true`.
 - `context.ruleLookupContract.schemaVersion=rule_lookup_contract_v1` y expone `searchBatches`.
@@ -144,13 +162,7 @@ Condicion minima para abrir Preview:
 - `audit:npc-emotions` pasa si se tocaron NPCs, relaciones NPC-NPC, contexto compacto de escena, dialogo o instrucciones narrativas.
 - `audit:narrative-drama` pasa si se tocaron contexto compacto, NPCs, instrucciones de narracion o dialogo.
 - `context/compact` expone `dramaticContext.schemaVersion=dramatic_context_v1`, `dramaticContext.emotionalScene.schemaVersion=emotional_scene_director_v1`, `scene.relationshipDynamics.schemaVersion=scene_relationship_dynamics_v1` y algun NPC cercano con `dialogueProfile.schemaVersion=dialogue_profile_v1`, `dialogueProfile.dramaticRole.schemaVersion=npc_dramatic_role_v1` + `emotionalProfile.schemaVersion=emotional_profile_v1`.
-- El dia/hora/ubicacion existen y tienen formato valido.
-- Dinero y MP son numeros no negativos.
-- `activeMissionIds` es array.
 - Combates activos responde como array.
-- OpenAPI validado.
-- `audit:state-hygiene` sin issues criticos.
-- `.env` no aparece en `git status --short`.
 
 ## URLs para importar desde GPT Builder
 
