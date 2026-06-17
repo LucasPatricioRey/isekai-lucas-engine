@@ -52,6 +52,7 @@ const STOP_ALIASES = new Set([
   "other",
   "food",
   "basic",
+  "lucas",
 ]);
 
 function usableAlias(alias = "") {

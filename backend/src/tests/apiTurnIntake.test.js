@@ -956,6 +956,50 @@ describe("turn intake API", () => {
     assert.equal(response.data.narratorPacket.socialPacket.targetPresence.canNarrateDirectly, true);
   });
 
+  it("applies going downstairs to seek an NPC and preserves social continuity", async () => {
+    await createFixture();
+    await GameState.updateOne({ gameId: tempGameId }, { $set: { time: "21:30", block: "Noche" } });
+    await EventLog.create({
+      logId: `log_${tempGameId}_room_current`,
+      gameId: tempGameId,
+      day: 19,
+      timeStart: "20:30",
+      timeEnd: "21:30",
+      locationId: tempLocationId,
+      type: "magic_practice",
+      summary: "Lucas sube a su cuarto y practica meditacion de mana durante una hora.",
+      visibility: "private",
+      source: "player_action",
+    });
+
+    const transition = await post("/api/turn/play", {
+      gameId: tempGameId,
+      text: "Lucas baja a buscar a Lira Test para hablarle sobre el entrenamiento intenso de 1 hora que hizo antes.",
+    });
+
+    assert.equal(transition.status, 200, JSON.stringify(transition.data));
+    assert.equal(transition.data.ok, true);
+    assert.equal(transition.data.mode, "applied");
+    assert.equal(transition.data.decision.capabilityId, "internal_positioning");
+    assert.equal(transition.data.decision.selectedOperation, "resolveTurn");
+    assert.equal(transition.data.execution.operationResults[0].timeChange.after, "21:35");
+
+    const followup = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas se lo comenta mientras ella trabaja, dede lejos.",
+    });
+
+    assert.equal(followup.status, 200, JSON.stringify(followup.data));
+    assert.equal(followup.data.ok, true);
+    assert.equal(followup.data.route.intent, "social_scene");
+    assert.equal(followup.data.route.supported, true);
+    assert.equal(followup.data.route.needsMutation, false);
+    assert.equal(followup.data.route.domains.includes("work"), false);
+    assert.equal(followup.data.narratorPacket.state.narrativeLocation.privacy, "location_scope");
+    assert.equal(followup.data.narratorPacket.socialPacket.targetNpc.name, "Lira Test");
+    assert.equal(followup.data.directorPacket.backendResolved.continuitySource.startsWith("latestSocialLog:"), true);
+  });
+
   it("returns an action plan for shift completion followed by safe mana breathing", async () => {
     await createFixture();
     await GameState.updateOne({ gameId: tempGameId }, { $set: { time: "14:00", block: "Tarde" } });

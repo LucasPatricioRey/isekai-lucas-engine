@@ -72,6 +72,31 @@ describe("turn capability router", () => {
     assert.equal(timedTalk.route.resolverPlan.steps[0].category, "charla_tranquila");
   });
 
+  it("routes internal social approach as a short resolver step instead of clarification", () => {
+    const result = routeTurnIntent({
+      text: "Lucas baja a buscar a Yara para hablarle sobre el entrenamiento intenso de 1 hora que hizo antes.",
+    });
+
+    assert.equal(result.route.needsMutation, true);
+    assert.equal(result.route.capabilityId, "internal_positioning");
+    assert.equal(result.route.slots.commonResolverCandidate, true);
+    assert.equal(result.route.resolverPlan.steps.length, 1);
+    assert.equal(result.route.resolverPlan.steps[0].type, "activity");
+    assert.equal(result.route.resolverPlan.steps[0].minutes, 5);
+  });
+
+  it("keeps NPC side activity inside social context instead of routing Lucas to work", () => {
+    const result = routeTurnIntent({
+      text: "Lucas se lo comenta mientras ella trabaja, dede lejos.",
+    });
+
+    assert.equal(result.route.intent, "social_scene");
+    assert.equal(result.route.supported, true);
+    assert.equal(result.route.needsMutation, false);
+    assert.equal(result.route.suggestedOperation, "narrateOnly");
+    assert.equal(result.route.domains.includes("work"), false);
+  });
+
   it("classifies sleep until a target time as a general resolver capability", () => {
     const result = routeTurnIntent({
       text: "Lucas se acuesta y duerme hasta las 06:00.",

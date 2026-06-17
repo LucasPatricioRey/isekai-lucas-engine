@@ -35,6 +35,28 @@ describe("turn slot resolver", () => {
     assert.equal(routed.route.resolverPlan.steps[0].toLocationId, "loc_test_crystal_tower");
   });
 
+  it("does not treat the actor name Lucas as a standalone destination alias", () => {
+    const destinationAliases = buildDestinationAliases([
+      {
+        locationId: "loc_test_lucas_room",
+        name: "Cuarto de Lucas",
+        type: "room",
+        tags: ["private_room"],
+      },
+    ]);
+
+    assert.equal(destinationAliases[0].aliases.includes("lucas"), false);
+    assert.equal(destinationAliases[0].aliases.includes("cuarto de lucas"), true);
+
+    const plan = commonResolverPlan({
+      text: "Lucas baja a buscar a Yara para hablarle.",
+      destinationAliases,
+    });
+
+    assert.equal(plan.steps[0].type, "activity");
+    assert.equal(plan.steps[0].capabilityId, "internal_positioning");
+  });
+
   it("resolves safe magic practice techniques from context catalog instead of requiring fixed ids", () => {
     const context = {
       magicTechniques: [

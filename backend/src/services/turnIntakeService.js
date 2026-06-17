@@ -167,6 +167,7 @@ function npcNameMatchesText(npc = {}, text = "", hints = []) {
 }
 
 function selectTargetNpc({ npcs = [], text = "", aiClassification = null, continuityTargetNpcId = "" } = {}) {
+  const normalizedText = normalizeText(text);
   const hints = actorHintsFromClassification(aiClassification);
   const explicit = [...npcs]
     .sort((left, right) => String(right.name || "").length - String(left.name || "").length)
@@ -174,7 +175,11 @@ function selectTargetNpc({ npcs = [], text = "", aiClassification = null, contin
   if (explicit) return explicit;
 
   const continuity = normalizeNpcId(continuityTargetNpcId);
-  if (continuity && isQuestionLike(normalizeText(text))) {
+  const continuitySocialReference = textMatchesAny(normalizedText, [
+    /\b(se lo|se la|le|ella|el)\b.{0,80}\b(comenta|comentando|dice|responde|pregunta|preguntando|cuenta|contando|habla|hablando|saluda|agradece)\b/,
+    /\b(comenta|dice|responde|pregunta|cuenta|habla|saluda|agradece)\b.{0,80}\b(se lo|se la|le|ella|el)\b/,
+  ]);
+  if (continuity && (isQuestionLike(normalizedText) || continuitySocialReference)) {
     return npcs.find((npc) => npc.npcId === continuity) || null;
   }
 
@@ -421,12 +426,20 @@ function materializeResolverPlan({ route = {}, gameState = {} } = {}) {
   };
 }
 
-function resolverPacketFromSteps({ route = {}, text = "", gameState = {}, steps = [], unsupportedReasons = [] } = {}) {
+function resolverPacketFromSteps({
+  route = {},
+  text = "",
+  gameState = {},
+  steps = [],
+  unsupportedReasons = [],
+  targetNpc = null,
+} = {}) {
   if (steps.length === 0 || unsupportedReasons.length > 0) return null;
   const hasWork = steps.some((step) => step.type === "work_segment");
   const hasTravel = steps.some((step) => step.type === "travel");
   const hasRest = steps.some((step) => step.type === "rest");
   const actionFamily = hasWork ? "job_shift" : hasTravel ? "travel" : hasRest ? "rest" : "general_action";
+  const targetNpcId = targetNpc?.npcId || "";
   const resolverRequest = {
     gameId: gameState.gameId || DEFAULT_GAME_ID,
     clientTurnId: makeResolverClientTurnId({ gameState, text }),
@@ -436,8 +449,16 @@ function resolverPacketFromSteps({ route = {}, text = "", gameState = {}, steps 
       summary: text,
       generatedBy: route.resolverPlan ? "turn_capability_router_v1" : "turn_intake_common_resolver_v1",
       capabilityId: route.capabilityId || "",
+      ...(targetNpcId ? { targetNpcId } : {}),
     },
     sequence: steps,
+    ...(targetNpcId
+      ? {
+          involvedNpcIds: [targetNpcId],
+          eventLogType: "social_positioning",
+          tags: ["social", "internal_positioning"],
+        }
+      : {}),
     responseProfile: "compact",
   };
 
@@ -453,7 +474,7 @@ function resolverPacketFromSteps({ route = {}, text = "", gameState = {}, steps 
   };
 }
 
-function buildCommonResolverPacket({ route = {}, text = "", gameState = {} } = {}) {
+function buildCommonResolverPacket({ route = {}, text = "", gameState = {}, targetNpc = null } = {}) {
   if (!route.needsMutation) return null;
   if ((route.domains || []).some((domain) => COMMON_RESOLVER_UNSUPPORTED_DOMAINS.has(domain))) return null;
   if ((route.domains || []).includes("mission_event") && /\b(mision|cartelera|evento|recompensa|reporte)\b/.test(normalizeText(text))) {
@@ -468,6 +489,7 @@ function buildCommonResolverPacket({ route = {}, text = "", gameState = {} } = {
       gameState,
       steps: materialized.steps,
       unsupportedReasons: materialized.unsupportedReasons,
+      targetNpc,
     });
     if (packet) return packet;
   }
@@ -1594,6 +1616,14 @@ async function buildNarratorPacket({
     : [];
   let npcPresence = summarizeNpcPresence(npcs, location, narrativeLocation);
   const visibleEvents = activeEvents.filter((event) => eventVisibleToLucas(event, { locationIds }));
+  const socialTargetCandidate = (route.domains || []).includes("social")
+    ? selectTargetNpc({
+        npcs,
+        text,
+        aiClassification,
+        continuityTargetNpcId: continuityTarget.npcId,
+      })
+    : null;
   let resolverPacket = null;
   let actionPacket = null;
   let actionPlanPacket = null;
@@ -1620,7 +1650,7 @@ async function buildNarratorPacket({
         confidence: "high",
       };
     } else if (!actionPlanPacket) {
-      resolverPacket = buildCommonResolverPacket({ route, text, gameState });
+      resolverPacket = buildCommonResolverPacket({ route, text, gameState, targetNpc: socialTargetCandidate });
     }
     if (!actionPlanPacket && !actionPacket && resolverPacket) {
       route = {
@@ -1635,7 +1665,7 @@ async function buildNarratorPacket({
   let socialPacket = null;
   let questionContext = null;
   if (route.intent === "social_scene") {
-    const targetNpc = selectTargetNpc({
+    const targetNpc = socialTargetCandidate || selectTargetNpc({
       npcs,
       text,
       aiClassification,

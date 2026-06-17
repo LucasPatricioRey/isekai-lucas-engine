@@ -164,11 +164,11 @@ const CAPABILITY_CATALOG = {
   },
   internal_positioning: {
     domain: "scene",
-    status: "limited_support",
+    status: "supported_engine",
     risk: "low",
     impactLevel: 1,
-    executor: "narrateOnly_or_resolveTurn_if_timed",
-    decision: "contextual",
+    executor: "resolveTurn",
+    decision: "resolver_candidate",
   },
   magic_practice: {
     domain: "magic",
@@ -316,7 +316,7 @@ function isReadOnlyNpcTaskQuestion(text) {
 const SOCIAL_ACTION_PATTERNS = [
   /\ble hace un comentario\b/,
   /\b(?:le\s+)?(?:pregunta|cuenta|comenta|dice|responde)\b/,
-  /\b(?:habla|charla|conversa|bromea|saluda|agradece|disculpa)\b/,
+  /\b(?:habla|hablar|hablarle|charla|charlar|conversa|conversar|bromea|bromear|saluda|saludar|agradece|agradecer|disculpa|disculparse)\b/,
   /\b(?:hablando|charlando|conversando|comentando|bromeando|preguntando|contando)\b/,
   /\b(decime|decirme|dime|cuentame|contame)\b/,
 ];
@@ -336,6 +336,7 @@ const TOPIC_CONNECTOR_PATTERNS = [
   /\bcomo\b/,
   /\bpor que\b/,
   /\bporque\b/,
+  /\bmientras\b/,
 ];
 
 const PREFIX_MECHANICAL_BLOCKER =
@@ -391,17 +392,52 @@ function detectPrimarySocialFrame(text = "") {
   };
 }
 
+function detectSocialTopicFrame(text = "") {
+  const socialMatch = firstRegexMatch(text, SOCIAL_ACTION_PATTERNS);
+  if (!socialMatch) {
+    return {
+      hasTopic: false,
+      maskedText: text,
+      actionText: text,
+      actionHasDuration: false,
+    };
+  }
+
+  const topicMatch = firstRegexMatch(
+    text,
+    TOPIC_CONNECTOR_PATTERNS,
+    socialMatch.index + socialMatch.text.length
+  );
+  if (!topicMatch) {
+    return {
+      hasTopic: false,
+      maskedText: text,
+      actionText: text,
+      actionHasDuration: false,
+    };
+  }
+
+  const actionText = stripPassiveSocialStay(text.slice(0, topicMatch.index).trim());
+  return {
+    hasTopic: true,
+    topicConnector: topicMatch.text,
+    maskedText: `${actionText} tema_social`,
+    actionText,
+    actionHasDuration: extractDurations(actionText).length > 0,
+  };
+}
+
 function inferDomains(text) {
   const domains = [];
   const checks = [
     ["magic", /\b(magia|mana|hechizo|conjur|electric|electrica|electrico|descarga|rayo|chispa|aqua)\b/],
     [
       "social",
-      /\b(habla|hablando|charla|charlando|conversa|conversando|bromea|bromeando|comenta|comentando|comentario|responde|dile|dice|decime|decirme|dime|cuenta|contando|cuentame|contame|pregunta|preguntando|pide|saluda|agradece|disculpa|a que hora|horario|yara|fern|roberto|nia|eddan|garrick|mara|sael|doran|joren)\b/,
+      /\b(habla|hablar|hablarle|hablando|charla|charlar|charlando|conversa|conversar|conversando|bromea|bromear|bromeando|comenta|comentar|comentando|comentario|responde|dile|dice|decime|decirme|dime|cuenta|contar|contando|cuentame|contame|pregunta|preguntar|preguntando|pide|saluda|saludar|agradece|agradecer|disculpa|disculparse|a que hora|horario|yara|fern|roberto|nia|eddan|garrick|mara|sael|doran|joren)\b/,
     ],
     [
       "travel",
-      /\b(viaja|camina|corre|vuelve|regresa|sale|entra|sube|baja|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|ruta|camino|sendero)\b/,
+      /\b(viaja|camina|corre|vuelve|regresa|sale|entra|sube|baja|busca|buscar|se acerca|acerca|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|ruta|camino|sendero)\b/,
     ],
     ["work", /\b(trabaja|trabajar|ayuda|ayudando|ayudar|turno|tardanza|contrato|servir|mesa|mesas|platos|jornada|asistencia|llegada tarde)\b/],
     ["time_activity", /\b(espera|esperar|aguarda|aguardar|se queda|mirando|observando|escuchando)\b/],
@@ -593,6 +629,25 @@ function isInternalMovement(text = "", cueIndex = -1) {
   return /\b(cuarto|habitacion|cama|escalera|sala|comedor|cocina|barra|mesa)\b/.test(slice);
 }
 
+function detectInternalMovementPlan(text = "", cueIndex = -1) {
+  const slice = cueIndex >= 0 ? text.slice(Math.max(0, cueIndex - 30), cueIndex + 160) : text;
+  const movesOutOfRoom = /\b(baja|bajar|bajo|sale|salir|salio)\b/.test(slice);
+  const approachesNpc = /\b(busca|buscar|se acerca|acerca|acercarse)\b/.test(slice) &&
+    /\b(yara|fern|roberto|nia|eddan|garrick|mara|sael|doran|joren|lira)\b/.test(slice);
+  if (!movesOutOfRoom && !approachesNpc) return null;
+  if (!isInternalMovement(text, cueIndex) && !approachesNpc) return null;
+
+  return {
+    type: "activity",
+    minutes: 5,
+    category: "actividad_normal",
+    reason: movesOutOfRoom
+      ? "Movimiento interno breve: Lucas baja o sale del cuarto para retomar la escena comun."
+      : "Acercamiento social breve dentro de la escena.",
+    capabilityId: "internal_positioning",
+  };
+}
+
 function detectCompleteJobShiftPlan(text = "") {
   if (
     !textMatchesAny(text, [
@@ -703,7 +758,7 @@ function commonResolverPlan({ text = "", destinationAliases = DEFAULT_DESTINATIO
   addCue("observe_duration", /\b(mirando|observando|escuchando|mira|observa|escucha)\b/);
   addCue("activity_duration", /\b(practica|practicar|practicando|entrena|entrenar|entrenando|ejercita|ejercitar|medita|meditacion)\b/);
   addCue("work_segment", /\b(trabaja|trabajar|sirve mesas|servir mesas|atiende mesas|limpia mesas|ayuda a cerrar|ordena mesas|ayuda|ayudando|ayudar)\b/);
-  addCue("travel", /\b(vuelve|regresa|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|camina|corre|sale hacia|entra en)\b/);
+  addCue("travel", /\b(vuelve|regresa|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|camina|corre|sale|salir|entra en|baja|bajar|busca|buscar|se acerca|acerca)\b/);
 
   const steps = [];
   const unsupportedReasons = [];
@@ -890,6 +945,11 @@ function commonResolverPlan({ text = "", destinationAliases = DEFAULT_DESTINATIO
     if (cue.kind === "travel") {
       const destination = detectDestination(normalized, destinationAliases);
       if (!destination) {
+        const internalPlan = detectInternalMovementPlan(normalized, cue.index);
+        if (internalPlan) {
+          steps.push(internalPlan);
+          continue;
+        }
         if (isInternalMovement(normalized, cue.index)) continue;
         unsupportedReasons.push("travel sin destino claro");
         continue;
@@ -1024,12 +1084,14 @@ function routeFromCapability({
 function routeTurnIntent({ text = "", aiClassification = null, destinationAliases = DEFAULT_DESTINATION_ALIASES } = {}) {
   const normalized = normalizeText(text);
   const socialFrame = detectPrimarySocialFrame(normalized);
-  const routingText = socialFrame.isPrimarySocial ? socialFrame.maskedText : normalized;
-  const resolverText = socialFrame.isPrimarySocial ? socialFrame.actionText : normalized;
+  const socialTopicFrame = socialFrame.isPrimarySocial ? socialFrame : detectSocialTopicFrame(normalized);
+  const routingText = socialFrame.isPrimarySocial ? socialFrame.maskedText : socialTopicFrame.maskedText;
+  const resolverText = socialFrame.isPrimarySocial ? socialFrame.actionText : socialTopicFrame.maskedText;
   const clausePlan = parseTurnClauses(routingText);
   const routeClausePlan = compactClausePlan(clausePlan);
   const aiDomains = asArray(aiClassification?.domains).map((domain) => String(domain || "").trim()).filter(Boolean);
-  const effectiveAiDomains = socialFrame.hasTopic
+  const hasSocialTopic = Boolean(socialFrame.hasTopic || socialTopicFrame.hasTopic);
+  const effectiveAiDomains = hasSocialTopic
     ? aiDomains.filter((domain) => SOCIAL_TOPIC_AI_DOMAIN_ALLOWLIST.has(domain))
     : aiDomains;
   const domains = unique([...inferDomains(routingText), ...clausePlan.domains, ...effectiveAiDomains]);
@@ -1056,12 +1118,12 @@ function routeTurnIntent({ text = "", aiClassification = null, destinationAliase
   ]);
 
   const likelyMutation = textMatchesAny(routingText, [
-    /\b(trabaja|entrena|practica|corre|viaja|camina|vuelve|regresa|sale|entra|sube|baja|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|descansa|descansar|duerme|dormir|espera|esperar|aguarda|aguardar|come|comer|bebe|beber|compra|vende|paga|pide|pedir|toma|agarra|usa|ataca|intenta|conjura|lanza|lanzar|descarga|acepta|rechaza|reporta|completa|investiga|revisa)\b/,
-    /\b(trabaja|trabajar|ayuda|ayudando|ayudar|se queda|entrena|practica|corre|viaja|camina|vuelve|regresa|sale|entra|sube|baja|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|descansa|descansar|duerme|dormir|espera|esperar|aguarda|aguardar|come|comer|bebe|beber|compra|vende|paga|pide|pedir|toma|agarra|usa|ataca|intenta|conjura|lanza|lanzar|descarga|acepta|rechaza|reporta|completa|investiga|revisa)\b/,
-  ]) || (observeOnly && extractDurations(routingText).length > 0) || socialFrame.actionHasDuration;
+    /\b(trabaja|entrena|practica|corre|viaja|camina|vuelve|regresa|sale|entra|sube|baja|busca|buscar|se acerca|acerca|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|descansa|descansar|duerme|dormir|espera|esperar|aguarda|aguardar|come|comer|bebe|beber|compra|vende|paga|pide|pedir|toma|agarra|usa|ataca|intenta|conjura|lanza|lanzar|descarga|acepta|rechaza|reporta|completa|investiga|revisa)\b/,
+    /\b(trabaja|trabajar|ayuda|ayudando|ayudar|se queda|entrena|practica|corre|viaja|camina|vuelve|regresa|sale|entra|sube|baja|busca|buscar|se acerca|acerca|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|descansa|descansar|duerme|dormir|espera|esperar|aguarda|aguardar|come|comer|bebe|beber|compra|vende|paga|pide|pedir|toma|agarra|usa|ataca|intenta|conjura|lanza|lanzar|descarga|acepta|rechaza|reporta|completa|investiga|revisa)\b/,
+  ]) || (observeOnly && extractDurations(routingText).length > 0) || socialFrame.actionHasDuration || socialTopicFrame.actionHasDuration;
   const likelySocial =
     domains.includes("social") &&
-    /\b(habla|hablando|charla|charlando|conversa|conversando|bromea|bromeando|dice|decime|decirme|dime|cuentame|contame|pregunta|preguntando|cuenta|contando|saluda|agradece|disculpa|pide|comenta|comentando|comentario|responde|a que hora|horario)\b/.test(
+    /\b(habla|hablar|hablarle|hablando|charla|charlar|charlando|conversa|conversar|conversando|bromea|bromear|bromeando|dice|decime|decirme|dime|cuentame|contame|pregunta|preguntar|preguntando|cuenta|contar|contando|saluda|saludar|agradece|agradecer|disculpa|disculparse|pide|comenta|comentar|comentando|comentario|responde|a que hora|horario)\b/.test(
       routingText
     );
 
