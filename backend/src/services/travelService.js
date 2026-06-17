@@ -2,6 +2,10 @@ const GameState = require("../models/GameState");
 const Location = require("../models/Location");
 const TravelRoute = require("../models/TravelRoute");
 const { calculateActivityCost } = require("./biologicalClockService");
+const {
+  findVirtualHierarchyRoute,
+  listVirtualHierarchyRoutes,
+} = require("./locationGraphService");
 const { previewWeatherEffects } = require("./weatherService");
 
 const EXTERIOR_ROUTE_TYPES = new Set(["town", "road", "wilderness", "regional"]);
@@ -130,7 +134,13 @@ async function findRoutePath({ fromLocationId, toLocationId, maxSegments = 4 } =
     };
   }
 
-  const routes = await TravelRoute.find({}).sort({ baseMinutes: 1, routeId: 1 }).lean();
+  const explicitRoutes = await TravelRoute.find({}).sort({ baseMinutes: 1, routeId: 1 }).lean();
+  const virtualRoutes = await listVirtualHierarchyRoutes({ explicitRoutes });
+  const routes = [...explicitRoutes, ...virtualRoutes].sort((left, right) => {
+    const minutesDiff = (left.baseMinutes || 0) - (right.baseMinutes || 0);
+    if (minutesDiff !== 0) return minutesDiff;
+    return String(left.routeId || "").localeCompare(String(right.routeId || ""));
+  });
   const edgesByLocation = new Map();
 
   for (const route of routes) {
@@ -236,6 +246,9 @@ async function findRoute({ routeId = "", fromLocationId = "", toLocationId = "" 
       reversed: true,
     };
   }
+
+  const virtual = await findVirtualHierarchyRoute({ fromLocationId, toLocationId });
+  if (virtual?.route) return virtual;
 
   const error = new Error(`No existe ruta entre ${fromLocationId} y ${toLocationId}.`);
   error.statusCode = 404;

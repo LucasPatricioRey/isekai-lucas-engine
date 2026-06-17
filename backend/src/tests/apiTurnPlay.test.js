@@ -29,7 +29,7 @@ async function cleanupFixture() {
   tempGameId = "";
 }
 
-async function createFixture({ time = "06:30", block = "Mañana" } = {}) {
+async function createFixture({ time = "06:30", block = "Mañana", locationId = "" } = {}) {
   await cleanupFixture();
   const suffix = Date.now();
   tempGameId = `test_turn_play_${suffix}`;
@@ -44,6 +44,7 @@ async function createFixture({ time = "06:30", block = "Mañana" } = {}) {
     currentDay: 19,
     time,
     block,
+    locationId: locationId || base.locationId,
     activeEventIds: [],
     activeMissionIds: [],
     biologicalClock: {
@@ -113,6 +114,33 @@ describe("turn play API", () => {
 
     const afterState = await GameState.findOne({ gameId: tempGameId }).lean();
     assert.equal(afterState.time, "08:00");
+  });
+
+  it("applies hierarchy-based internal movement without a manual TravelRoute", async () => {
+    await createFixture({
+      time: "07:00",
+      block: "Mañana",
+      locationId: "loc_hoshimori_lucas_room",
+    });
+
+    const response = await post("/api/turn/play", {
+      gameId: tempGameId,
+      text: "Lucas baja al comedor.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.mode, "applied");
+    assert.equal(response.data.readOnly, false);
+    assert.equal(response.data.decision.selectedOperation, "resolveTurn");
+    assert.equal(response.data.decision.capabilityId, "travel_to_location");
+    assert.equal(response.data.execution.operationResults[0].timeChange.before, "07:00");
+    assert.equal(response.data.execution.operationResults[0].timeChange.after, "07:10");
+    assert.ok(response.data.displayBundle.renderLines.includes("## Estado actual"));
+
+    const afterState = await GameState.findOne({ gameId: tempGameId }).lean();
+    assert.equal(afterState.time, "07:10");
+    assert.equal(afterState.locationId, "loc_hoshimori_grulla_azul_comedor");
   });
 
   it("applies compound timed meditation, observation, and sleep through the facade", async () => {

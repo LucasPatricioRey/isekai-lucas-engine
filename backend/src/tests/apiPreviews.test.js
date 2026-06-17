@@ -338,6 +338,29 @@ describe("preview and rejection API coverage", () => {
     assert.equal(travel.data.preview.timing.finalMinutes, 15);
     assert.equal(travel.data.preview.willMutateGameState, false);
 
+    const internalTravel = await post("/api/travel/preview", {
+      fromLocationId: "loc_hoshimori_grulla_azul",
+      toLocationId: "loc_hoshimori_grulla_azul_comedor",
+      conditions: { ignoreCurrentWeather: true },
+    });
+    assert.equal(internalTravel.status, 200, JSON.stringify(internalTravel.data));
+    assert.equal(internalTravel.data.preview.route.source, "virtual_location_hierarchy");
+    assert.equal(internalTravel.data.preview.route.routeType, "interior");
+    assert.equal(internalTravel.data.preview.timing.finalMinutes, 5);
+    assert.equal(internalTravel.data.preview.willMutateGameState, false);
+
+    const internalPath = await post("/api/travel/preview", {
+      fromLocationId: "loc_hoshimori_lucas_room",
+      toLocationId: "loc_hoshimori_grulla_azul_cocina",
+      conditions: { allowMultiSegment: true, ignoreCurrentWeather: true },
+    });
+    assert.equal(internalPath.status, 200, JSON.stringify(internalPath.data));
+    assert.equal(internalPath.data.preview.path.multiSegment, true);
+    assert.equal(internalPath.data.preview.path.segmentCount, 2);
+    assert.equal(internalPath.data.preview.path.segments[0].route.routeId, "route_hoshimori_grulla_azul_lucas_room");
+    assert.equal(internalPath.data.preview.path.segments[1].route.source, "virtual_location_hierarchy");
+    assert.equal(internalPath.data.preview.willMutateGameState, false);
+
     const weather = await post("/api/weather/effects/preview", {
       routeType: "road",
       terrain: ["mud_road"],
