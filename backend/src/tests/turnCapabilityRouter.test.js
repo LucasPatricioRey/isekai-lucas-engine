@@ -32,6 +32,46 @@ describe("turn capability router", () => {
     assert.equal(result.capabilityPacket.slots.questionType, "work_pattern");
   });
 
+  it("keeps mechanical references inside social topics read-only", () => {
+    const samples = [
+      "Mi personaje se queda hablando con Yara sobre el entrenamiento intenso de 1 hora que hizo Lucas antes.",
+      "Lucas le pregunta a Fern si dormir 3 horas alcanza.",
+      "Lucas le cuenta a Roberto que ayer compro comida.",
+      "Lucas le pregunta al comprador cuanto cuesta comprar 2 comidas.",
+    ];
+
+    for (const text of samples) {
+      const result = routeTurnIntent({ text });
+
+      assert.equal(result.route.intent, "social_scene", text);
+      assert.equal(result.route.supported, true, text);
+      assert.equal(result.route.needsMutation, false, text);
+      assert.equal(result.route.suggestedOperation, "narrateOnly", text);
+      assert.equal(result.route.capabilityId, "social_microtalk", text);
+      assert.equal(result.route.resolverPlan, undefined, text);
+    }
+  });
+
+  it("does not hide real mechanical actions just because they include social flavor", () => {
+    const purchase = routeTurnIntent({
+      text: "Lucas compra 2 stack de comida mientras se queda hablando muy contento con el comprador.",
+    });
+
+    assert.equal(purchase.route.capabilityId, "simple_meal_purchase");
+    assert.equal(purchase.route.needsMutation, true);
+    assert.equal(purchase.route.suggestedOperation, "applyTurn");
+
+    const timedTalk = routeTurnIntent({
+      text: "Lucas habla con Yara durante 1 hora sobre el entrenamiento que hizo antes.",
+    });
+
+    assert.equal(timedTalk.route.capabilityId, "wait_duration");
+    assert.equal(timedTalk.route.needsMutation, true);
+    assert.equal(timedTalk.route.resolverPlan.steps[0].type, "wait");
+    assert.equal(timedTalk.route.resolverPlan.steps[0].minutes, 60);
+    assert.equal(timedTalk.route.resolverPlan.steps[0].category, "charla_tranquila");
+  });
+
   it("classifies sleep until a target time as a general resolver capability", () => {
     const result = routeTurnIntent({
       text: "Lucas se acuesta y duerme hasta las 06:00.",

@@ -276,6 +276,27 @@ describe("turn intake API", () => {
     );
   });
 
+  it("keeps mechanical phrases inside a social topic read-only", async () => {
+    await createFixture();
+    const response = await post("/api/turn/intake", {
+      gameId: tempGameId,
+      text: "Lucas se queda hablando con Lira Test sobre el entrenamiento intenso de 1 hora que hizo Lucas antes.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.readOnly, true);
+    assert.equal(response.data.route.intent, "social_scene");
+    assert.equal(response.data.route.supported, true);
+    assert.equal(response.data.route.needsMutation, false);
+    assert.equal(response.data.route.suggestedOperation, "narrateOnly");
+    assert.equal(response.data.route.domains.includes("rest_biology"), false);
+    assert.equal(response.data.resolverPacket, undefined);
+    assert.equal(response.data.actionPacket, undefined);
+    assert.equal(response.data.narratorPacket.packetProfile, "social_scene");
+    assert.equal(response.data.narratorPacket.socialPacket.targetNpc.name, "Lira Test");
+  });
+
   it("classifies simple Roberto questions as social read-only instead of work fallback", () => {
     const route = classifyTurn({
       text: "Lucas le pregunta a Roberto si todavia queda mucho por cerrar.",

@@ -258,6 +258,23 @@ function textMatchesAny(text, patterns = []) {
   return patterns.some((pattern) => pattern.test(text));
 }
 
+function firstRegexMatch(text = "", patterns = [], startIndex = 0) {
+  const slice = text.slice(Math.max(0, startIndex));
+  const matches = patterns
+    .map((pattern) => {
+      const match = pattern.exec(slice);
+      return match
+        ? {
+            index: startIndex + match.index,
+            text: match[0],
+          }
+        : null;
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.index - right.index);
+  return matches[0] || null;
+}
+
 function capabilityById(capabilityId) {
   return CAPABILITY_CATALOG[capabilityId] || CAPABILITY_CATALOG.unsupported_player_action;
 }
@@ -296,13 +313,91 @@ function isReadOnlyNpcTaskQuestion(text) {
   return ["routine_schedule", "work_pattern", "current_task"].includes(detectSocialQuestionType(text));
 }
 
+const SOCIAL_ACTION_PATTERNS = [
+  /\ble hace un comentario\b/,
+  /\b(?:le\s+)?(?:pregunta|cuenta|comenta|dice|responde)\b/,
+  /\b(?:habla|charla|conversa|bromea|saluda|agradece|disculpa)\b/,
+  /\b(?:hablando|charlando|conversando|comentando|bromeando|preguntando|contando)\b/,
+  /\b(decime|decirme|dime|cuentame|contame)\b/,
+];
+
+const TOPIC_CONNECTOR_PATTERNS = [
+  /\bsobre\b/,
+  /\bacerca de\b/,
+  /\brespecto a\b/,
+  /\ben relacion (?:con|a)\b/,
+  /\bde que\b/,
+  /\blo que\b/,
+  /\bque\b/,
+  /\bsi\b/,
+  /\bcuando\b/,
+  /\bcuantos?\b/,
+  /\bcuantas?\b/,
+  /\bcomo\b/,
+  /\bpor que\b/,
+  /\bporque\b/,
+];
+
+const PREFIX_MECHANICAL_BLOCKER =
+  /\b(trabaja|trabajar|ayuda|ayudando|ayudar|entrena|entrenar|practica|practicar|corre|viaja|camina|vuelve|regresa|sale|entra|sube|baja|va\s+(?:al|a la|hacia)|ir\s+(?:al|a la|hacia)|descansa|descansar|duerme|dormir|espera|esperar|aguarda|aguardar|come|comer|bebe|beber|compra|comprar|vende|vender|paga|pagar|toma|agarra|usa|ataca|intenta|conjura|lanza|lanzar|descarga|acepta|rechaza|reporta|completa|investiga|revisa)\b/;
+
+const SOCIAL_TOPIC_AI_DOMAIN_ALLOWLIST = new Set(["social", "scene"]);
+
+function stripPassiveSocialStay(text = "") {
+  return text.replace(
+    /\bse queda\s+(hablando|charlando|conversando|comentando|bromeando|preguntando|contando)\b/g,
+    "$1"
+  );
+}
+
+function detectPrimarySocialFrame(text = "") {
+  const socialMatch = firstRegexMatch(text, SOCIAL_ACTION_PATTERNS);
+  if (!socialMatch) {
+    return {
+      isPrimarySocial: false,
+      hasTopic: false,
+      maskedText: text,
+      actionText: text,
+      actionHasDuration: false,
+    };
+  }
+
+  const prefix = text.slice(0, socialMatch.index);
+  if (PREFIX_MECHANICAL_BLOCKER.test(prefix)) {
+    return {
+      isPrimarySocial: false,
+      hasTopic: false,
+      maskedText: text,
+      actionText: text,
+      actionHasDuration: false,
+    };
+  }
+
+  const topicMatch = firstRegexMatch(
+    text,
+    TOPIC_CONNECTOR_PATTERNS,
+    socialMatch.index + socialMatch.text.length
+  );
+  const actionText = stripPassiveSocialStay(topicMatch ? text.slice(0, topicMatch.index).trim() : text);
+  const maskedText = topicMatch ? `${actionText} tema_social` : actionText;
+
+  return {
+    isPrimarySocial: true,
+    hasTopic: Boolean(topicMatch),
+    topicConnector: topicMatch?.text || "",
+    maskedText,
+    actionText,
+    actionHasDuration: extractDurations(actionText).length > 0,
+  };
+}
+
 function inferDomains(text) {
   const domains = [];
   const checks = [
     ["magic", /\b(magia|mana|hechizo|conjur|electric|electrica|electrico|descarga|rayo|chispa|aqua)\b/],
     [
       "social",
-      /\b(habla|charla|conversa|bromea|comenta|comentario|responde|dile|dice|decime|decirme|dime|cuentame|contame|pregunta|pide|saluda|agradece|disculpa|a que hora|horario|yara|fern|roberto|nia|eddan|garrick|mara|sael|doran|joren)\b/,
+      /\b(habla|hablando|charla|charlando|conversa|conversando|bromea|bromeando|comenta|comentando|comentario|responde|dile|dice|decime|decirme|dime|cuenta|contando|cuentame|contame|pregunta|preguntando|pide|saluda|agradece|disculpa|a que hora|horario|yara|fern|roberto|nia|eddan|garrick|mara|sael|doran|joren)\b/,
     ],
     [
       "travel",
@@ -327,7 +422,7 @@ function inferDomains(text) {
 function isSimpleSocialText(text) {
   if (
     !textMatchesAny(text, [
-      /\b(habla|charla|conversa|bromea|saluda|agradece|disculpa|dice|pregunta|comenta|comentario|responde)\b/,
+      /\b(habla|hablando|charla|charlando|conversa|conversando|bromea|bromeando|saluda|agradece|disculpa|dice|pregunta|preguntando|cuenta|contando|comenta|comentando|comentario|responde)\b/,
       /\b(decime|decirme|dime|cuentame|contame)\b/,
       /\ble hace un comentario\b/,
       /\b(a que hora|horario)\b/,
@@ -604,6 +699,7 @@ function commonResolverPlan({ text = "", destinationAliases = DEFAULT_DESTINATIO
   addCue("wait_until", /\b(espera|esperar|aguarda)\b.*\bhasta\b/);
   addCue("rest", /\b(descansa|descansar|se sienta|sentado|se acuesta|acostado|duerme|dormir|dormido|dormirse)\b/);
   addCue("wait", /\b(espera|esperar|aguarda)\b/);
+  addCue("talk_duration", /\b(habla|charla|conversa|bromea|comenta|responde|hablando|charlando|conversando|comentando|bromeando)\b/);
   addCue("observe_duration", /\b(mirando|observando|escuchando|mira|observa|escucha)\b/);
   addCue("activity_duration", /\b(practica|practicar|practicando|entrena|entrenar|entrenando|ejercita|ejercitar|medita|meditacion)\b/);
   addCue("work_segment", /\b(trabaja|trabajar|sirve mesas|servir mesas|atiende mesas|limpia mesas|ayuda a cerrar|ordena mesas|ayuda|ayudando|ayudar)\b/);
@@ -717,6 +813,21 @@ function commonResolverPlan({ text = "", destinationAliases = DEFAULT_DESTINATIO
         minutes: duration.minutes,
         category: "actividad_normal",
         reason: "Espera indicada por el jugador.",
+        capabilityId: "wait_duration",
+      });
+      continue;
+    }
+
+    if (cue.kind === "talk_duration") {
+      const duration = durationAfter(normalized, cue.index);
+      if (!duration) {
+        continue;
+      }
+      steps.push({
+        type: "wait",
+        minutes: duration.minutes,
+        category: "charla_tranquila",
+        reason: "Charla temporizada indicada por el jugador.",
         capabilityId: "wait_duration",
       });
       continue;
@@ -912,10 +1023,16 @@ function routeFromCapability({
 
 function routeTurnIntent({ text = "", aiClassification = null, destinationAliases = DEFAULT_DESTINATION_ALIASES } = {}) {
   const normalized = normalizeText(text);
-  const clausePlan = parseTurnClauses(normalized);
+  const socialFrame = detectPrimarySocialFrame(normalized);
+  const routingText = socialFrame.isPrimarySocial ? socialFrame.maskedText : normalized;
+  const resolverText = socialFrame.isPrimarySocial ? socialFrame.actionText : normalized;
+  const clausePlan = parseTurnClauses(routingText);
   const routeClausePlan = compactClausePlan(clausePlan);
   const aiDomains = asArray(aiClassification?.domains).map((domain) => String(domain || "").trim()).filter(Boolean);
-  const domains = unique([...inferDomains(normalized), ...clausePlan.domains, ...aiDomains]);
+  const effectiveAiDomains = socialFrame.hasTopic
+    ? aiDomains.filter((domain) => SOCIAL_TOPIC_AI_DOMAIN_ALLOWLIST.has(domain))
+    : aiDomains;
+  const domains = unique([...inferDomains(routingText), ...clausePlan.domains, ...effectiveAiDomains]);
   const mechanicalDomains = domains.filter((domain) => domain !== "scene");
 
   const continueScene = textMatchesAny(normalized, [
@@ -927,7 +1044,7 @@ function routeTurnIntent({ text = "", aiClassification = null, destinationAliase
     /^sigue$/,
   ]);
 
-  const observeOnly = textMatchesAny(normalized, [
+  const observeOnly = textMatchesAny(routingText, [
     /^lucas mira( alrededor)?$/,
     /^lucas observa( alrededor)?$/,
     /^miro( alrededor)?$/,
@@ -938,17 +1055,17 @@ function routeTurnIntent({ text = "", aiClassification = null, destinationAliase
     /^lucas piensa$/,
   ]);
 
-  const likelyMutation = textMatchesAny(normalized, [
+  const likelyMutation = textMatchesAny(routingText, [
     /\b(trabaja|entrena|practica|corre|viaja|camina|vuelve|regresa|sale|entra|sube|baja|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|descansa|descansar|duerme|dormir|espera|esperar|aguarda|aguardar|come|comer|bebe|beber|compra|vende|paga|pide|pedir|toma|agarra|usa|ataca|intenta|conjura|lanza|lanzar|descarga|acepta|rechaza|reporta|completa|investiga|revisa)\b/,
     /\b(trabaja|trabajar|ayuda|ayudando|ayudar|se queda|entrena|practica|corre|viaja|camina|vuelve|regresa|sale|entra|sube|baja|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|descansa|descansar|duerme|dormir|espera|esperar|aguarda|aguardar|come|comer|bebe|beber|compra|vende|paga|pide|pedir|toma|agarra|usa|ataca|intenta|conjura|lanza|lanzar|descarga|acepta|rechaza|reporta|completa|investiga|revisa)\b/,
-  ]) || (observeOnly && extractDurations(normalized).length > 0);
+  ]) || (observeOnly && extractDurations(routingText).length > 0) || socialFrame.actionHasDuration;
   const likelySocial =
     domains.includes("social") &&
-    /\b(habla|charla|conversa|bromea|dice|decime|decirme|dime|cuentame|contame|pregunta|saluda|agradece|disculpa|pide|comenta|comentario|responde|a que hora|horario)\b/.test(
-      normalized
+    /\b(habla|hablando|charla|charlando|conversa|conversando|bromea|bromeando|dice|decime|decirme|dime|cuentame|contame|pregunta|preguntando|cuenta|contando|saluda|agradece|disculpa|pide|comenta|comentando|comentario|responde|a que hora|horario)\b/.test(
+      routingText
     );
 
-  if (continueScene || (observeOnly && extractDurations(normalized).length === 0) || (!normalized && !likelyMutation)) {
+  if (continueScene || (observeOnly && extractDurations(routingText).length === 0) || (!normalized && !likelyMutation)) {
     return routeFromCapability({
       capabilityId: continueScene ? "continue_scene" : "observe_location",
       intent: continueScene ? "continue_scene" : "observe_scene",
@@ -962,10 +1079,12 @@ function routeTurnIntent({ text = "", aiClassification = null, destinationAliase
 
   if (
     likelySocial &&
-    textMatchesAny(normalized, [
+    (textMatchesAny(routingText, [
       /\b(permiso|autoriza|autorizar|autorizacion|negocia|convenc|promete|promesa|secreto|confiesa)\b/,
+    ]) ||
+      textMatchesAny(normalized, [
       /\b(si puede|si podria|puedo|podria|puede)\b.{0,60}\b(trabajar|trabajo|turno|jornada)\b/,
-    ])
+      ]))
   ) {
     return routeFromCapability({
       capabilityId: "social_complex",
@@ -979,7 +1098,7 @@ function routeTurnIntent({ text = "", aiClassification = null, destinationAliase
     });
   }
 
-  const earlySimpleMealPurchasePlan = detectSimpleMealPurchasePlan(normalized);
+  const earlySimpleMealPurchasePlan = detectSimpleMealPurchasePlan(routingText);
   if (earlySimpleMealPurchasePlan) {
     if (clausePlan.hasWorkCompletion || clausePlan.hasWorkSegment || clausePlan.hasSafeMagicPractice) {
       // Compound turns should keep flowing through the broader planner instead of being reduced to only a meal.
@@ -999,7 +1118,7 @@ function routeTurnIntent({ text = "", aiClassification = null, destinationAliase
   }
 
   if (likelySocial && (!likelyMutation || isReadOnlyNpcTaskQuestion(normalized))) {
-    if (isSimpleSocialText(normalized)) {
+    if (isSimpleSocialText(routingText)) {
       const questionType = detectSocialQuestionType(normalized);
       const capabilityId =
         questionType === "routine_schedule"
@@ -1049,7 +1168,7 @@ function routeTurnIntent({ text = "", aiClassification = null, destinationAliase
   }
 
   if (likelyMutation || mechanicalDomains.length > 0) {
-    const completeJobShiftPlan = detectCompleteJobShiftPlan(normalized);
+    const completeJobShiftPlan = detectCompleteJobShiftPlan(routingText);
     if (completeJobShiftPlan) {
       return routeFromCapability({
         capabilityId: "complete_job_shift",
@@ -1064,7 +1183,7 @@ function routeTurnIntent({ text = "", aiClassification = null, destinationAliase
       });
     }
 
-    const safeMagicPracticePlan = detectSafeMagicPracticePlan(normalized);
+    const safeMagicPracticePlan = detectSafeMagicPracticePlan(routingText);
     if (safeMagicPracticePlan) {
       return routeFromCapability({
         capabilityId: "safe_magic_practice",
@@ -1079,7 +1198,7 @@ function routeTurnIntent({ text = "", aiClassification = null, destinationAliase
       });
     }
 
-    const resolverPlan = commonResolverPlan({ text: normalized, destinationAliases });
+    const resolverPlan = commonResolverPlan({ text: resolverText, destinationAliases });
     const unsupportedDomain = domains.find((domain) =>
       ["magic", "economy", "inventory_evidence", "combat_injury"].includes(domain)
     );
