@@ -153,4 +153,38 @@ describe("turn capability router", () => {
     assert.equal(result.route.resolverPlan.steps[0].targetTime, "14:00");
     assert.equal(result.route.resolverPlan.steps[0].allowTruncate, true);
   });
+
+  it("routes compound timed meditation, observation, and sleep through the common resolver", () => {
+    const text =
+      "Lucas practica meditacion 30 minutos, despues mira su cuarto 10 minutos y finalmente se queda dormido 3 horas.";
+    const result = routeTurnIntent({ text });
+
+    assert.equal(result.route.needsMutation, true);
+    assert.equal(result.route.capabilityId, "common_sequence");
+    assert.equal(result.route.slots.commonResolverCandidate, true);
+    assert.deepEqual(result.route.resolverPlan.steps.map((step) => step.type), [
+      "rest",
+      "wait",
+      "rest",
+    ]);
+    assert.deepEqual(result.route.resolverPlan.steps.map((step) => step.minutes), [
+      30,
+      10,
+      180,
+    ]);
+    assert.equal(result.route.resolverPlan.steps[0].category, "descanso_sentado");
+    assert.equal(result.route.resolverPlan.steps[2].category, "descanso_acostado");
+  });
+
+  it("keeps untimed observation read-only but treats timed observation as time passage", () => {
+    const passive = routeTurnIntent({ text: "Lucas se queda mirando a su alrededor." });
+    assert.equal(passive.route.supported, true);
+    assert.equal(passive.route.suggestedOperation, "narrateOnly");
+    assert.equal(passive.route.needsMutation, false);
+
+    const timed = routeTurnIntent({ text: "Lucas observa la puerta durante 10 minutos." });
+    assert.equal(timed.route.needsMutation, true);
+    assert.equal(timed.route.capabilityId, "wait_duration");
+    assert.equal(timed.route.resolverPlan.steps[0].minutes, 10);
+  });
 });

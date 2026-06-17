@@ -115,6 +115,43 @@ describe("turn play API", () => {
     assert.equal(afterState.time, "08:00");
   });
 
+  it("applies compound timed meditation, observation, and sleep through the facade", async () => {
+    await createFixture({ time: "21:30", block: "Noche" });
+
+    const response = await post("/api/turn/play", {
+      gameId: tempGameId,
+      text: "Lucas practica meditacion 30 minutos, despues mira su cuarto 10 minutos y finalmente se queda dormido 3 horas.",
+    });
+
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.ok, true);
+    assert.equal(response.data.mode, "applied");
+    assert.equal(response.data.readOnly, false);
+    assert.equal(response.data.decision.selectedOperation, "resolveTurn");
+    assert.deepEqual(
+      {
+        dayBefore: response.data.execution.operationResults[0].timeChange.dayBefore,
+        before: response.data.execution.operationResults[0].timeChange.before,
+        dayAfter: response.data.execution.operationResults[0].timeChange.dayAfter,
+        after: response.data.execution.operationResults[0].timeChange.after,
+        elapsedMinutes: response.data.execution.operationResults[0].timeChange.elapsedMinutes,
+      },
+      {
+        dayBefore: 19,
+        before: "21:30",
+        dayAfter: 20,
+        after: "01:10",
+        elapsedMinutes: 220,
+      }
+    );
+    assert.ok(response.data.displayBundle.renderLines.includes("## Estado actual"));
+    assert.ok(Buffer.byteLength(JSON.stringify(response.data), "utf8") < 25000);
+
+    const afterState = await GameState.findOne({ gameId: tempGameId }).lean();
+    assert.equal(afterState.currentDay, 20);
+    assert.equal(afterState.time, "01:10");
+  });
+
   it("returns needs_clarification for unsupported mutating turns instead of exposing manual tools", async () => {
     await createFixture({ time: "12:00", block: "Mediodía" });
     const beforeState = await GameState.findOne({ gameId: tempGameId }).lean();

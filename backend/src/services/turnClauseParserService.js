@@ -20,7 +20,7 @@ function splitTurnClauses(text = "") {
   if (!normalized) return [];
 
   const separators =
-    /\s*(?:[,;]|\.\s+|\by\s+despues\b|\by\s+luego\b|\bdespues\b|\bluego\b|\btras eso\b|\bentonces\b)\s*/g;
+    /\s*(?:[,;]|\.\s+|\by\s+despues\b|\by\s+luego\b|\by\s+finalmente\b|\bdespues\b|\bluego\b|\bfinalmente\b|\btras eso\b|\bentonces\b)\s*/g;
   const clauses = [];
   let lastIndex = 0;
   let match = separators.exec(normalized);

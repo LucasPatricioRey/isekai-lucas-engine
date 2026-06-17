@@ -299,7 +299,7 @@ function isReadOnlyNpcTaskQuestion(text) {
 function inferDomains(text) {
   const domains = [];
   const checks = [
-    ["magic", /\b(magia|mana|hechizo|conjur|electric|electrica|electrico|descarga|rayo|chispa|medita|aqua)\b/],
+    ["magic", /\b(magia|mana|hechizo|conjur|electric|electrica|electrico|descarga|rayo|chispa|aqua)\b/],
     [
       "social",
       /\b(habla|charla|conversa|bromea|comenta|comentario|responde|dile|dice|decime|decirme|dime|cuentame|contame|pregunta|pide|saluda|agradece|disculpa|a que hora|horario|yara|fern|roberto|nia|eddan|garrick|mara|sael|doran|joren)\b/,
@@ -309,8 +309,8 @@ function inferDomains(text) {
       /\b(viaja|camina|corre|vuelve|regresa|sale|entra|sube|baja|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|ruta|camino|sendero)\b/,
     ],
     ["work", /\b(trabaja|trabajar|ayuda|ayudando|ayudar|turno|tardanza|contrato|servir|mesa|mesas|platos|jornada|asistencia|llegada tarde)\b/],
-    ["time_activity", /\b(espera|esperar|aguarda|aguardar|se queda)\b/],
-    ["rest_biology", /\b(descansa|descansar|duerme|dormir|come|comer|bebe|beber|hambre|cansancio|energia|saciedad|cama|se acuesta)\b/],
+    ["time_activity", /\b(espera|esperar|aguarda|aguardar|se queda|mirando|observando|escuchando)\b/],
+    ["rest_biology", /\b(descansa|descansar|duerme|dormir|dormido|dormirse|medita|meditacion|come|comer|bebe|beber|hambre|cansancio|energia|saciedad|cama|se acuesta)\b/],
     ["economy", /\b(compra|vende|paga|precio|stock|monedas|cobre|plata|oro)\b/],
     ["mission_event", /\b(mision|cartelera|evento|recompensa|reporte|gremio)\b/],
     ["inventory_evidence", /\b(inventario|mochila|muestra|evidencia|pelo gris|nota|daga|objeto)\b/],
@@ -421,6 +421,10 @@ function durationAfter(text = "", cueIndex = -1, { maxDistance = 140 } = {}) {
   );
 }
 
+function durationForCue(text = "", cueIndex = -1, options = {}) {
+  return durationAfter(text, cueIndex, options) || durationNear(text, cueIndex, options);
+}
+
 function clockFromText(text = "") {
   const match = String(text || "").match(/\b(?:hasta\s+)?(?:las\s+)?(\d{1,2})(?::(\d{2}))?\b/);
   if (!match) return "";
@@ -444,8 +448,15 @@ function regexIndex(text = "", pattern) {
 
 function detectRestCategory(text = "", cueIndex = -1) {
   const slice = cueIndex >= 0 ? text.slice(Math.max(0, cueIndex - 30), cueIndex + 120) : text;
-  if (/\b(acostad|cama|duerme|dormir|dormia|siesta)\b/.test(slice)) return "descanso_acostado";
+  if (/\b(acostad|cama|duerme|dormir|dormia|dormido|dormirse|siesta)\b/.test(slice)) return "descanso_acostado";
   return "descanso_sentado";
+}
+
+function detectActivityCategory(text = "", cueIndex = -1) {
+  const slice = cueIndex >= 0 ? text.slice(Math.max(0, cueIndex - 30), cueIndex + 120) : text;
+  if (/\b(medita|meditacion|respiracion|respira)\b/.test(slice)) return "descanso_sentado";
+  if (/\b(entrena|entrenar|entrenando|ejercita|ejercitar)\b/.test(slice)) return "entreno_moderado";
+  return "actividad_normal";
 }
 
 function destinationMatchScore(destination = {}, text = "") {
@@ -591,8 +602,10 @@ function commonResolverPlan({ text = "", destinationAliases = DEFAULT_DESTINATIO
   addCue("rest_until", /\b(descansa|descansar|se sienta|sentado|se acuesta|acostado)\b.*\bhasta\b/);
   addCue("work_until", /\b(trabaja|trabajar|ayuda|ayudando|ayudar|se queda)\b.*\bhasta\b/);
   addCue("wait_until", /\b(espera|esperar|aguarda)\b.*\bhasta\b/);
-  addCue("rest", /\b(descansa|descansar|se sienta|sentado|se acuesta|acostado|duerme|dormir)\b/);
+  addCue("rest", /\b(descansa|descansar|se sienta|sentado|se acuesta|acostado|duerme|dormir|dormido|dormirse)\b/);
   addCue("wait", /\b(espera|esperar|aguarda)\b/);
+  addCue("observe_duration", /\b(mirando|observando|escuchando|mira|observa|escucha)\b/);
+  addCue("activity_duration", /\b(practica|practicar|practicando|entrena|entrenar|entrenando|ejercita|ejercitar|medita|meditacion)\b/);
   addCue("work_segment", /\b(trabaja|trabajar|sirve mesas|servir mesas|atiende mesas|limpia mesas|ayuda a cerrar|ordena mesas|ayuda|ayudando|ayudar)\b/);
   addCue("travel", /\b(vuelve|regresa|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|camina|corre|sale hacia|entra en)\b/);
 
@@ -676,7 +689,7 @@ function commonResolverPlan({ text = "", destinationAliases = DEFAULT_DESTINATIO
     }
 
     if (cue.kind === "rest") {
-      const duration = durationNear(normalized, cue.index);
+      const duration = durationForCue(normalized, cue.index);
       if (!duration) {
         if (steps.some((step) => step.type === "rest" && step.targetTime)) continue;
         unsupportedReasons.push("rest sin duracion explicita");
@@ -693,7 +706,7 @@ function commonResolverPlan({ text = "", destinationAliases = DEFAULT_DESTINATIO
     }
 
     if (cue.kind === "wait") {
-      const duration = durationNear(normalized, cue.index);
+      const duration = durationForCue(normalized, cue.index);
       if (!duration) {
         if (steps.some((step) => step.type === "wait" && step.targetTime)) continue;
         unsupportedReasons.push("wait sin duracion explicita");
@@ -709,8 +722,41 @@ function commonResolverPlan({ text = "", destinationAliases = DEFAULT_DESTINATIO
       continue;
     }
 
+    if (cue.kind === "observe_duration") {
+      const duration = durationForCue(normalized, cue.index);
+      if (!duration) {
+        unsupportedReasons.push("observe_duration sin duracion explicita");
+        continue;
+      }
+      steps.push({
+        type: "wait",
+        minutes: duration.minutes,
+        category: "actividad_normal",
+        reason: "Observacion temporizada indicada por el jugador.",
+        capabilityId: "wait_duration",
+      });
+      continue;
+    }
+
+    if (cue.kind === "activity_duration") {
+      const duration = durationForCue(normalized, cue.index);
+      if (!duration) {
+        unsupportedReasons.push("activity_duration sin duracion explicita");
+        continue;
+      }
+      const category = detectActivityCategory(normalized, cue.index);
+      steps.push({
+        type: category.startsWith("descanso") ? "rest" : "activity",
+        minutes: duration.minutes,
+        category,
+        reason: "Actividad temporizada indicada por el jugador.",
+        capabilityId: category.startsWith("descanso") ? "rest_duration" : "wait_duration",
+      });
+      continue;
+    }
+
     if (cue.kind === "work_segment") {
-      const duration = durationNear(normalized, cue.index);
+      const duration = durationForCue(normalized, cue.index);
       if (!duration) {
         if (steps.some((step) => step.type === "work_segment" && step.targetTime)) continue;
         unsupportedReasons.push("work_segment sin duracion explicita");
@@ -895,14 +941,14 @@ function routeTurnIntent({ text = "", aiClassification = null, destinationAliase
   const likelyMutation = textMatchesAny(normalized, [
     /\b(trabaja|entrena|practica|corre|viaja|camina|vuelve|regresa|sale|entra|sube|baja|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|descansa|descansar|duerme|dormir|espera|esperar|aguarda|aguardar|come|comer|bebe|beber|compra|vende|paga|pide|pedir|toma|agarra|usa|ataca|intenta|conjura|lanza|lanzar|descarga|acepta|rechaza|reporta|completa|investiga|revisa)\b/,
     /\b(trabaja|trabajar|ayuda|ayudando|ayudar|se queda|entrena|practica|corre|viaja|camina|vuelve|regresa|sale|entra|sube|baja|va\s+(al|a la|hacia)|ir\s+(al|a la|hacia)|descansa|descansar|duerme|dormir|espera|esperar|aguarda|aguardar|come|comer|bebe|beber|compra|vende|paga|pide|pedir|toma|agarra|usa|ataca|intenta|conjura|lanza|lanzar|descarga|acepta|rechaza|reporta|completa|investiga|revisa)\b/,
-  ]);
+  ]) || (observeOnly && extractDurations(normalized).length > 0);
   const likelySocial =
     domains.includes("social") &&
     /\b(habla|charla|conversa|bromea|dice|decime|decirme|dime|cuentame|contame|pregunta|saluda|agradece|disculpa|pide|comenta|comentario|responde|a que hora|horario)\b/.test(
       normalized
     );
 
-  if (continueScene || observeOnly || (!normalized && !likelyMutation)) {
+  if (continueScene || (observeOnly && extractDurations(normalized).length === 0) || (!normalized && !likelyMutation)) {
     return routeFromCapability({
       capabilityId: continueScene ? "continue_scene" : "observe_location",
       intent: continueScene ? "continue_scene" : "observe_scene",

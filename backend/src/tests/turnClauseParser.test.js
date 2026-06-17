@@ -35,4 +35,21 @@ describe("turn clause parser", () => {
     assert.equal(targetTimeFromRelativeText("duerme hasta la manana"), "07:00");
     assert.equal(targetTimeFromRelativeText("descansa hasta la noche"), "20:00");
   });
+
+  it("splits finally-linked timed clauses in order", () => {
+    const plan = parseTurnClauses(
+      "Lucas practica meditacion 30 minutos, despues mira su cuarto 10 minutos y finalmente se queda dormido 3 horas."
+    );
+
+    assert.equal(plan.clauseCount, 3);
+    assert.equal(plan.isCompound, true);
+    assert.deepEqual(
+      plan.clauses.map((clause) => clause.text),
+      [
+        "lucas practica meditacion 30 minutos",
+        "mira su cuarto 10 minutos",
+        "se queda dormido 3 horas.",
+      ]
+    );
+  });
 });
